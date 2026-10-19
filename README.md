@@ -22,15 +22,26 @@ Reference: https://github.com/DrEAmSs59/CS2-insight-agent (a similar tool for CS
 - Any game settings changed for recording are restored afterwards
 - Validate first: prove that replay control and recording work before writing the real code
 
+## Tech stack
+
+| Part | Choice |
+|---|---|
+| Desktop app | Tauri 2 + Rust, plain HTML/CSS/JS front end |
+| Replay parsing | [source2-demo](https://github.com/Rupas1k/source2-demo) (fallback: [Clarity](https://github.com/skadistats/clarity)) |
+| Playback control | Game console over netcon (`-netconport`) + cfg files |
+| Playback state | Game State Integration (GSI) |
+| Recording | OBS (obs-websocket v5) |
+| Cutting / joining | ffmpeg |
+
 ## Roadmap
 
 ### Phase 0: Technical validation
 
 Each item is a small standalone experiment; formal development starts only after they all work.
 
-- [ ] **Get the replay**: obtain the `.dem` file from a match ID (replay URL, expiry, local replay folder)
-- [ ] **Parse the replay**: read the 10 players and heroes, plus kill events and their game time, from the `.dem` file
-- [ ] **Control playback**: without injecting into the process, make the game load a replay, jump to a given time and lock the camera to a given player
+- [x] **Get the replay**: obtain the `.dem` file from a match ID (replay URL, expiry, local replay folder) — [notes (zh-CN)](docs/spikes/01-replay.md)
+- [x] **Parse the replay**: read the 10 players and heroes, plus kill events and their game time, from the `.dem` file — [notes (zh-CN)](docs/spikes/01-replay.md)
+- [ ] **Control playback**: without injecting into the process, make the game load a replay, jump to a given time and lock the camera to a given player; also check whether a command can make the client download a replay
 - [ ] **Read playback state**: confirm the actual game time after a jump, to line up recording start and end
 - [ ] **Control OBS**: start, stop and pause recording via obs-websocket, and get the output file
 - [ ] **End to end**: given a time range by hand, automatically record that stretch from the player's view
