@@ -30,7 +30,7 @@
 | 录像解析 | [source2-demo](https://github.com/Rupas1k/source2-demo)（备选 [Clarity](https://github.com/skadistats/clarity)） |
 | 控制回放 | 游戏控制台 netcon（`-netconport`，需 `-insecure`）；观战界面用窗口消息发按键/点击 |
 | 读取回放状态 | Game State Integration（GSI） |
-| 录制 | OBS（obs-websocket v5） |
+| 录制 | OBS（obs-websocket v5），游戏捕获（只在 `-insecure` 会话中使用，录完删除捕获源） |
 | 剪辑 / 拼接 | ffmpeg |
 
 ## 路线图
@@ -43,7 +43,7 @@
 - [x] **解析录像**：从 `.dem` 中读出 10 个玩家与英雄、击杀事件及其游戏时间 —— [验证记录](docs/spikes/01-replay.md)
 - [x] **控制回放**：不注入进程的前提下，让游戏加载录像、跳转到指定时间、锁定指定玩家视角；顺带确认能否用命令让客户端下载录像（不能）—— [验证记录](docs/spikes/02-playback.md)
 - [x] **读取回放状态**：确认跳转后的实际游戏时间，用于对齐录制起止点 —— [验证记录](docs/spikes/03-state.md)
-- [ ] **控制 OBS**：通过 obs-websocket 开始、停止、暂停录制，拿到输出文件
+- [x] **控制 OBS**：通过 obs-websocket 开始、停止、暂停录制，拿到输出文件 —— [验证记录](docs/spikes/04-obs.md)
 - [ ] **端到端**：手动指定一个时间段，自动录出一段该玩家视角的视频
 
 ### 阶段 1：命令行 MVP
