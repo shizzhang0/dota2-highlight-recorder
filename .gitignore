@@ -1,0 +1,21 @@
+# 录像与录制产物
+*.dem
+*.dem.bz2
+*.mp4
+*.mkv
+*.mov
+output/
+recordings/
+
+# 本地配置与日志
+.env
+*.local.*
+*.log
+
+# IDE / 系统
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
