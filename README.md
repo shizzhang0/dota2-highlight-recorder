@@ -44,7 +44,7 @@ Each item is a small standalone experiment; formal development starts only after
 - [x] **Control playback**: without injecting into the process, make the game load a replay, jump to a given time and lock the camera to a given player; also check whether a command can make the client download a replay (it can't) — [notes (zh-CN)](docs/spikes/02-playback.md)
 - [x] **Read playback state**: confirm the actual game time after a jump, to line up recording start and end — [notes (zh-CN)](docs/spikes/03-state.md)
 - [x] **Control OBS**: start, stop and pause recording via obs-websocket, and get the output file — [notes (zh-CN)](docs/spikes/04-obs.md)
-- [ ] **End to end**: given a time range by hand, automatically record that stretch from the player's view
+- [x] **End to end**: given a time range by hand, automatically record that stretch from the player's view — [notes (zh-CN)](docs/spikes/05-e2e.md)
 
 ### Phase 1: Command-line MVP
 

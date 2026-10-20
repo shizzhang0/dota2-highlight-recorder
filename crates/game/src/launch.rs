@@ -1,0 +1,84 @@
+//! 找到 Dota 2 安装目录，直接启动 dota2.exe（不经过 Steam 的 -applaunch，不弹确认框）。
+
+use std::net::TcpStream;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result, bail};
+use winreg::RegKey;
+use winreg::enums::HKEY_CURRENT_USER;
+
+fn steam_dir() -> Result<PathBuf> {
+    let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Software\Valve\Steam").context("注册表里没找到 Steam")?;
+    let p: String = key.get_value("SteamPath")?;
+    Ok(PathBuf::from(p.replace('/', "\\")))
+}
+
+/// Steam 可能有多个库，Dota 不一定装在主库里
+fn libraries(steam: &Path) -> Vec<PathBuf> {
+    let mut out = vec![steam.to_path_buf()];
+    if let Ok(s) = std::fs::read_to_string(steam.join(r"steamapps\libraryfolders.vdf")) {
+        for line in s.lines().map(str::trim).filter(|l| l.starts_with("\"path\"")) {
+            if let Some(v) = line.split('"').nth(3) {
+                out.push(PathBuf::from(v.replace("\\\\", "\\")));
+            }
+        }
+    }
+    out
+}
+
+/// `.../steamapps/common/dota 2 beta/game`
+pub fn game_dir() -> Result<PathBuf> {
+    for lib in libraries(&steam_dir()?) {
+        let dir = lib.join(r"steamapps\common\dota 2 beta\game");
+        if dir.join(r"bin\win64\dota2.exe").is_file() {
+            return Ok(dir);
+        }
+    }
+    bail!("没找到 Dota 2 安装目录")
+}
+
+/// 游戏客户端下载的录像所在目录
+pub fn replays_dir() -> Result<PathBuf> {
+    Ok(game_dir()?.join(r"dota\replays"))
+}
+
+/// 本机 netcon 端口是否已在监听（游戏是否以 -netconport -insecure 运行）
+pub fn netcon_ready(port: u16) -> bool {
+    TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(300)).is_ok()
+}
+
+/// 启动游戏并开放 netcon。`-insecure` 必须带：不带时游戏不开 netcon 端口，带了 VAC 不加载、进不了匹配。
+/// `extra` 放用户自己的启动参数（如国服的 `-perfectworld`）。要求 Steam 已登录
+pub fn launch(port: u16, extra: &[String]) -> Result<Child> {
+    let game = game_dir()?;
+    let bin = game.join(r"bin\win64");
+    let port = port.to_string();
+    let mut args = vec!["-netconport", &port, "-insecure", "-novid", "-console"];
+    args.extend(extra.iter().map(String::as_str));
+    Command::new(bin.join("dota2.exe"))
+        .args(&args)
+        .current_dir(&bin)
+        // 不经过 Steam 启动时，不设 SteamAppId 游戏会不知道自己是谁
+        .env("SteamAppId", "570")
+        .env("SteamGameId", "570")
+        // 游戏会一直开着，不能让它继承我们的输出管道，否则调用方会等它退出才算结束
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("启动 dota2.exe 失败")
+}
+
+/// 等 netcon 端口开始监听
+pub fn wait_netcon(port: u16, timeout: Duration) -> Result<()> {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        if netcon_ready(port) {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    bail!("等了 {timeout:?} netcon 端口 {port} 仍未开放")
+}

@@ -26,7 +26,29 @@ pub struct Replay {
     pub kills: Vec<Kill>,
     pub multi_kills: Vec<KillEvent>,
     pub kill_streaks: Vec<KillEvent>,
+    /// 游戏时钟每走一秒记一个点，用来把时钟换算成 tick（比赛暂停时时钟不走，两者不成线性）
+    #[serde(skip)]
+    pub clock: Vec<ClockSample>,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct ClockSample {
+    pub tick: u32,
+    pub game_time: f32,
+}
+
+impl Replay {
+    /// 游戏时钟 t 秒（号角为 0）对应的录像 tick，可直接用于 `demo_gototick`。超出录像范围时为 None
+    pub fn tick_at(&self, t: f32) -> Option<u32> {
+        let i = self.clock.partition_point(|s| s.game_time < t);
+        let s = self.clock.get(i)?;
+        // 采样点之间按每秒 30 tick 往回推
+        let back = ((s.game_time - t) * TICKS_PER_SECOND).round() as u32;
+        Some(s.tick.saturating_sub(back))
+    }
+}
+
+const TICKS_PER_SECOND: f32 = 30.0;
 
 #[derive(Debug, Serialize)]
 pub struct Player {
@@ -151,6 +173,7 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
         kills,
         multi_kills,
         kill_streaks,
+        clock: c.clock,
     })
 }
 
@@ -161,6 +184,7 @@ struct Collector {
     /// 每个玩家当前计分板上的击杀、助攻数
     score: Vec<Score>,
     score_changes: Vec<ScoreChange>,
+    clock: Vec<ClockSample>,
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -194,15 +218,33 @@ enum RawKind {
 impl Collector {
     #[on_tick_start]
     fn on_tick_start(&mut self, ctx: &Context) -> ObserverResult {
-        if self.game_start_time.is_some() {
-            return Ok(());
-        }
         let Ok(rules) = ctx.entities().get_by_class_name("CDOTAGamerulesProxy") else {
             return Ok(());
         };
-        let start: f32 = property!(rules, "m_pGameRules.m_flGameStartTime");
-        if start > 0.0 {
-            self.game_start_time = Some(start);
+        let Some(start) = self.game_start_time else {
+            let start: f32 = property!(rules, "m_pGameRules.m_flGameStartTime");
+            if start > 0.0 {
+                self.game_start_time = Some(start);
+            }
+            return Ok(());
+        };
+        // 新录像没有 m_fGameTime，就用"网络 tick 减去累计暂停的 tick"推出引擎时间（与 opendota 的做法相同）
+        let now = match try_property!(rules, f32, "m_pGameRules.m_fGameTime") {
+            Some(t) => t,
+            None => {
+                let paused: bool = property!(rules, "m_pGameRules.m_bGamePaused");
+                let tick: i32 = if paused {
+                    property!(rules, "m_pGameRules.m_nPauseStartTick")
+                } else {
+                    ctx.net_tick() as i32
+                };
+                let paused_ticks: i32 = property!(rules, "m_pGameRules.m_nTotalPausedTicks");
+                (tick - paused_ticks) as f32 / TICKS_PER_SECOND
+            }
+        };
+        let game_time = now - start;
+        if self.clock.last().is_none_or(|s| game_time.floor() > s.game_time.floor()) {
+            self.clock.push(ClockSample { tick: ctx.tick(), game_time });
         }
         Ok(())
     }

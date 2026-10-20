@@ -1,0 +1,15 @@
+[package]
+name = "recorder"
+version = "0.1.0"
+edition.workspace = true
+license-file.workspace = true
+description = "把解析、回放控制、OBS 串起来，录出高光片段"
+
+[dependencies]
+anyhow.workspace = true
+game = { path = "../game" }
+obs = { path = "../obs" }
+replay = { path = "../replay" }
+serde_json.workspace = true
+# 等游戏、读 netcon 输出是阻塞调用，用多线程运行时，免得 OBS 连接在等待期间被饿着
+tokio = { workspace = true, features = ["rt-multi-thread"] }
