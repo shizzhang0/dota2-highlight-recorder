@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/game", "crates/obs", "crates/replay"]
+members = ["crates/game", "crates/obs", "crates/recorder", "crates/replay"]
 
 [workspace.package]
 edition = "2024"
@@ -18,4 +18,6 @@ tokio = { version = "1", features = ["rt", "macros", "time"] }
 tokio-stream = "0.1"
 source2-demo = { version = "0.5.10", features = ["dota"] }
 # HTTPS 用 Windows 自带的 SChannel（native-tls），与 dota2-game-helper2 一致，不带 rustls/ring
+winreg = "0.52"
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 ureq = { version = "3", default-features = false, features = ["native-tls", "json"] }

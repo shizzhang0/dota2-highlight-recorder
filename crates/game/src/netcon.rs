@@ -38,6 +38,18 @@ impl Netcon {
         Ok(())
     }
 
+    /// 等到控制台真正能执行命令。游戏刚启动时端口很早就开了，但命令要等加载到一定程度才有回应
+    pub fn wait_responsive(&mut self, timeout: Duration) -> Result<()> {
+        let started = Instant::now();
+        while started.elapsed() < timeout {
+            self.send("echo d2hr_ready")?;
+            if self.wait_for(Duration::from_secs(2), |l| l.trim() == "d2hr_ready").is_some() {
+                return Ok(());
+            }
+        }
+        anyhow::bail!("等了 {timeout:?} 游戏控制台仍无回应")
+    }
+
     /// 收集 `quiet` 时间内没有新输出为止（最多 `max`）的所有输出行
     pub fn drain(&self, quiet: Duration, max: Duration) -> Vec<String> {
         let started = Instant::now();
