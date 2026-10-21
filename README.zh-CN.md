@@ -30,7 +30,8 @@
 | 录像解析 | [source2-demo](https://github.com/Rupas1k/source2-demo)（备选 [Clarity](https://github.com/skadistats/clarity)） |
 | 控制回放 | 游戏控制台 netcon（`-netconport`，需 `-insecure`）；观战界面用窗口消息发按键/点击 |
 | 读取回放状态 | Game State Integration（GSI） |
-| 录制 | OBS（obs-websocket v5），游戏捕获（只在 `-insecure` 会话中使用，录完删除捕获源） |
+| 录制 | Dota 2 回放自带的视频剪辑工具（单段 ≤ 60 秒，长片段分段导出后拼接）—— [验证记录](docs/spikes/06-clip-builder.md) |
+| 录制（备选） | OBS（obs-websocket v5），游戏捕获（只在 `-insecure` 会话中使用，录完删除捕获源） |
 | 剪辑 / 拼接 | ffmpeg |
 
 ## 路线图
