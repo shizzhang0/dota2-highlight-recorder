@@ -30,7 +30,8 @@ Reference: https://github.com/DrEAmSs59/CS2-insight-agent (a similar tool for CS
 | Replay parsing | [source2-demo](https://github.com/Rupas1k/source2-demo) (fallback: [Clarity](https://github.com/skadistats/clarity)) |
 | Playback control | Game console over netcon (`-netconport`, requires `-insecure`); spectator UI via window messages (keys/clicks) |
 | Playback state | Game State Integration (GSI) |
-| Recording | OBS (obs-websocket v5), game capture (only in `-insecure` sessions; capture source removed after recording) |
+| Recording | Dota 2's built-in replay clip builder (≤ 60 s per export; longer clips exported in parts and joined) — [notes (zh-CN)](docs/spikes/06-clip-builder.md) |
+| Recording (fallback) | OBS (obs-websocket v5), game capture (only in `-insecure` sessions; capture source removed after recording) |
 | Cutting / joining | ffmpeg |
 
 ## Roadmap
