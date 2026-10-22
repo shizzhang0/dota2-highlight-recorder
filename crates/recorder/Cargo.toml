@@ -7,7 +7,9 @@ description = "把解析、回放控制、OBS 串起来，录出高光片段"
 
 [dependencies]
 anyhow.workspace = true
+clips = { path = "../clips" }
 game = { path = "../game" }
+media = { path = "../media" }
 obs = { path = "../obs" }
 replay = { path = "../replay" }
 serde_json.workspace = true

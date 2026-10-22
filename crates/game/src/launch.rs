@@ -51,6 +51,7 @@ pub fn launch(port: u16, extra: &[String]) -> Result<Child> {
     let port = port.to_string();
     let mut args = vec!["-netconport", &port, "-insecure", "-novid", "-console"];
     args.extend(extra.iter().map(String::as_str));
+    dont_inherit_std_handles();
     Command::new(bin.join("dota2.exe"))
         .args(&args)
         .current_dir(&bin)
@@ -63,6 +64,22 @@ pub fn launch(port: u16, extra: &[String]) -> Result<Child> {
         .stderr(Stdio::null())
         .spawn()
         .context("启动 dota2.exe 失败")
+}
+
+/// 子进程会继承所有可继承的句柄，包括我们自己的标准输出（调用方给的管道），即使给子进程设了 Stdio::null。
+/// 游戏继承了管道，调用方就要等游戏退出才读到管道结束（2026-10-22 测试时命令一直不返回）
+fn dont_inherit_std_handles() {
+    use windows::Win32::Foundation::{HANDLE_FLAG_INHERIT, HANDLE_FLAGS, SetHandleInformation};
+    use windows::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
+    for std in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        unsafe {
+            if let Ok(h) = GetStdHandle(std)
+                && !h.is_invalid()
+            {
+                let _ = SetHandleInformation(h, HANDLE_FLAG_INHERIT.0, HANDLE_FLAGS(0));
+            }
+        }
+    }
 }
 
 /// 等 netcon 端口开始监听
