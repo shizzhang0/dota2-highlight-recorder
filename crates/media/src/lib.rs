@@ -1,6 +1,9 @@
 //! 视频文件的检查与处理。
 //!
 //! 导出后核对时长不用 ffprobe：mp4 的总时长就写在 `moov/mvhd` 里，直接读，少一个外部依赖。
+//! 裁剪、拼接调用 ffmpeg（`ffmpeg` 模块）。
+
+pub mod ffmpeg;
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};

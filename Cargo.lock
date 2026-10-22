@@ -349,7 +349,9 @@ dependencies = [
  "clap",
  "clips",
  "game",
+ "media",
  "replay",
+ "serde_json",
 ]
 
 [[package]]
