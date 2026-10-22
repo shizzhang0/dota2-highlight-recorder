@@ -2,6 +2,9 @@
 //!
 //! d2hr list                 列出游戏客户端已下载的录像
 //! d2hr plan <比赛ID|文件>   打印某个玩家的高光片段和录制计划（默认是自己）
+//! d2hr record <比赛ID|文件> 录下这些片段，每个片段一个视频，可选拼成合集
+
+mod record;
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -34,6 +37,46 @@ enum Command {
         #[command(flatten)]
         rules: Rules,
     },
+    /// 录制高光片段（会启动或重启 Dota，录完之前不要动鼠标键盘）
+    Record {
+        /// 比赛 ID（在录像目录里找），或者录像文件路径
+        replay: String,
+        /// 玩家：序号 0–9 或账号 ID，默认是自己（Steam 当前登录的账号）
+        #[arg(long)]
+        player: Option<u64>,
+        /// 只录这几个片段（plan 列出的序号），例如 1,3；默认全录
+        #[arg(long, value_delimiter = ',')]
+        clips: Vec<usize>,
+        /// 再把所有片段拼成一个合集
+        #[arg(long)]
+        compile: bool,
+        /// 录制分辨率，例如 1920x1080；默认跟游戏窗口一致。和游戏现在的窗口大小不同时要重启游戏，
+        /// 录完游戏会退出（它退出时会把这个大小存进显示设置，程序等它退出后改回原来的大小）
+        #[arg(long, value_parser = parse_resolution)]
+        resolution: Option<(u32, u32)>,
+        /// 输出目录，默认是「视频\d2hr」
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// ffmpeg.exe 或它所在的目录；不给就看环境变量 D2HR_FFMPEG，再在 PATH 里找
+        #[arg(long)]
+        ffmpeg: Option<PathBuf>,
+        /// 接收游戏状态（GSI）的本机端口
+        #[arg(long, default_value_t = game::gsi::DEFAULT_PORT)]
+        gsi_port: u16,
+        /// 录完让游戏退出
+        #[arg(long)]
+        quit: bool,
+        #[command(flatten)]
+        rules: Rules,
+    },
+}
+
+fn parse_resolution(s: &str) -> Result<(u32, u32), String> {
+    let (w, h) = s.split_once(['x', 'X', '*']).ok_or("要写成 宽x高，例如 1920x1080")?;
+    match (w.trim().parse(), h.trim().parse()) {
+        (Ok(w), Ok(h)) if w >= 640 && h >= 480 => Ok((w, h)),
+        _ => Err("要写成 宽x高，例如 1920x1080".into()),
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -103,6 +146,31 @@ fn run() -> Result<()> {
     match cli.command {
         Command::List => list(&dir),
         Command::Plan { replay, player, rules } => plan(&dir, &replay, player, &rules.params()),
+        Command::Record { replay, player, clips, compile, resolution, out, ffmpeg, gsi_port, quit, rules } => {
+            // 先找 ffmpeg，免得游戏都开起来了才发现缺东西
+            let ff = media::ffmpeg::Ffmpeg::locate(ffmpeg.as_deref())?;
+            let p = rules.params();
+            let (r, player) = load(&dir, &replay, player)?;
+            let plan = clips::plan(&r, player, &p);
+            if plan.is_empty() {
+                bail!("这名玩家整场没有击杀，没有可录的片段");
+            }
+            let wanted: Vec<usize> = if clips.is_empty() { (1..=plan.len()).collect() } else { clips };
+            let mut selected = Vec::new();
+            for i in wanted {
+                let clip = plan.get(i.wrapping_sub(1)).with_context(|| format!("没有第 {i} 个片段（共 {} 个）", plan.len()))?;
+                selected.push(record::Selected { index: i, clip: clip.clone() });
+            }
+            let secs: f32 = selected.iter().map(|s| s.clip.estimated_seconds(&p)).sum();
+            let hero_name = hero(&r.players[player].hero);
+            println!("录 #{player} {hero_name} 的 {} 个片段，预计约 {:.1} 分钟（不含启动游戏），期间请勿操作鼠标键盘。", selected.len(), secs / 60.0);
+            let out = match out {
+                Some(d) => d,
+                None => PathBuf::from(std::env::var("USERPROFILE").context("找不到用户目录")?).join(r"Videos\d2hr"),
+            };
+            let o = record::Options { compile, resolution, out, gsi_port, quit };
+            record::run(&r, player, &selected, &p, &ff, &o)
+        }
     }
 }
 
@@ -155,7 +223,8 @@ fn list(dir: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> Result<()> {
+/// 读录像并选玩家：给了序号或账号就用，否则找自己
+fn load(dir: &std::path::Path, which: &str, player: Option<u64>) -> Result<(replay::Replay, usize)> {
     let path = match which.parse::<u64>() {
         Ok(id) => dir.join(format!("{id}.dem")),
         Err(_) => PathBuf::from(which),
@@ -164,8 +233,6 @@ fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> 
         bail!("本地没有这场录像：{}\n请先在游戏的「观战 → 比赛记录」里找到这场比赛，点「下载」。", path.display());
     }
     let r = replay::parse(&path)?;
-
-    // 选玩家：给了序号或账号就用，否则找自己
     let me = game::steam::me();
     let player = match player {
         Some(n) if n < r.players.len() as u64 => n as usize,
@@ -177,6 +244,12 @@ fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> 
             })?
         }
     };
+    Ok((r, player))
+}
+
+fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> Result<()> {
+    let (r, player) = load(dir, which, player)?;
+    let me = game::steam::me();
 
     println!("比赛 {}  游戏版本 {}", r.match_id, r.game_build);
     for pl in &r.players {

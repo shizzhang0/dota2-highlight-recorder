@@ -3,7 +3,7 @@ name = "media"
 version = "0.1.0"
 edition.workspace = true
 license-file.workspace = true
-description = "视频文件的检查与处理：读 mp4 时长，之后的拼接也放这里"
+description = "视频文件的检查与处理：读 mp4 时长，调用 ffmpeg 裁剪、拼接"
 
 [dependencies]
 anyhow.workspace = true

@@ -65,6 +65,47 @@ pub fn kv(text: &str, key: &str) -> Option<String> {
     None
 }
 
+/// Valve 的 KeyValues 文本里按路径取值，例如 `["apps", "570", "LaunchOptions"]`：
+/// 路径是层层嵌套的块名，只要求按顺序出现在当前位置的上层（中间可以隔着别的层）
+fn kv_path(text: &str, path: &[&str]) -> Option<String> {
+    let (want, parents) = path.split_last()?;
+    // 当前所在的块名，从外到里；`last` 是刚读到、还没确定是不是块名的键
+    let mut stack: Vec<String> = Vec::new();
+    let mut last: Option<String> = None;
+    for line in text.lines() {
+        let t = line.trim();
+        if t == "{" {
+            stack.push(last.take().unwrap_or_default());
+            continue;
+        }
+        if t == "}" {
+            stack.pop();
+            continue;
+        }
+        let mut it = t.split('"');
+        let (_, k, _, v) = (it.next(), it.next(), it.next(), it.next());
+        let Some(k) = k else { continue };
+        match v {
+            Some(v) if k == *want && stack.len() >= parents.len() => {
+                // 上层块名的末尾必须正好是 parents
+                if stack[stack.len() - parents.len()..].iter().map(String::as_str).eq(parents.iter().copied()) {
+                    return Some(v.to_string());
+                }
+            }
+            Some(_) => {}
+            None => last = Some(k.to_string()),
+        }
+    }
+    None
+}
+
+/// 用户在 Steam 里给 Dota 设的启动选项（`userdata\<id>\config\localconfig.vdf`），没设返回空
+pub fn launch_options(account: u32) -> Result<Vec<String>> {
+    let path = steam_dir()?.join("userdata").join(account.to_string()).join(r"config\localconfig.vdf");
+    let text = fs::read_to_string(&path).with_context(|| format!("读不到 {}", path.display()))?;
+    Ok(kv_path(&text, &["apps", "570", "LaunchOptions"]).map(|s| s.split_whitespace().map(str::to_owned).collect()).unwrap_or_default())
+}
+
 /// 游戏的显示设置（`local\cfg\video.txt`，只在本机）。读不到的项为 None
 #[derive(Debug, Default)]
 pub struct Video {
@@ -72,6 +113,32 @@ pub struct Video {
     pub height: Option<u32>,
     pub fullscreen: Option<bool>,
     pub borderless: Option<bool>,
+}
+
+/// 把 `video.txt` 里的窗口大小改回 `w`×`h`，其他设置不动。
+/// 带 `-w -h` 启动的游戏退出时会把这个大小写进去（2026-10-22 实测），录完要改回来；要在游戏退出之后调用
+pub fn set_video_size(account: u32, w: u32, h: u32) -> Result<()> {
+    let path = dota_user_dir(account)?.join(r"local\cfg\video.txt");
+    let text = fs::read_to_string(&path).with_context(|| format!("读不到 {}", path.display()))?;
+    let mut out = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let key = line.split('"').nth(1);
+        let value = match key {
+            Some("setting.defaultres") => Some(w),
+            Some("setting.defaultresheight") => Some(h),
+            _ => None,
+        };
+        match value {
+            // 保留原来的缩进、分隔符和换行，只换值
+            Some(v) => {
+                let (head, _) = line.rsplit_once('"').and_then(|(a, _)| a.rsplit_once('"')).unwrap_or((line, ""));
+                let tail = &line[line.trim_end().len()..];
+                out.push_str(&format!("{head}\"{v}\"{tail}"));
+            }
+            None => out.push_str(line),
+        }
+    }
+    fs::write(&path, out).with_context(|| format!("写不了 {}", path.display()))
 }
 
 pub fn video(account: u32) -> Result<Video> {
