@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/game", "crates/obs", "crates/recorder", "crates/replay"]
+members = ["crates/clips", "crates/d2hr", "crates/game", "crates/obs", "crates/recorder", "crates/replay"]
 
 [workspace.package]
 edition = "2024"
@@ -9,6 +9,7 @@ license-file = "LICENSE"
 [workspace.dependencies]
 anyhow = "1"
 bzip2 = "0.6"
+clap = { version = "4.6", features = ["derive"] }
 obws = { version = "0.15", features = ["events"] }
 ruzstd = "0.9"
 serde = { version = "1", features = ["derive"] }

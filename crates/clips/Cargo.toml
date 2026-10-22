@@ -1,0 +1,14 @@
+[package]
+name = "clips"
+version = "0.1.0"
+edition.workspace = true
+license-file.workspace = true
+description = "高光片段规则：每次击杀的起止、合并成片段、拆成导出段、预计耗时、文件命名"
+
+[dependencies]
+replay = { path = "../replay" }
+
+[dev-dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true

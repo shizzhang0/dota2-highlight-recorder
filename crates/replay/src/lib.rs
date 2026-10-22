@@ -1,13 +1,16 @@
-//! 读取 Dota 2 录像（.dem）：本场玩家、英雄，以及英雄击杀、多杀、连杀的时间点。
+//! 读取 Dota 2 录像（.dem）：本场玩家、英雄，英雄击杀、多杀、连杀的时间点，以及英雄之间的伤害记录。
 
 pub mod download;
+mod local;
+
+pub use local::{LocalReplay, Summary, list, peek};
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Context as _, Result, anyhow, bail};
 use serde::Serialize;
 use source2_demo::prelude::*;
 use source2_demo::proto::DotaCombatlogTypes;
@@ -15,9 +18,16 @@ use source2_demo::proto::DotaCombatlogTypes;
 /// Steam64 ID 与 32 位账号 ID（OpenDota、比赛记录里用的那个）之间的差值
 const STEAM_ID64_BASE: u64 = 76561197960265728;
 
+/// 验证过的最新游戏版本（录像里服务器信息给的版本号，如 `dota_v6960` 里的 6960）。
+/// 解析出错或合理性检查不通过时，录像比这个还新，就提示"格式比较新，请更新软件"。
+/// 升级 source2-demo 并跑完回归检查后，把它改成新录像的版本号。
+pub const VERIFIED_GAME_BUILD: u32 = 6965;
+
 #[derive(Debug, Serialize)]
 pub struct Replay {
     pub match_id: u64,
+    /// 录像里服务器信息给的游戏版本号，见 [`VERIFIED_GAME_BUILD`]
+    pub game_build: u32,
     /// 录像总 tick 数
     pub playback_ticks: i32,
     /// 开局号角那一刻的引擎时间（秒），游戏时钟 = 引擎时间 - 此值
@@ -26,6 +36,9 @@ pub struct Replay {
     pub kills: Vec<Kill>,
     pub multi_kills: Vec<KillEvent>,
     pub kill_streaks: Vec<KillEvent>,
+    /// 英雄之间的伤害（受击方是英雄真身，攻击方能归到某个玩家），按时间排序。条数多，不进 JSON
+    #[serde(skip)]
+    pub damage: Vec<Damage>,
     /// 游戏时钟每走一秒记一个点，用来把时钟换算成 tick（比赛暂停时时钟不走，两者不成线性）
     #[serde(skip)]
     pub clock: Vec<ClockSample>,
@@ -75,6 +88,19 @@ pub struct Kill {
     pub assists: Vec<usize>,
 }
 
+/// 一次打在英雄真身上的伤害
+#[derive(Debug, Clone)]
+pub struct Damage {
+    pub tick: u32,
+    pub game_time: f32,
+    /// 造成伤害的玩家。召唤物、幻象等打的伤害记给主人（战斗日志的 damage source）
+    pub attacker: usize,
+    pub target: usize,
+    pub value: u32,
+    /// 是不是靠 damage source 才归到攻击方玩家（召唤物等），统计用
+    pub via_source: bool,
+}
+
 /// 游戏判定的多杀（count = 2 双杀 … 5 暴走）或连杀（count = 3 起）
 #[derive(Debug, Serialize)]
 pub struct KillEvent {
@@ -84,18 +110,8 @@ pub struct KillEvent {
     pub count: u32,
 }
 
-pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
-    let path = path.as_ref();
-    let file = File::open(path).with_context(|| format!("打不开录像 {}", path.display()))?;
-    let mut parser = Parser::from_reader(BufReader::new(file))?;
-
-    let info = parser.replay_info().clone();
-    let playback_ticks = info.playback_ticks();
-    let Some(dota) = info.game_info.and_then(|g| g.dota) else {
-        bail!("录像里没有 Dota 2 比赛信息");
-    };
-    let players: Vec<Player> = dota
-        .player_info
+fn players_of(dota: &source2_demo::proto::c_game_info::CDotaGameInfo) -> Vec<Player> {
+    dota.player_info
         .iter()
         .enumerate()
         .map(|(i, p)| Player {
@@ -105,12 +121,54 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
             team: p.game_team(),
             hero: p.hero_name().to_string(),
         })
-        .collect();
+        .collect()
+}
+
+/// 解析录像。出错或数据不合理时，如果录像的游戏版本比 [`VERIFIED_GAME_BUILD`] 新，
+/// 返回"格式比较新，请更新软件"的提示，而不是底层错误
+pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
+    let path = path.as_ref();
+    let file = File::open(path).with_context(|| format!("打不开录像 {}", path.display()))?;
+    let mut parser = Parser::from_reader(BufReader::new(file))?;
+    let result = parse_with(&mut parser).and_then(|r| sanity_check(&r).map(|()| r));
+    let build = parser.context().game_build();
+    result.map_err(|e| {
+        if build > VERIFIED_GAME_BUILD {
+            anyhow!("这场录像的格式比较新（游戏版本 {build}，本程序验证到 {VERIFIED_GAME_BUILD}），请更新软件。原始错误：{e:#}")
+        } else {
+            e.context(format!("解析录像失败：{}", path.display()))
+        }
+    })
+}
+
+/// 格式变化不一定报错（比如验证 5 里 m_fGameTime 悄悄消失），解析完做几项检查
+fn sanity_check(r: &Replay) -> Result<()> {
+    if r.players.len() != 10 {
+        bail!("玩家数是 {}，不是 10", r.players.len());
+    }
+    if r.kills.is_empty() {
+        bail!("整场一次击杀都没有");
+    }
+    let increasing = r.clock.windows(2).all(|w| w[1].tick > w[0].tick && w[1].game_time > w[0].game_time);
+    if r.clock.is_empty() || !increasing {
+        bail!("游戏时钟采样缺失或不是递增的");
+    }
+    Ok(())
+}
+
+fn parse_with(parser: &mut Parser<'_, source2_demo::reader::SeekableReader<BufReader<File>>>) -> Result<Replay> {
+    let info = parser.replay_info().clone();
+    let playback_ticks = info.playback_ticks();
+    let Some(dota) = info.game_info.and_then(|g| g.dota) else {
+        bail!("录像里没有 Dota 2 比赛信息");
+    };
+    let players = players_of(&dota);
 
     let collector = parser.register_observer::<Collector>();
     collector.borrow_mut().score = vec![Score::default(); players.len()];
     parser.run_to_end()?;
     let mut c = collector.take();
+    let game_build = parser.context().game_build();
 
     let Some(game_start_time) = c.game_start_time else {
         bail!("录像里找不到开局时间，可能不完整");
@@ -165,14 +223,31 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
         }
     }
 
+    // 英雄之间的伤害：攻击方先认 attacker（英雄本体或它的幻象），认不出再认 damage source（召唤物的主人）
+    let mut damage: Vec<Damage> = c
+        .damage
+        .into_iter()
+        .filter_map(|d| {
+            let target = player_of(&d.target)?;
+            let (attacker, via_source) = match player_of(&d.attacker) {
+                Some(p) => (p, false),
+                None => (player_of(&d.source)?, true),
+            };
+            Some(Damage { tick: d.tick, game_time: clock(d.timestamp), attacker, target, value: d.value, via_source })
+        })
+        .collect();
+    damage.sort_by(|a, b| a.game_time.total_cmp(&b.game_time));
+
     Ok(Replay {
         match_id: dota.match_id(),
+        game_build,
         playback_ticks,
         game_start_time,
         players,
         kills,
         multi_kills,
         kill_streaks,
+        damage,
         clock: c.clock,
     })
 }
@@ -185,6 +260,16 @@ struct Collector {
     score: Vec<Score>,
     score_changes: Vec<ScoreChange>,
     clock: Vec<ClockSample>,
+    damage: Vec<RawDamage>,
+}
+
+struct RawDamage {
+    tick: u32,
+    timestamp: f32,
+    attacker: String,
+    source: String,
+    target: String,
+    value: u32,
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -276,6 +361,20 @@ impl Collector {
     fn on_combat_log(&mut self, ctx: &Context, cle: &CombatLogEntry) -> ObserverResult {
         let name = |r: Result<&str, _>| r.unwrap_or_default().to_string();
         let kind = match cle.r#type() {
+            DotaCombatlogTypes::DotaCombatlogDamage => {
+                // 只要打在英雄真身上的伤害
+                if cle.is_target_hero().unwrap_or(false) && !cle.is_target_illusion().unwrap_or(false) {
+                    self.damage.push(RawDamage {
+                        tick: ctx.tick(),
+                        timestamp: cle.timestamp().unwrap_or_default(),
+                        attacker: name(cle.attacker_name()),
+                        source: name(cle.damage_source_name()),
+                        target: name(cle.target_name()),
+                        value: cle.value().unwrap_or_default(),
+                    });
+                }
+                return Ok(());
+            }
             DotaCombatlogTypes::DotaCombatlogDeath => {
                 // 只要真身英雄的死亡；幻象、复活中的（如骷髅王带盾）不算
                 if !cle.is_target_hero().unwrap_or(false)

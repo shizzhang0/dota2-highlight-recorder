@@ -6,14 +6,8 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use winreg::RegKey;
-use winreg::enums::HKEY_CURRENT_USER;
 
-fn steam_dir() -> Result<PathBuf> {
-    let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Software\Valve\Steam").context("注册表里没找到 Steam")?;
-    let p: String = key.get_value("SteamPath")?;
-    Ok(PathBuf::from(p.replace('/', "\\")))
-}
+use crate::steam::steam_dir;
 
 /// Steam 可能有多个库，Dota 不一定装在主库里
 fn libraries(steam: &Path) -> Vec<PathBuf> {

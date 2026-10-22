@@ -24,15 +24,36 @@ fn agent() -> Agent {
         .into()
 }
 
-/// OpenDota 已知的录像地址；还没取到 salt 时为 None
-pub fn replay_url(match_id: u64) -> Result<Option<String>> {
-    let v: serde_json::Value = agent()
+fn opendota_match(match_id: u64) -> Result<serde_json::Value> {
+    agent()
         .get(format!("{OPENDOTA}/matches/{match_id}"))
         .call()
         .context("查询 OpenDota 比赛详情失败")?
         .body_mut()
-        .read_json()?;
+        .read_json()
+        .context("OpenDota 返回的不是 JSON")
+}
+
+/// OpenDota 已知的录像地址；还没取到 salt 时为 None
+pub fn replay_url(match_id: u64) -> Result<Option<String>> {
+    let v = opendota_match(match_id)?;
     Ok(v["replay_url"].as_str().filter(|s| !s.is_empty()).map(str::to_owned))
+}
+
+/// OpenDota（即 Valve 官方统计）里每个玩家的击杀、死亡数，按录像里的玩家序号 0–9 排列，
+/// 用来核对解析结果。OpenDota 的 player_slot 是 0–4 和 128–132
+pub fn official_kills_deaths(match_id: u64) -> Result<Vec<(u32, u32)>> {
+    let v = opendota_match(match_id)?;
+    let players = v["players"].as_array().context("OpenDota 没有这场比赛的玩家数据")?;
+    let mut out = vec![(0, 0); 10];
+    for p in players {
+        let slot = p["player_slot"].as_u64().context("缺 player_slot")? as usize;
+        let i = if slot >= 128 { slot - 128 + 5 } else { slot };
+        if i < 10 {
+            out[i] = (p["kills"].as_u64().unwrap_or(0) as u32, p["deaths"].as_u64().unwrap_or(0) as u32);
+        }
+    }
+    Ok(out)
 }
 
 /// 请 OpenDota 去取这场比赛的录像信息，然后等它给出地址

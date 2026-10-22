@@ -3,4 +3,5 @@
 pub mod gsi;
 pub mod launch;
 pub mod netcon;
+pub mod steam;
 pub mod window;
