@@ -4,7 +4,7 @@
 //!     --match <比赛ID> --player <序号0-9|账号ID> --from <分:秒> --to <分:秒> [--extra "-perfectworld"]
 //!
 //! 录像取自游戏客户端的 replays 目录。游戏没开时自动以 `-netconport 2121 -insecure` 启动。
-//! GSI 借用已安装的 dota2-game-helper2 配置（推送到 127.0.0.1:53000），用来确认时钟和追踪的玩家。
+//! GSI 用我们自己的配置（端口 2122，录完删除），用来确认时钟和追踪的玩家；配置刚写入时游戏要重启才会推送。
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
@@ -18,7 +18,6 @@ use obs::obws::requests::sources::{SaveScreenshot, SourceId};
 use serde_json::{Value, json};
 
 const PORT: u16 = 2121;
-const GSI_ADDR: &str = "127.0.0.1:53000";
 const SCENE: &str = "d2hr-record";
 const INPUT: &str = "d2hr-dota-capture";
 const WINDOW: &str = "Dota 2:SDL_app:dota2.exe";
@@ -146,7 +145,8 @@ async fn main() -> Result<()> {
         game::launch::launch(PORT, &a.extra)?;
         game::launch::wait_netcon(PORT, Duration::from_secs(180))?;
     }
-    let gsi = game::gsi::listen(GSI_ADDR).context("GSI 端口被占用（dota2-game-helper2 在运行？）")?;
+    game::gsi::install(game::gsi::DEFAULT_PORT)?;
+    let gsi = game::gsi::listen(game::gsi::DEFAULT_PORT)?;
     let mut con = Netcon::connect(PORT)?;
     con.wait_responsive(Duration::from_secs(120))?;
     con.drain(Duration::from_millis(300), Duration::from_secs(2));
@@ -161,6 +161,7 @@ async fn main() -> Result<()> {
     let restore = if mute == "true" { "1" } else { "0" };
     con.send(&format!("snd_mute_losefocus {restore}"))?;
     println!("snd_mute_losefocus 已恢复为 {}", convar(&mut con, "snd_mute_losefocus")?);
+    game::gsi::remove()?;
     let out = result?;
     println!("完成：{}", out.display());
     Ok(())
