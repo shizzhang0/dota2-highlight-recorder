@@ -32,6 +32,9 @@ pub struct Job<'a> {
     pub out_dir: &'a Path,
     /// 点完导出就把前台还回去（测试渲染时游戏不在前台行不行）
     pub background_render: bool,
+    /// 追踪的玩家（0–9）。点完导出后要再按几次他的追踪键：剪辑工具导出时自己跳回选区起点，
+    /// 会清掉选中单位，视频里底部的技能栏、装备栏、血条就是空的（2026-10-22 实测，按键后从第一帧起就完整）
+    pub player: usize,
 }
 
 #[derive(Debug)]
@@ -130,6 +133,11 @@ pub fn export(ui: &mut Ui, con: &mut Netcon, gsi: &Receiver<Value>, job: &Job) -
     ui.click(layout::DIALOG_EXPORT, "开始导出")?;
     if job.background_render {
         front = None;
+    }
+    let window = crate::window::dota_window()?;
+    for _ in 0..8 {
+        crate::window::post_key(window, crate::window::focus_player_key(job.player))?;
+        std::thread::sleep(Duration::from_millis(500));
     }
 
     let waited = wait_render(gsi, job, &before);

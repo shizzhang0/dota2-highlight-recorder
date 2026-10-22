@@ -302,6 +302,7 @@ fn export_all(
             window: a.window,
             out_dir: tmp,
             background_render: a.background_render,
+            player,
         };
         let done = clip_builder::export(&mut ui, s.con(), rx, &job)?;
         let secs = media::mp4_duration(&done.path)?;
