@@ -27,7 +27,7 @@ Reference: https://github.com/DrEAmSs59/CS2-insight-agent (a similar tool for CS
 | Part | Choice |
 |---|---|
 | Desktop app | Tauri 2 + Rust, plain HTML/CSS/JS front end |
-| Replay parsing | [source2-demo](https://github.com/Rupas1k/source2-demo) (fallback: [Clarity](https://github.com/skadistats/clarity)) |
+| Replay parsing | [source2-demo](https://github.com/Rupas1k/source2-demo) (fallback: [haste](https://github.com/blukai/haste) (Rust) or [manta](https://github.com/dotabuff/manta) (Go)) |
 | Playback control | Game console over netcon (`-netconport`, requires `-insecure`); spectator UI via window messages (keys/clicks) |
 | Playback state | Game State Integration (GSI) |
 | Recording | Dota 2's built-in replay clip builder (≤ 60 s per export; longer clips exported in parts and joined) — [notes (zh-CN)](docs/spikes/06-clip-builder.md) |

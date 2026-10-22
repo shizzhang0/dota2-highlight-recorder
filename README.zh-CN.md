@@ -27,7 +27,7 @@
 | 环节 | 选择 |
 |---|---|
 | 桌面应用 | Tauri 2 + Rust，前端原生 HTML/CSS/JS |
-| 录像解析 | [source2-demo](https://github.com/Rupas1k/source2-demo)（备选 [Clarity](https://github.com/skadistats/clarity)） |
+| 录像解析 | [source2-demo](https://github.com/Rupas1k/source2-demo)（备选 [haste](https://github.com/blukai/haste)（Rust）或 [manta](https://github.com/dotabuff/manta)（Go）） |
 | 控制回放 | 游戏控制台 netcon（`-netconport`，需 `-insecure`）；观战界面用窗口消息发按键/点击 |
 | 读取回放状态 | Game State Integration（GSI） |
 | 录制 | Dota 2 回放自带的视频剪辑工具（单段 ≤ 60 秒，长片段分段导出后拼接）—— [验证记录](docs/spikes/06-clip-builder.md) |
