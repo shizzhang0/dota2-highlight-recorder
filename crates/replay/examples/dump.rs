@@ -27,7 +27,9 @@ fn main() -> anyhow::Result<()> {
     }
 
     let hero = |id: usize| r.players[id].hero.trim_start_matches("npc_dota_hero_");
-    println!("比赛 {}  解析耗时 {:.2?}", r.match_id, elapsed);
+    println!("比赛 {}  游戏版本 {}  解析耗时 {:.2?}", r.match_id, r.game_build, elapsed);
+    let via = r.damage.iter().filter(|d| d.via_source).count();
+    println!("英雄间伤害 {} 条，其中靠 damage source 归到主人的 {via} 条", r.damage.len());
     // 自检：把每次击杀的游戏时间换算回 tick，和击杀实际发生的 tick 比
     let worst = r.kills.iter().filter_map(|k| r.tick_at(k.game_time).map(|t| t.abs_diff(k.tick))).max();
     println!("时钟采样 {} 个，击杀时间换算回 tick 的最大误差 {:?} tick", r.clock.len(), worst);

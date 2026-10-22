@@ -18,7 +18,7 @@ Reference: https://github.com/DrEAmSs59/CS2-insight-agent (a similar tool for CS
 
 ## Principles
 
-- No injection into the game process, no changes to game files
+- No injection into the game process; no changes to game files, except a GSI config file written for the recording session and deleted afterwards
 - Any game settings changed for recording are restored afterwards
 - Validate first: prove that replay control and recording work before writing the real code
 

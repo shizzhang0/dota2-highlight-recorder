@@ -1,0 +1,13 @@
+[package]
+name = "d2hr"
+version = "0.1.0"
+edition.workspace = true
+license-file.workspace = true
+description = "命令行：列出本地录像、打印高光录制计划"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+clips = { path = "../clips" }
+game = { path = "../game" }
+replay = { path = "../replay" }
