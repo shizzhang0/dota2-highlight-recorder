@@ -136,11 +136,15 @@ pub fn export(ui: &mut Ui, con: &mut Netcon, gsi: &Receiver<Value>, job: &Job) -
     }
     let window = crate::window::dota_window()?;
     for _ in 0..8 {
-        crate::window::post_key(window, crate::window::focus_player_key(job.player))?;
+        crate::window::post_key(window, crate::keys::focus_player(job.player)?)?;
         std::thread::sleep(Duration::from_millis(500));
     }
 
     let waited = wait_render(gsi, job, &before);
+    if crate::cancel::requested() {
+        // 渲染可能还没完，提示框还没出来，不去乱点；剪辑工具留给用户自己关
+        return waited;
+    }
 
     // 不管成败都会弹"导出视频成功"，关掉它再关剪辑工具
     let _front: Foreground = match front {
@@ -163,6 +167,7 @@ fn wait_render(gsi: &Receiver<Value>, job: &Job, before: &HashSet<PathBuf>) -> R
     let (mut size, mut stable_since) = (0, Instant::now());
     loop {
         std::thread::sleep(Duration::from_millis(500));
+        crate::cancel::check()?;
         while let Ok(v) = gsi.try_recv() {
             if let Some(c) = State::from_json(&v).clock {
                 first.get_or_insert(c);

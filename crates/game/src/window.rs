@@ -27,10 +27,3 @@ pub fn post_key(window: HWND, vk: u16) -> Result<()> {
     }
     Ok(())
 }
-
-/// 追踪玩家序号 `player`（0–9）的默认热键：数字键 1–9、0（`SpectatorCameraFocusPlayer1..10`）。
-/// 用户改过热键时不对，正式版要读 dotakeys_personal.lst
-pub fn focus_player_key(player: usize) -> u16 {
-    let digit = (player + 1) % 10;
-    b'0' as u16 + digit as u16
-}

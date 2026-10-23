@@ -130,6 +130,8 @@ impl Ui {
 
     /// 让游戏内的光标移到 `p`：放好系统光标，再微移让游戏收到移动事件；有偏差就按实际位置校正
     fn move_to(&self, p: Pt, held: bool) -> Result<()> {
+        // 按了 Ctrl+C 就不再动鼠标（拖动到一半时也停；按下的左键由调用方之后的点击或用户自己松开）
+        crate::cancel::check()?;
         let target = self.to_screen(p);
         unsafe {
             SetCursorPos(target.x, target.y)?;
@@ -178,7 +180,13 @@ impl Ui {
         std::thread::sleep(Duration::from_millis(150));
         for i in 1..=12 {
             let p = Pt { x: a.x + (b.x - a.x) * i / 12, y: a.y + (b.y - a.y) * i / 12 };
-            self.move_to(p, true)?;
+            if let Err(e) = self.move_to(p, true) {
+                // 拖到一半被打断（比如 Ctrl+C）也要松开左键
+                unsafe {
+                    let _ = PostMessageW(self.hwnd, WM_LBUTTONUP, WPARAM(0), lparam(p));
+                }
+                return Err(e);
+            }
             std::thread::sleep(Duration::from_millis(40));
         }
         std::thread::sleep(Duration::from_millis(150));

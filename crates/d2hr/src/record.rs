@@ -55,6 +55,7 @@ fn dota_running() -> bool {
 fn wait_dota_gone(timeout: Duration) -> Result<()> {
     let started = Instant::now();
     while dota_running() {
+        game::cancel::check()?;
         if started.elapsed() > timeout {
             bail!("等了 {timeout:?} 游戏还没退出");
         }
@@ -129,11 +130,20 @@ pub fn run(r: &Replay, player: usize, selected: &[Selected], p: &Params, ff: &Ff
     std::fs::create_dir_all(&tmp)?;
     std::fs::create_dir_all(&diag)?;
 
+    // 第一次 Ctrl+C 只做标记：做完手上这一步就停，照常恢复设置
+    game::cancel::install()?;
     let started = Instant::now();
     // 带 -w -h 启动的游戏退出时会把这个窗口大小写进显示设置，先记下原来的
     let account = game::steam::me();
     let original_size = account.and_then(|a| game::steam::video(a).ok()).and_then(|v| v.width.zip(v.height));
-    let (con, rx, sized) = prepare(o, &diag)?;
+    let (con, rx, sized) = match prepare(o, &diag) {
+        Ok(v) => v,
+        Err(e) => {
+            // 还没开始改设置，只要删掉刚写的 GSI 配置
+            let _ = gsi::remove();
+            return Err(if game::cancel::requested() { anyhow::anyhow!("已取消（Ctrl+C）") } else { e });
+        }
+    };
     // 设置守护：离开作用域（包括出错）时恢复，并删掉 GSI 配置
     let mut s = Session::new(con);
     s.remove_gsi_on_exit();
@@ -143,6 +153,8 @@ pub fn run(r: &Replay, player: usize, selected: &[Selected], p: &Params, ff: &Ff
 
     let result = record_all(r, player, team, selected, p, ff, o, &mut s, &rx, &tmp, &diag);
     let restored = s.restore();
+    // 下面这些收尾也不能被 Ctrl+C 打断
+    let hold = game::cancel::hold();
     if o.quit || sized {
         let _ = s.con().send("quit");
     }
@@ -164,7 +176,11 @@ pub fn run(r: &Replay, player: usize, selected: &[Selected], p: &Params, ff: &Ff
     if let Err(e) = &restored {
         println!("恢复游戏设置时出错：{e:#}");
     }
-    let files = result?;
+    drop(hold);
+    let files = match result {
+        Err(_) if game::cancel::requested() => bail!("已取消（Ctrl+C），游戏设置已恢复"),
+        r => r?,
+    };
     println!("\n完成，用时 {:.1} 分钟，输出 {} 个文件：", started.elapsed().as_secs_f32() / 60.0, files.len());
     for f in &files {
         println!("  {}", f.display());
@@ -196,8 +212,9 @@ fn record_all(
     gsi::wait_for(rx, Duration::from_secs(60), "这场比赛的 GSI 时钟", |st| st.match_id == Some(id) && st.clock.is_some())?;
 
     for i in (1..=5).rev() {
-        println!("{i} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘…");
+        println!("{i} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘（要停下就按 Ctrl+C）…");
         std::thread::sleep(Duration::from_secs(1));
+        game::cancel::check()?;
     }
     let mut ui = Ui::attach()?;
     ui.set_diag_dir(diag)?;
@@ -219,7 +236,7 @@ fn record_all(
         println!("[{}/{}] 片段 {}：{}", n + 1, selected.len(), sel.index, name);
         let mut cuts = Vec::new();
         for (k, e) in clip.exports.iter().enumerate() {
-            let from = (e.span.start - p.export_margin).max(first);
+            let from = (e.span.start - p.export_lead).max(first);
             let to = (e.span.end + p.export_margin).min(last);
             let job = Job {
                 from,
@@ -276,6 +293,8 @@ fn export_checked(ui: &mut Ui, s: &mut Session, rx: &Receiver<Value>, job: &Job,
             }
             Err(e) => last_err = Some(e),
         }
+        // 用户按了 Ctrl+C 就不重来
+        game::cancel::check()?;
         if attempt == 1 {
             println!("  第一次导出不对（{:#}），重来一次", last_err.as_ref().unwrap());
         }

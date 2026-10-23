@@ -1,6 +1,7 @@
 //! 找到 Dota 2 安装目录，直接启动 dota2.exe（不经过 Steam 的 -applaunch，不弹确认框）。
 
 use std::net::TcpStream;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -8,6 +9,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 
 use crate::steam::steam_dir;
+
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
 /// Steam 可能有多个库，Dota 不一定装在主库里
 fn libraries(steam: &Path) -> Vec<PathBuf> {
@@ -58,6 +62,8 @@ pub fn launch(port: u16, extra: &[String]) -> Result<Child> {
         // 不经过 Steam 启动时，不设 SteamAppId 游戏会不知道自己是谁
         .env("SteamAppId", "570")
         .env("SteamGameId", "570")
+        // 不挂在我们的控制台上：否则用户按 Ctrl+C 时游戏也会收到信号被关掉
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
         // 游戏会一直开着，不能让它继承我们的输出管道，否则调用方会等它退出才算结束
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -86,6 +92,7 @@ fn dont_inherit_std_handles() {
 pub fn wait_netcon(port: u16, timeout: Duration) -> Result<()> {
     let started = Instant::now();
     while started.elapsed() < timeout {
+        crate::cancel::check()?;
         if netcon_ready(port) {
             return Ok(());
         }

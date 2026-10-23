@@ -52,13 +52,13 @@ pub fn setup(ui: &mut Ui, panel: Panel, team: Team) -> Result<()> {
     ui.click(fog, "阵营迷雾")
 }
 
-/// 按数字键追踪玩家 `player`（0–9），用 GSI 确认。按键用 PostMessage，不需要前台
+/// 按追踪热键（读自用户的热键设置）追踪玩家 `player`（0–9），用 GSI 确认。按键用 PostMessage，不需要前台
 pub fn focus(player: usize, gsi: &Receiver<Value>) -> Result<()> {
     let window = crate::window::dota_window()?;
     crate::gsi::drain(gsi);
-    crate::window::post_key(window, crate::window::focus_player_key(player))?;
+    crate::window::post_key(window, crate::keys::focus_player(player)?)?;
     // 暂停时 GSI 几秒才一个包，多等一会
     crate::gsi::wait_next(gsi, Duration::from_secs(10), &format!("追踪玩家 #{player}"), |s| s.selected == Some(player))
         .map(drop)
-        .context("按键后追踪的不是这个玩家（用户改过观战热键？）")
+        .context("按追踪热键后，GSI 显示追踪的不是这个玩家")
 }

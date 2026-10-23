@@ -225,7 +225,7 @@ fn parts(a: &Args, r: &Replay, player: usize) -> Result<Option<Vec<Part>>> {
         .iter()
         .enumerate()
         .map(|(i, e)| Part {
-            from: e.span.start - p.export_margin,
+            from: e.span.start - p.export_lead,
             to: (e.span.end + p.export_margin).min(last),
             name: if clip.exports.len() == 1 { base.clone() } else { format!("{base}_part{}", i + 1) },
         })
