@@ -199,7 +199,7 @@ async fn record(
     // 按键追踪该玩家，用 GSI 确认（先丢掉跳转前积压的包，免得读到旧状态）
     while gsi.try_recv().is_ok() {}
     let window = game::window::dota_window()?;
-    game::window::post_key(window, game::window::focus_player_key(player))?;
+    game::window::post_key(window, game::keys::focus_player(player)?)?;
     let v = wait_gsi(gsi, Duration::from_secs(5), |v| selected_player(v) == Some(player))
         .with_context(|| format!("按键后 GSI 显示追踪的不是玩家 #{player}"))?;
     println!("已追踪玩家 #{player}，GSI 时钟 {}", v["map"]["clock_time"]);

@@ -170,7 +170,9 @@ pub fn wait_next(rx: &Receiver<Value>, timeout: std::time::Duration, what: &str,
         if left.is_zero() {
             bail!("等了 {timeout:?} 还没等到：{what}（GSI 没收到包？游戏可能需要重启才能读到配置）");
         }
-        if let Ok(v) = rx.recv_timeout(left) {
+        crate::cancel::check()?;
+        // 分小段等，好及时响应 Ctrl+C
+        if let Ok(v) = rx.recv_timeout(left.min(std::time::Duration::from_millis(300))) {
             let s = State::from_json(&v);
             if pred(&s) {
                 return Ok(s);

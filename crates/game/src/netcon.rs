@@ -58,6 +58,7 @@ impl Netcon {
     pub fn wait_responsive(&mut self, timeout: Duration) -> Result<()> {
         let started = Instant::now();
         while started.elapsed() < timeout {
+            crate::cancel::check()?;
             self.send("echo d2hr_ready")?;
             if self.wait_for(Duration::from_secs(2), |l| l.trim() == "d2hr_ready").is_some() {
                 return Ok(());
@@ -100,14 +101,18 @@ impl Netcon {
         out
     }
 
-    /// 等到某行输出满足条件，返回该行；超时返回 None
+    /// 等到某行输出满足条件，返回该行；超时、连接断开或用户按了 Ctrl+C 返回 None
     pub fn wait_for(&self, timeout: Duration, mut pred: impl FnMut(&str) -> bool) -> Option<String> {
         let started = Instant::now();
         while let Some(left) = timeout.checked_sub(started.elapsed()) {
-            match self.lines.recv_timeout(left) {
+            if crate::cancel::requested() {
+                return None;
+            }
+            // 分小段等，好及时响应 Ctrl+C
+            match self.lines.recv_timeout(left.min(Duration::from_millis(300))) {
                 Ok(line) if pred(&line) => return Some(line),
-                Ok(_) => {}
-                Err(_) => return None,
+                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return None,
             }
         }
         None

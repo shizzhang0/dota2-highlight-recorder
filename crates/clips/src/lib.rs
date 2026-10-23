@@ -51,9 +51,12 @@ pub struct Params {
     pub merge_gap: f32,
     /// 片段内空档不超过这么多秒就保留
     pub keep_gap: f32,
-    /// 单次导出最长多少秒（剪辑工具单次超过约 60 秒会导出空文件）
+    /// 单次导出的内容最长多少秒（剪辑工具单次超过约 60 秒会导出空文件；加上两头多留的部分不超过 58 秒）
     pub max_export: f32,
-    /// 导出时选区两头各多留多少秒
+    /// 导出时选区开头多留多少秒，拼接时剪掉。跳转后游戏会补放天赋变化的通知，
+    /// 在画面右侧挂约 2.5 秒（2026-10-23 实测，和开头留多少无关），留 4 秒就都剪掉了
+    pub export_lead: f32,
+    /// 导出时选区结尾多留多少秒，拼接时剪掉
     pub export_margin: f32,
     /// 剪辑工具渲染耗时 ≈ 视频时长 × 这个倍数
     pub render_factor: f32,
@@ -72,7 +75,8 @@ impl Default for Params {
             post: 3.0,
             merge_gap: 18.0,
             keep_gap: 8.0,
-            max_export: 56.0,
+            max_export: 53.0,
+            export_lead: 4.0,
             export_margin: 1.0,
             render_factor: 1.8,
             export_overhead: 17.5,
@@ -136,7 +140,7 @@ impl Clip {
 
     /// 录这个片段预计要多少秒：每次导出的固定开销 + 渲染（含两头余量）
     pub fn estimated_seconds(&self, p: &Params) -> f32 {
-        self.exports.iter().map(|e| p.export_overhead + (e.span.len() + 2.0 * p.export_margin) * p.render_factor).sum()
+        self.exports.iter().map(|e| p.export_overhead + (e.span.len() + p.export_lead + p.export_margin) * p.render_factor).sum()
     }
 }
 

@@ -52,6 +52,8 @@ impl Session {
     /// 按相反顺序恢复所有改过的设置，并核对恢复结果。某项失败（比如游戏崩溃、连接断了）也继续做完其余的，
     /// GSI 配置无论如何都删。游戏崩溃时改动还没写进配置文件（游戏退出时才写），不恢复也不会留下
     pub fn restore(&mut self) -> Result<()> {
+        // 用户按了 Ctrl+C 也要恢复完
+        let _hold = crate::cancel::hold();
         let mut failed = Vec::new();
         while let Some((name, original)) = self.saved.pop() {
             let restored = self.con.send(&format!("{name} {}", console_value(&original))).and_then(|()| self.con.get(&name));

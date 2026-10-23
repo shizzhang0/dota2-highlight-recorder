@@ -67,7 +67,7 @@ pub fn kv(text: &str, key: &str) -> Option<String> {
 
 /// Valve 的 KeyValues 文本里按路径取值，例如 `["apps", "570", "LaunchOptions"]`：
 /// 路径是层层嵌套的块名，只要求按顺序出现在当前位置的上层（中间可以隔着别的层）
-fn kv_path(text: &str, path: &[&str]) -> Option<String> {
+pub(crate) fn kv_path(text: &str, path: &[&str]) -> Option<String> {
     let (want, parents) = path.split_last()?;
     // 当前所在的块名，从外到里；`last` 是刚读到、还没确定是不是块名的键
     let mut stack: Vec<String> = Vec::new();
