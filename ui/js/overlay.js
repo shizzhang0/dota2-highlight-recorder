@@ -7,7 +7,7 @@ const $ = (id) => document.getElementById(id);
 const box = document.querySelector(".box");
 const listen = (name, fn) => window.__TAURI__.event.listen(name, (e) => fn(e.payload));
 
-let total = 0, done = 0, estimated = 0, t0 = 0, timer = null, stopping = false;
+let total = 0, done = 0, estimated = 0, t0 = 0, timer = null, stopping = false, clipTitle = "";
 
 function tick() {
   const elapsed = (Date.now() - t0) / 1000;
@@ -32,6 +32,7 @@ async function start() {
     done = 0;
     estimated = s.estimated_secs;
     t0 = 0;
+    clipTitle = "";
     stopping = false;
     clearInterval(timer);
     setState("recording");
@@ -53,8 +54,12 @@ async function start() {
       }
       $("title").textContent = t("ov.countdown", { secs: e.secs });
     } else if (e.kind === "clip_started") {
-      $("title").textContent = t("ov.clip", { n: e.n, total: e.total });
+      clipTitle = t("ov.clip", { n: e.n, total: e.total });
+      $("title").textContent = clipTitle;
       $("step").textContent = e.name;
+    } else if (e.kind === "export_started") {
+      // 暂停后继续时标题停在倒计时上，开始导出时换回"片段 n/total"
+      if (clipTitle) $("title").textContent = clipTitle;
     } else if (e.kind === "clip_done") {
       done += 1;
     }

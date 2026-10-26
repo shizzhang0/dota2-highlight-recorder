@@ -171,7 +171,7 @@ fn run() -> Result<()> {
                 Some(d) => d,
                 None => PathBuf::from(std::env::var("USERPROFILE").context("找不到用户目录")?).join(r"Videos\d2hr"),
             };
-            let o = pipeline::Options { compile, resolution, out, gsi_port, quit, on_input: (!allow_input).then_some(game::input_guard::OnInput::Stop) };
+            let o = pipeline::Options { compile, resolution, out, gsi_port, quit, on_input: (!allow_input).then_some(game::input_guard::OnInput::Stop), log_dir: None };
             record::run(&r, player, &selected, &p, &ff, &o)
         }
     }

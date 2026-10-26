@@ -156,6 +156,7 @@ fn options(s: &Settings) -> Result<Options, String> {
         gsi_port: game::gsi::DEFAULT_PORT,
         quit: s.quit_when_done,
         on_input: Some(game::input_guard::OnInput::Pause),
+        log_dir: crate::settings::logs_dir(),
     })
 }
 

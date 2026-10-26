@@ -41,6 +41,82 @@ pub struct Options {
     pub quit: bool,
     /// 录制期间检测用户的鼠标键盘操作：按任意键或移动鼠标就停止（命令行）或暂停（应用）；None 不检测
     pub on_input: Option<game::input_guard::OnInput>,
+    /// 运行日志放在这里（每次录制一个文件，只留最近 20 个）；None 不写。命令行的进度已经打在终端上，不用
+    pub log_dir: Option<PathBuf>,
+}
+
+/// 把每个事件、每次问答、最后的结果记进日志文件，再转给真正的调用方。出问题时用来还原经过
+struct Logged<'a> {
+    inner: &'a dyn Host,
+    file: Option<std::sync::Arc<std::sync::Mutex<std::fs::File>>>,
+    started: Instant,
+}
+
+fn write_line(f: &std::sync::Mutex<std::fs::File>, started: Instant, text: &str) {
+    use std::io::Write;
+    let _ = writeln!(f.lock().unwrap(), "{:8.1}  {text}", started.elapsed().as_secs_f32());
+}
+
+impl Logged<'_> {
+    fn line(&self, text: &str) {
+        if let Some(f) = &self.file {
+            write_line(f, self.started, text);
+        }
+    }
+
+    /// 暂停可能发生在任何一步（包括渲染途中，那时流程不发事件），单开一个线程盯着，把暂停和继续的时间点记下来。
+    /// 返回的标记设成 true 时线程退出
+    fn watch_pause(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        if let Some(f) = self.file.clone() {
+            let (stop, started) = (stop.clone(), self.started);
+            std::thread::spawn(move || {
+                let mut was = false;
+                while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                    let now = cancel::paused();
+                    if now != was {
+                        was = now;
+                        write_line(&f, started, if now { "暂停（检测到鼠标或键盘操作）" } else { "继续" });
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+            });
+        }
+        stop
+    }
+}
+
+impl Host for Logged<'_> {
+    fn event(&self, e: Event) {
+        self.line(&serde_json::to_string(&e).unwrap_or_default());
+        self.inner.event(e);
+    }
+
+    fn confirm(&self, question: &str) -> bool {
+        self.line(&format!("问：{question}"));
+        let yes = self.inner.confirm(question);
+        self.line(&format!("答：{}", if yes { "同意" } else { "不同意" }));
+        yes
+    }
+}
+
+const KEEP_LOGS: usize = 20;
+
+/// 新建这次的日志文件，删掉多出来的旧日志
+fn open_log(dir: &Path) -> Option<std::fs::File> {
+    std::fs::create_dir_all(dir).ok()?;
+    let mut old: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "log"))
+        .collect();
+    old.sort();
+    while old.len() >= KEEP_LOGS {
+        let _ = std::fs::remove_file(old.remove(0));
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    std::fs::File::create(dir.join(format!("record-{stamp}.log"))).ok()
 }
 
 /// 选定的片段和它在 `plan` 里的序号（从 1 开始）
@@ -186,13 +262,33 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path) -> Result<(Netcon, gsi::Li
 /// 录制。调用方负责在开始前清掉上一轮的取消标记（`game::cancel::reset`），命令行另外负责接管 Ctrl+C
 pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], p: &Params, ff: &Ffmpeg, o: &Options) -> Report {
     let started = Instant::now();
+    let log = Logged { inner: host, file: o.log_dir.as_deref().and_then(open_log).map(|f| std::sync::Arc::new(std::sync::Mutex::new(f))), started };
+    let pause_watch = log.watch_pause();
+    let indices: Vec<usize> = selected.iter().map(|s| s.index).collect();
+    log.line(&format!(
+        "开始：比赛 {}，玩家 #{player}，片段 {indices:?}，输出到 {}，分辨率 {:?}，合集 {}，录完退出 {}",
+        r.match_id,
+        o.out.display(),
+        o.resolution,
+        o.compile,
+        o.quit
+    ));
     // 开始时的前台窗口（终端或应用）：不管怎么结束，最后都切回它，用户回来能直接看到结果
     let origin = game::ui::foreground();
     let mut done = Done::default();
-    let error = run_inner(host, r, player, selected, p, ff, o, &mut done).err();
+    let error = run_inner(&log, r, player, selected, p, ff, o, &mut done).err();
+    pause_watch.store(true, std::sync::atomic::Ordering::SeqCst);
     game::ui::bring_to_front(origin);
     // 停下的原因要在 hold 之外读（restore 期间读不到）
     let cancelled = cancel::reason();
+    log.line(&format!(
+        "结束：完成 {:?}，文件 {:?}，停下 {:?}，出错 {}，退出游戏 {}",
+        done.completed,
+        done.files,
+        cancelled.map(|c| c.describe()),
+        error.as_ref().map_or("无".into(), |e| format!("{e:#}")),
+        done.game_quit
+    ));
     Report {
         files: done.files,
         completed: done.completed,
@@ -230,6 +326,10 @@ fn run_inner(
     let diag = o.out.join("diag");
     std::fs::create_dir_all(&tmp)?;
     std::fs::create_dir_all(&diag)?;
+    // 上一轮出错时留下的截图和日志：编号会和这一轮的混在一起，清掉（排查用的运行日志另存在 log_dir）
+    for e in std::fs::read_dir(&diag)?.flatten() {
+        let _ = std::fs::remove_file(e.path());
+    }
     // 上一轮在渲染途中停下时，游戏会把渲染完的视频留在 tmp 里；这个目录只放我们的中间文件，清掉
     for e in std::fs::read_dir(&tmp)?.flatten() {
         if e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("mp4")) {
@@ -336,8 +436,7 @@ fn record_all(
                 background_render: false,
                 player,
             };
-            host.event(Event::ExportStarted { from, to, estimated_secs: (to - from) * p.render_factor });
-            let part = export_checked(host, &mut ui, s, rx, &job, player, &mut view)?;
+            let part = export_checked(host, &mut ui, s, rx, &job, player, (to - from) * p.render_factor, &mut view)?;
             // 裁掉两头多留的部分：起点落在关键帧上（每整秒一个），所以多加一点点，免得落到前一个关键帧
             let cut = tmp.join(format!("cut_{n}_{k}.mp4"));
             ff.cut(&part, (e.span.start - from) as f64 + 0.02, e.span.len() as f64, &cut)?;
@@ -411,6 +510,7 @@ fn export_checked(
     rx: &Receiver<Value>,
     job: &Job,
     player: usize,
+    estimated_secs: f32,
     view: &mut View,
 ) -> Result<PathBuf> {
     let planned = (job.to - job.from) as f64;
@@ -429,11 +529,14 @@ fn export_checked(
             tried = setup_view(host, view, s, rx, ui, job.from, COUNTDOWN);
         }
         let tried = tried.inspect(|()| view.ready = true).and_then(|()| {
+            // 每次真正开始导出都报一次（暂停后继续、重来时也报），界面据此显示片段和渲染进度
+            host.event(Event::ExportStarted { from: job.from, to: job.to, estimated_secs });
             spectator::focus(player, rx).and_then(|()| clip_builder::export(ui, s.con(), rx, job))
         });
+        // 读不出时长（文件没写完、坏了）也算这一次失败，重来
+        let tried = tried.and_then(|e| media::mp4_duration(&e.path).map(|secs| (e, secs)));
         let err = match tried {
-            Ok(exported) => {
-                let secs = media::mp4_duration(&exported.path)?;
+            Ok((exported, secs)) => {
                 if (secs - planned).abs() <= DURATION_TOLERANCE {
                     host.event(Event::Exported { from: job.from, to: job.to, secs, render_secs: exported.render.as_secs_f32() });
                     let part = job.out_dir.join(format!("part_{}.mp4", job.center_tick));

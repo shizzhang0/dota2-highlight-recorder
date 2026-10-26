@@ -40,6 +40,11 @@ impl Default for Settings {
     }
 }
 
+/// 运行日志目录：`%APPDATA%\dota2-highlight-recorder\logs`
+pub fn logs_dir() -> Option<PathBuf> {
+    std::env::var("APPDATA").ok().map(|d| PathBuf::from(d).join("dota2-highlight-recorder").join("logs"))
+}
+
 fn path() -> Option<PathBuf> {
     std::env::var("APPDATA").ok().map(|d| PathBuf::from(d).join(r"dota2-highlight-recorder\settings.json"))
 }
