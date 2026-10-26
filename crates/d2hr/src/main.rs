@@ -66,6 +66,9 @@ enum Command {
         /// 录完让游戏退出
         #[arg(long)]
         quit: bool,
+        /// 录制期间不检测鼠标键盘操作（默认一动就停下，另有取消快捷键 Ctrl+Shift+F12）
+        #[arg(long)]
+        allow_input: bool,
         #[command(flatten)]
         rules: Rules,
     },
@@ -146,7 +149,7 @@ fn run() -> Result<()> {
     match cli.command {
         Command::List => list(&dir),
         Command::Plan { replay, player, rules } => plan(&dir, &replay, player, &rules.params()),
-        Command::Record { replay, player, clips, compile, resolution, out, ffmpeg, gsi_port, quit, rules } => {
+        Command::Record { replay, player, clips, compile, resolution, out, ffmpeg, gsi_port, quit, allow_input, rules } => {
             // 先找 ffmpeg，免得游戏都开起来了才发现缺东西
             let ff = media::ffmpeg::Ffmpeg::locate(ffmpeg.as_deref())?;
             let p = rules.params();
@@ -159,7 +162,7 @@ fn run() -> Result<()> {
             let mut selected = Vec::new();
             for i in wanted {
                 let clip = plan.get(i.wrapping_sub(1)).with_context(|| format!("没有第 {i} 个片段（共 {} 个）", plan.len()))?;
-                selected.push(record::Selected { index: i, clip: clip.clone() });
+                selected.push(pipeline::Selected { index: i, clip: clip.clone() });
             }
             let secs: f32 = selected.iter().map(|s| s.clip.estimated_seconds(&p)).sum();
             let hero_name = hero(&r.players[player].hero);
@@ -168,7 +171,7 @@ fn run() -> Result<()> {
                 Some(d) => d,
                 None => PathBuf::from(std::env::var("USERPROFILE").context("找不到用户目录")?).join(r"Videos\d2hr"),
             };
-            let o = record::Options { compile, resolution, out, gsi_port, quit };
+            let o = pipeline::Options { compile, resolution, out, gsi_port, quit, input_guard: !allow_input };
             record::run(&r, player, &selected, &p, &ff, &o)
         }
     }

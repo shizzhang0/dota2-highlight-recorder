@@ -66,12 +66,38 @@ pub struct Foreground {
 
 impl Drop for Foreground {
     fn drop(&mut self) {
+        crate::input_guard::expect_cursor(self.cursor.x, self.cursor.y);
         unsafe {
             let _ = SetCursorPos(self.cursor.x, self.cursor.y);
             alt_tap();
             let _ = SetForegroundWindow(self.previous);
         }
     }
+}
+
+/// 当前前台窗口（原始句柄值）。录制开始时记下，结束时用 `bring_to_front` 还回去
+pub fn foreground() -> isize {
+    unsafe { GetForegroundWindow().0 as isize }
+}
+
+/// 把窗口切回前台，最多试 5 次，成功返回 true。
+/// 每段导出完 `Foreground` 已经还过一次，但 2026-10-26 测试时录完后游戏仍在前台，所以结束时再兜底切一次
+pub fn bring_to_front(hwnd: isize) -> bool {
+    let hwnd = HWND(hwnd as *mut core::ffi::c_void);
+    if hwnd.is_invalid() {
+        return false;
+    }
+    for _ in 0..5 {
+        unsafe {
+            alt_tap();
+            let _ = SetForegroundWindow(hwnd);
+            std::thread::sleep(Duration::from_millis(300));
+            if GetForegroundWindow() == hwnd {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// 后台进程直接 SetForegroundWindow 常被系统拒绝，先模拟按一下 Alt
@@ -133,6 +159,7 @@ impl Ui {
         // 按了 Ctrl+C 就不再动鼠标（拖动到一半时也停；按下的左键由调用方之后的点击或用户自己松开）
         crate::cancel::check()?;
         let target = self.to_screen(p);
+        crate::input_guard::expect_cursor(target.x, target.y);
         unsafe {
             SetCursorPos(target.x, target.y)?;
         }

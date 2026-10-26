@@ -3,6 +3,7 @@
 pub mod cancel;
 pub mod clip_builder;
 pub mod gsi;
+pub mod input_guard;
 pub mod keys;
 pub mod launch;
 pub mod layout;

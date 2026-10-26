@@ -53,12 +53,23 @@ pub fn setup(ui: &mut Ui, panel: Panel, team: Team) -> Result<()> {
 }
 
 /// 按追踪热键（读自用户的热键设置）追踪玩家 `player`（0–9），用 GSI 确认。按键用 PostMessage，不需要前台
+/// 第一次按键偶尔不生效（2026-10-26：游戏已开着、刚重新加载录像时连续两次复现，第二次按就好了），所以最多按 3 次
 pub fn focus(player: usize, gsi: &Receiver<Value>) -> Result<()> {
     let window = crate::window::dota_window()?;
-    crate::gsi::drain(gsi);
-    crate::window::post_key(window, crate::keys::focus_player(player)?)?;
-    // 暂停时 GSI 几秒才一个包，多等一会
-    crate::gsi::wait_next(gsi, Duration::from_secs(10), &format!("追踪玩家 #{player}"), |s| s.selected == Some(player))
-        .map(drop)
-        .context("按追踪热键后，GSI 显示追踪的不是这个玩家")
+    let key = crate::keys::focus_player(player)?;
+    let mut seen = None;
+    for _ in 0..3 {
+        crate::gsi::drain(gsi);
+        crate::window::post_key(window, key)?;
+        // 暂停时 GSI 几秒才一个包，每次等 5 秒
+        let got = crate::gsi::wait_next(gsi, Duration::from_secs(5), &format!("追踪玩家 #{player}"), |s| {
+            seen = s.selected;
+            s.selected == Some(player)
+        });
+        if got.is_ok() {
+            return Ok(());
+        }
+        crate::cancel::check()?;
+    }
+    Err(anyhow::anyhow!("GSI 最后看到追踪的是 {seen:?}")).context(format!("按了 3 次追踪热键，GSI 还是没显示在追踪玩家 #{player}"))
 }
