@@ -11,5 +11,5 @@ clap.workspace = true
 clips = { path = "../clips" }
 game = { path = "../game" }
 media = { path = "../media" }
+pipeline = { path = "../pipeline" }
 replay = { path = "../replay" }
-serde_json.workspace = true

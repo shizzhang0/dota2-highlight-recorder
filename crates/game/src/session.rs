@@ -42,8 +42,21 @@ impl Session {
 
     /// 改一个控制台变量；同一个变量只在第一次改时记原值
     pub fn set(&mut self, name: &str, value: &str) -> Result<()> {
+        self.set_or_default(name, value, None)
+    }
+
+    /// 同 `set`，但如果当前值正好就是要设的值，说明是上一轮没恢复干净留下的，结束时恢复成游戏默认值 `default`
+    /// （2026-10-26 测试时出现过一次输出目录、时间轴长度没恢复，没能复现出原因，所以加这道兜底）
+    pub fn set_or_default(&mut self, name: &str, value: &str, default: Option<&str>) -> Result<()> {
         if !self.saved.iter().any(|(n, _)| n == name) {
-            let original = self.con.get(name)?;
+            let current = self.con.get(name)?;
+            let original = match default {
+                Some(d) if console_value(&current) == console_value(value) => {
+                    eprintln!("{name} 现在是 {current}，像是上次没恢复干净，结束时恢复成默认值 {d}");
+                    d.to_owned()
+                }
+                _ => current,
+            };
             self.saved.push((name.to_owned(), original));
         }
         self.con.send(&format!("{name} {}", console_value(value)))
