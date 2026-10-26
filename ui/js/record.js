@@ -1,7 +1,8 @@
 // 录制：开始前确认 → 进度（事件来自 Rust 的 pipeline）→ 结果。录制中途要用户拍板的事弹对话框
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, el, length } from "./format.js";
+import { clock, el, heroName, length } from "./format.js";
+import { describe } from "./events.js";
 
 const listen = (name, fn) => window.__TAURI__.event.listen(name, (e) => fn(e.payload));
 
@@ -13,7 +14,7 @@ export function confirmStart(dialog, { count, secs, minutes }) {
       el("h2", {}, t("rec.confirm.title")),
       el("p", {}, t("rec.confirm.what", { n: count, secs: length(secs), minutes })),
       el("p", { class: "warn" }, t("rec.confirm.handsOff")),
-      el("p", { class: "muted" }, t("rec.confirm.stop", { hotkey: "Ctrl+Shift+F12" })),
+      el("p", { class: "muted" }, t("rec.confirm.stop")),
       el("p", { class: "muted" }, t("rec.confirm.restart")),
       el("div", { class: "dialog-actions" },
         el("button", { type: "button", onclick: () => done(false) }, t("settings.cancel")),
@@ -26,9 +27,13 @@ export function confirmStart(dialog, { count, secs, minutes }) {
 }
 
 /** 录制中途的是/否问题（例如要不要重启游戏） */
-function ask(dialog, question) {
+// 正在主窗口上问的问题：置顶对话框那边先回答了，就把这边收起（返回 null，不再回答一次）
+let asking = null;
+
+function ask(dialog, question, id) {
   return new Promise((resolve) => {
-    const done = (yes) => { dialog.close(); resolve(yes); };
+    const done = (yes) => { asking = null; dialog.close(); resolve(yes); };
+    asking = { id, close: () => done(null) };
     dialog.replaceChildren(
       el("h2", {}, t("rec.ask.title")),
       el("p", {}, question),
@@ -37,35 +42,12 @@ function ask(dialog, question) {
         el("button", { type: "button", class: "primary", onclick: () => done(true) }, t("rec.ask.yes")),
       ),
     );
-    dialog.addEventListener("cancel", () => resolve(false), { once: true });
+    dialog.addEventListener("cancel", () => { asking = null; resolve(false); }, { once: true });
     dialog.showModal();
   });
 }
 
-/** 事件 → 一行文字；不值得显示的返回 null */
-function describe(e) {
-  switch (e.kind) {
-    case "waiting_for_dota_to_quit": return t("ev.waitQuit");
-    case "launching_game": return t("ev.launch", { args: e.args.join(" ") });
-    case "replay_loaded": return t("ev.loaded");
-    case "countdown": return t("ev.countdown", { secs: e.secs });
-    case "hotkey_unavailable": return t("ev.noHotkey", { hotkey: e.hotkey });
-    case "clip_started": return t("ev.clip", { n: e.n, total: e.total, name: e.name });
-    case "export_started": return t("ev.export", { from: clock(e.from), to: clock(e.to) });
-    case "exported": return t("ev.exported", { secs: e.secs.toFixed(1), render: Math.round(e.render_secs) });
-    case "retrying": return t("ev.retry", { reason: e.reason });
-    case "clip_done": return t("ev.clipDone", { path: e.path, secs: e.secs.toFixed(1) });
-    case "compilation_done": return t("ev.compiled", { path: e.path, secs: e.secs.toFixed(1) });
-    case "restoring_window_size": return t("ev.restoringSize", { w: e.width, h: e.height });
-    case "window_size_restored": return t("ev.sizeRestored", { w: e.width, h: e.height });
-    case "window_size_not_restored": return t("ev.sizeNotRestored", { w: e.width, h: e.height, error: e.error });
-    case "restore_failed": return t("ev.restoreFailed", { error: e.error });
-    case "diagnostics_kept": return t("ev.diag", { dir: e.dir });
-    default: return null;
-  }
-}
-
-/** 进度页。`clips` 是要录的片段序号；`back` 回比赛页 */
+/** 进度页。`clips` 是要录的片段（plan 返回的行，含序号、时间、被杀英雄）；`back` 回比赛页 */
 export async function showRecording(view, dialog, { matchId, player, clips, back }) {
   const step = el("div", { class: "step" }, t("rec.starting"));
   const clipLine = el("div", { class: "muted" });
@@ -73,9 +55,22 @@ export async function showRecording(view, dialog, { matchId, player, clips, back
   const barBox = el("div", { class: "bar", hidden: true }, bar);
   const log = el("ol", { class: "log" });
   const stopBtn = el("button", { type: "button", onclick: () => api.stopRecording() }, t("rec.stop"));
+  // 暂停面板：用户动了鼠标键盘时出现，点"继续"接着录，点"停止"彻底结束
+  const resumeBtn = el("button", {
+    type: "button",
+    class: "primary",
+    onclick: () => { resumeBtn.disabled = true; api.resumeRecording(); },
+  }, t("rec.paused.resume"));
+  const pausedBox = el("div", { class: "paused", hidden: true },
+    el("div", { class: "paused-title" }, t("rec.paused.title")),
+    el("p", {}, t("rec.paused.what")),
+    el("div", { class: "row" }, resumeBtn,
+      el("button", { type: "button", onclick: () => api.stopRecording() }, t("rec.paused.stop"))),
+  );
+  const handsOff = el("p", { class: "warn" }, t("rec.handsOff"));
   const body = el("div", { class: "card" },
     el("div", { class: "row" }, el("h2", { style: "margin:0" }, t("rec.title")), el("div", { class: "spacer" }), stopBtn),
-    el("p", { class: "warn" }, t("rec.handsOff", { hotkey: "Ctrl+Shift+F12" })),
+    handsOff, pausedBox,
     step, clipLine, barBox,
   );
   view.replaceChildren(body, el("div", { class: "card" }, el("h2", {}, t("rec.log")), log));
@@ -92,6 +87,8 @@ export async function showRecording(view, dialog, { matchId, player, clips, back
     }, 300);
   };
   const stopBar = () => { clearInterval(timer); bar.style.width = "100%"; };
+  // 每个做好的片段：序号 → 文件路径
+  const outputs = new Map();
 
   const unlisten = await Promise.all([
     listen("record-event", (e) => {
@@ -100,18 +97,40 @@ export async function showRecording(view, dialog, { matchId, player, clips, back
       if (e.kind === "clip_started") clipLine.textContent = text;
       else if (e.kind === "export_started") startBar(e.estimated_secs + 15);
       else if (e.kind === "exported") stopBar();
+      else if (e.kind === "clip_done") outputs.set(e.index, e.path);
       if (text && e.kind !== "clip_started") step.textContent = text;
     }),
-    listen("record-confirm", async (q) => api.answerConfirm(q.id, await ask(dialog, q.question))),
+    listen("record-paused", () => {
+      pausedBox.hidden = false;
+      handsOff.hidden = true;
+      resumeBtn.disabled = false;
+      stopBtn.hidden = true;
+    }),
+    listen("record-resumed", () => {
+      pausedBox.hidden = true;
+      handsOff.hidden = false;
+      stopBtn.hidden = false;
+    }),
+    listen("record-stopping", (reason) => {
+      clearInterval(timer);
+      pausedBox.hidden = true;
+      step.textContent = t("ov.stoppingWhy", { reason });
+      stopBtn.disabled = true;
+    }),
+    listen("record-confirm", async (q) => {
+      const yes = await ask(dialog, q.question, q.id);
+      if (yes !== null) api.answerConfirm(q.id, yes);
+    }),
+    listen("record-confirm-done", (id) => { if (asking?.id === id) asking.close(); }),
     listen("record-finished", (f) => {
       clearInterval(timer);
       unlisten.forEach((u) => u());
-      showResult(view, f, { matchId, player, back, dialog });
+      showResult(view, f, { matchId, player, back, dialog, clips, outputs });
     }),
   ]);
 
   try {
-    await api.startRecording(matchId, player, clips);
+    await api.startRecording(matchId, player, clips.map((c) => c.index));
   } catch (e) {
     clearInterval(timer);
     unlisten.forEach((u) => u());
@@ -122,25 +141,58 @@ export async function showRecording(view, dialog, { matchId, player, clips, back
   }
 }
 
-function showResult(view, f, { matchId, player, back, dialog }) {
-  const left = f.selected.filter((i) => !f.completed.includes(i));
-  let headline, cls = "";
-  if (f.error) { headline = t("rec.result.error", { error: f.error }); cls = "error"; }
-  else if (f.cancelled) headline = t("rec.result.stopped", { reason: f.cancelled });
-  else headline = t("rec.result.done", { n: f.files.length, minutes: (f.elapsed_secs / 60).toFixed(1) });
+function showResult(view, f, { matchId, player, back, dialog, clips, outputs }) {
+  const left = clips.filter((c) => !f.completed.includes(c.index));
+  const kind = f.error ? "error" : f.cancelled ? "stopped" : "done";
+  const title = {
+    done: t("rec.result.done", { n: f.completed.length }),
+    stopped: t("rec.result.stopped", { reason: f.cancelled }),
+    error: t("rec.result.error"),
+  }[kind];
+  const sub = [t("rec.result.progress", { done: f.completed.length, total: f.selected.length, minutes: (f.elapsed_secs / 60).toFixed(1) })];
+  if (kind !== "done") sub.push(t("rec.result.restored"));
+  if (f.game_open) sub.push(t(kind === "done" ? "rec.result.gameOpen" : "rec.result.gameKept"));
 
-  const files = f.files.map((p) => el("li", {},
-    el("span", {}, p.split(/[\\/]/).pop()), " ",
-    el("button", { type: "button", class: "link", onclick: () => api.reveal(p) }, t("rec.result.show")),
-  ));
+  const rows = clips.map((c) => {
+    const path = outputs.get(c.index);
+    return el("tr", {},
+      el("td", { class: "num" }, String(c.index)),
+      el("td", {}, `${clock(c.start)} – ${clock(c.end)}`),
+      el("td", { class: "wrap" }, c.victims.map(heroName).join(", ")),
+      el("td", {}, path
+        ? el("span", {}, el("span", { class: "ok" }, `✓ ${t("rec.result.clipDone")}`), " ",
+          el("button", { type: "button", class: "link", onclick: () => api.reveal(path) }, t("rec.result.show")))
+        : el("span", { class: "muted" }, t("rec.result.clipLeft"))),
+    );
+  });
+  // 合集是 files 里不属于任何片段的那个
+  const compilation = f.files.find((p) => ![...outputs.values()].includes(p));
 
-  view.replaceChildren(el("div", { class: "card" },
-    el("h2", {}, t("rec.result.title")),
-    el("p", { class: cls }, headline),
-    f.files.length ? el("ul", { class: "files" }, files) : null,
+  const quitBtn = f.game_open
+    ? el("button", {
+      type: "button",
+      onclick: async () => {
+        quitBtn.disabled = true;
+        try { await api.quitGame(); quitBtn.textContent = t("rec.result.quitSent"); } catch { quitBtn.disabled = false; }
+      },
+    }, t("rec.result.quit"))
+    : null;
+
+  view.replaceChildren(el("div", { class: `card result ${kind}` },
+    el("h2", {}, title),
+    el("p", { class: "muted" }, sub.join(" ")),
+    f.error ? el("p", { class: "error" }, f.error) : null,
+    el("table", {},
+      el("thead", {}, el("tr", {},
+        el("th", { class: "num" }, "#"), el("th", {}, t("match.col.time")),
+        el("th", {}, t("match.col.kills")), el("th", {}, t("rec.result.status")),
+      )),
+      el("tbody", {}, rows),
+    ),
+    compilation ? el("p", {}, t("rec.result.compilation"), " ", compilation.split(/[\\/]/).pop(), " ",
+      el("button", { type: "button", class: "link", onclick: () => api.reveal(compilation) }, t("rec.result.show"))) : null,
+    left.length ? el("p", { class: "warn" }, t("rec.result.resumeHint")) : null,
     el("div", { class: "row", style: "margin-top:12px" },
-      el("button", { type: "button", onclick: back }, t("rec.result.back")),
-      el("button", { type: "button", onclick: () => api.reveal(f.out_dir) }, t("rec.result.folder")),
       left.length
         ? el("button", {
           type: "button",
@@ -148,6 +200,10 @@ function showResult(view, f, { matchId, player, back, dialog }) {
           onclick: () => showRecording(view, dialog, { matchId, player, clips: left, back }),
         }, t("rec.result.resume", { n: left.length }))
         : null,
+      el("button", { type: "button", onclick: () => api.reveal(f.out_dir) }, t("rec.result.folder")),
+      quitBtn,
+      el("div", { class: "spacer" }),
+      el("button", { type: "button", onclick: back }, t("rec.result.back")),
     ),
   ));
 }

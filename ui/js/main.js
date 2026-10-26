@@ -18,7 +18,7 @@ function render() {
   else showList(view, { openMatch });
 }
 
-/** 比赛页点了开始录制：确认后进入进度页；录完"返回比赛"回到同一场 */
+/** 比赛页点了开始录制（`clips` 是 plan 返回的片段行）：确认后进入进度页；录完"返回比赛"回到同一场 */
 async function record({ matchId, player, clips, secs, minutes }) {
   if (!(await confirmStart(confirmDialog, { count: clips.length, secs, minutes }))) return;
   current = { name: "recording", id: matchId };

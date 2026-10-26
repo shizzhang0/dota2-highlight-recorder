@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "前端只用 invoke 调自己的命令（不需要声明）和 event.listen 收事件",
-  "windows": ["main"],
+  "windows": ["main", "overlay", "prompt"],
   "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

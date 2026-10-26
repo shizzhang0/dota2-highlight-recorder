@@ -199,5 +199,18 @@ dialog h2 { margin: 0 0 14px; font-size: 16px; }
 .log li { margin: 2px 0; }
 .files { padding-left: 20px; }
 .files li { margin: 4px 0; }
+.paused {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--tag-text);
+  background: var(--tag);
+}
+.paused-title { font-size: 16px; font-weight: 700; color: var(--tag-text); }
+.paused p { margin: 6px 0 10px; }
+.result h2 { font-size: 17px; }
+.result.done h2, .ok { color: var(--radiant); }
+.result.stopped h2 { color: var(--tag-text); }
+.result.error h2 { color: var(--danger); }
 button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; }
 button.link:hover:not(:disabled) { background: none; text-decoration: underline; }

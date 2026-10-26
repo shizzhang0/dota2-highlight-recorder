@@ -146,6 +146,11 @@ pub fn export(ui: &mut Ui, con: &mut Netcon, gsi: &Receiver<Value>, job: &Job) -
         return waited;
     }
 
+    // 渲染期间用户动了（暂停）：渲染不受影响，已经渲染完了；先把前台让出来，等用户点"继续"再去关提示框
+    if crate::cancel::paused() {
+        drop(front.take());
+        crate::cancel::wait_while_paused()?;
+    }
     // 不管成败都会弹"导出视频成功"，关掉它再关剪辑工具
     let _front: Foreground = match front {
         Some(f) => f,

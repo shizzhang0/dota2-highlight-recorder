@@ -15,8 +15,8 @@ pub struct Settings {
     pub resolution: String,
     /// 录完再拼一个合集
     pub compile: bool,
-    /// 录完让游戏退出
-    pub quit_after: bool,
+    /// 全部录完后让游戏退出（中途停下或出错时保留，方便接着录）。原先叫 quit_after、默认关，改名后旧值不再沿用
+    pub quit_when_done: bool,
     /// 界面语言："auto" 跟随系统，或 "zh-CN" / "en"
     pub language: String,
     /// ffmpeg.exe 或所在目录；空 = 自动找（程序目录、环境变量 D2HR_FFMPEG、PATH）
@@ -32,7 +32,7 @@ impl Default for Settings {
             out_dir: videos.to_string_lossy().into_owned(),
             resolution: String::new(),
             compile: false,
-            quit_after: false,
+            quit_when_done: true,
             language: "auto".into(),
             ffmpeg: String::new(),
             rules: Rules::default(),

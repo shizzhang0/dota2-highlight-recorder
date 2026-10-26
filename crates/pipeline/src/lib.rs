@@ -28,17 +28,19 @@ const DURATION_TOLERANCE: f64 = 2.0;
 const WINDOW: f32 = 120.0;
 /// 开始操作游戏界面前的倒计时（秒）
 const COUNTDOWN: u32 = 5;
+/// 暂停后点"继续"，再倒计时这么久才开始（给用户松开鼠标的时间）
+const RESUME_COUNTDOWN: u32 = 3;
 
 pub struct Options {
     pub compile: bool,
     pub resolution: Option<(u32, u32)>,
     pub out: PathBuf,
     pub gsi_port: u16,
-    /// 录完让游戏退出。用 `resolution` 启动的游戏无论如何都会退出：
-    /// 它退出时会把这个窗口大小写进显示设置，要等它退出后改回去
+    /// 全部录完后让游戏退出；中途停下或出错时保留，方便接着录。
+    /// 用 `resolution` 启动的游戏无论如何都会退出：它退出时会把这个窗口大小写进显示设置，要等它退出后改回去
     pub quit: bool,
-    /// 录制期间检测用户的鼠标键盘操作，一动就停下（另有取消快捷键）
-    pub input_guard: bool,
+    /// 录制期间检测用户的鼠标键盘操作：按任意键或移动鼠标就停止（命令行）或暂停（应用）；None 不检测
+    pub on_input: Option<game::input_guard::OnInput>,
 }
 
 /// 选定的片段和它在 `plan` 里的序号（从 1 开始）
@@ -57,10 +59,12 @@ pub enum Event {
     LaunchingGame { args: Vec<String> },
     /// 录像加载好了，马上倒计时
     ReplayLoaded,
-    /// 倒计时：还有几秒开始操作游戏界面
-    Countdown { secs: u32, hotkey: Option<String> },
-    /// 取消快捷键没注册上（被别的程序占用），只能靠检测鼠标键盘停下
-    HotkeyUnavailable { hotkey: String },
+    /// 倒计时：还有几秒开始操作游戏界面。`input_guard` 为真时，按任意键或移动鼠标就会停止或暂停
+    Countdown { secs: u32, input_guard: bool },
+    /// 暂停了（桌面应用里用户动了鼠标键盘），等用户点"继续"或"停止"
+    Paused,
+    /// 用户点了"继续"：重新加载录像、设好镜头，再接着录被打断的那一段
+    Resuming,
     /// 开始录第 `n` 个（共 `total` 个）选定的片段，它在计划里是第 `index` 个
     ClipStarted { n: usize, total: usize, index: usize, name: String },
     /// 开始导出一段：游戏时间范围和预计渲染秒数
@@ -101,6 +105,8 @@ pub struct Report {
     pub cancelled: Option<Reason>,
     pub error: Option<anyhow::Error>,
     pub elapsed: Duration,
+    /// 结束时让游戏退出了（录完且设了 `quit`，或者用了 `resolution`）
+    pub game_quit: bool,
 }
 
 fn dota_running() -> bool {
@@ -138,7 +144,7 @@ fn client_size() -> Option<(u32, u32)> {
 
 /// 准备好游戏：GSI 配置、带 netcon 启动（必要时先请用户退出普通模式的游戏）、连上控制台。
 /// 第三个返回值：是不是我们带 `-w -h` 启动的（是的话录完要让游戏退出、把窗口大小改回去）
-fn prepare(host: &dyn Host, o: &Options, diag: &Path) -> Result<(Netcon, Receiver<Value>, bool)> {
+fn prepare(host: &dyn Host, o: &Options, diag: &Path) -> Result<(Netcon, gsi::Listener, bool)> {
     gsi::check_port(o.gsi_port)?;
     let changed = gsi::install(o.gsi_port)?;
     let rx = gsi::listen(o.gsi_port)?;
@@ -193,6 +199,7 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], p:
         cancelled,
         error: if cancelled.is_some() { None } else { error },
         elapsed: started.elapsed(),
+        game_quit: done.game_quit,
     }
 }
 
@@ -201,6 +208,7 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], p:
 struct Done {
     files: Vec<PathBuf>,
     completed: Vec<usize>,
+    game_quit: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -252,8 +260,10 @@ fn run_inner(
     let restored = s.restore();
     // 下面这些收尾也不能被取消打断
     let hold = cancel::hold();
-    if o.quit || sized {
+    // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）
+    if (o.quit && result.is_ok()) || sized {
         let _ = s.con().send("quit");
+        done.game_quit = true;
     }
     if sized && let (Some(account), Some((width, height))) = (account, original_size) {
         host.event(Event::RestoringWindowSize { width, height });
@@ -293,44 +303,20 @@ fn record_all(
     diag: &Path,
     done: &mut Done,
 ) -> Result<()> {
-    // 只加载一次录像：重新加载会把镜头重置成自由视角
-    s.con().send(&format!("playdemo replays/{}", r.match_id))?;
-    s.con()
-        .wait_for(Duration::from_secs(120), |l| l.contains("OnSwitchLoopModeFinished( game : success )"))
-        .context("录像没有加载起来（游戏里有这场录像吗？）")?;
-    // 跳转太早会让游戏崩溃（CopyNewEntity），等到这场的 GSI 时钟再动
-    let id = r.match_id;
-    gsi::wait_for(rx, Duration::from_secs(60), "这场比赛的 GSI 时钟", |st| st.match_id == Some(id) && st.clock.is_some())?;
-    host.event(Event::ReplayLoaded);
+    load_replay(host, r, s, rx)?;
 
-    // 从这里起用户不能碰鼠标键盘：开着输入检测（含取消快捷键），一动就停下。离开这个函数时卸掉
-    let _guard = if o.input_guard {
-        let (guard, hotkey) = game::input_guard::start()?;
-        if !hotkey {
-            host.event(Event::HotkeyUnavailable { hotkey: game::input_guard::HOTKEY.into() });
-        }
-        Some(guard)
-    } else {
-        None
+    // 从这里起用户不能碰鼠标键盘：开着输入检测，一动就停止（命令行）或暂停（应用）。离开这个函数时卸掉
+    let _guard = match o.on_input {
+        Some(mode) => Some(game::input_guard::start(mode)?),
+        None => None,
     };
-    let hotkey = o.input_guard.then(|| game::input_guard::HOTKEY.to_string());
-    for secs in (1..=COUNTDOWN).rev() {
-        host.event(Event::Countdown { secs, hotkey: hotkey.clone() });
-        std::thread::sleep(Duration::from_secs(1));
-        cancel::check()?;
-    }
     let mut ui = Ui::attach()?;
     ui.set_diag_dir(diag)?;
 
     let first = r.clock.first().map_or(f32::MIN, |c| c.game_time);
     let last = r.clock.last().map_or(f32::MAX, |c| c.game_time);
-    // 先跳到第一段起点前 5 秒设镜头和迷雾（不能直接跳到导出段中点：暂停在同一 tick 时再跳，游戏不输出完成标志）
-    let prep = (selected[0].clip.exports[0].span.start - 5.0).max(first);
-    clip_builder::goto(s.con(), rx, r.tick_at(prep).context("超出录像范围")?, prep)?;
-    {
-        let _front = ui.front()?;
-        spectator::setup(&mut ui, Panel::Collapsed, team)?;
-    }
+    // 镜头和迷雾在第一段导出前设；暂停过的话，继续时要重新加载录像再设（见 export_checked）
+    let mut view = View { r, team, first, guard: o.on_input.is_some(), ready: false };
 
     let mut outputs = Vec::new();
     for (n, sel) in selected.iter().enumerate() {
@@ -351,7 +337,7 @@ fn record_all(
                 player,
             };
             host.event(Event::ExportStarted { from, to, estimated_secs: (to - from) * p.render_factor });
-            let part = export_checked(host, &mut ui, s, rx, &job, player)?;
+            let part = export_checked(host, &mut ui, s, rx, &job, player, &mut view)?;
             // 裁掉两头多留的部分：起点落在关键帧上（每整秒一个），所以多加一点点，免得落到前一个关键帧
             let cut = tmp.join(format!("cut_{n}_{k}.mp4"));
             ff.cut(&part, (e.span.start - from) as f64 + 0.02, e.span.len() as f64, &cut)?;
@@ -379,13 +365,73 @@ fn record_all(
     Ok(())
 }
 
-/// 导出一段并核对时长；导出失败、文件 0 字节或时长偏差超过容差时重来一次
-fn export_checked(host: &dyn Host, ui: &mut Ui, s: &mut Session, rx: &Receiver<Value>, job: &Job, player: usize) -> Result<PathBuf> {
+/// 游戏画面的准备状态：镜头和迷雾设好没有。暂停过就要重新加载录像（用户可能在游戏里点过东西，界面状态没法保证）
+struct View<'a> {
+    r: &'a Replay,
+    team: Team,
+    first: f32,
+    guard: bool,
+    ready: bool,
+}
+
+/// 加载录像，等到能跳转为止。重新加载会把镜头重置成自由视角、把观战面板收起
+fn load_replay(host: &dyn Host, r: &Replay, s: &mut Session, rx: &Receiver<Value>) -> Result<()> {
+    s.con().send(&format!("playdemo replays/{}", r.match_id))?;
+    s.con()
+        .wait_for(Duration::from_secs(120), |l| l.contains("OnSwitchLoopModeFinished( game : success )"))
+        .context("录像没有加载起来（游戏里有这场录像吗？）")?;
+    // 跳转太早会让游戏崩溃（CopyNewEntity），等到这场的 GSI 时钟再动
+    let id = r.match_id;
+    gsi::wait_for(rx, Duration::from_secs(60), "这场比赛的 GSI 时钟", |st| st.match_id == Some(id) && st.clock.is_some())?;
+    host.event(Event::ReplayLoaded);
+    Ok(())
+}
+
+/// 倒计时，然后跳到 `at` 前 5 秒设镜头和迷雾（不能直接跳到导出段中点：暂停在同一 tick 时再跳，游戏不输出完成标志）。
+/// 倒计时期间用户一动就算暂停，返回错误
+fn setup_view(host: &dyn Host, v: &View, s: &mut Session, rx: &Receiver<Value>, ui: &mut Ui, at: f32, secs: u32) -> Result<()> {
+    for left in (1..=secs).rev() {
+        host.event(Event::Countdown { secs: left, input_guard: v.guard });
+        std::thread::sleep(Duration::from_secs(1));
+        cancel::check_not_paused()?;
+    }
+    let prep = (at - 5.0).max(v.first);
+    clip_builder::goto(s.con(), rx, v.r.tick_at(prep).context("超出录像范围")?, prep)?;
+    let _front = ui.front()?;
+    spectator::setup(ui, Panel::Collapsed, v.team)
+}
+
+/// 导出一段并核对时长；导出失败、文件 0 字节或时长偏差超过容差时重来一次。
+/// 暂停（桌面应用里用户动了鼠标键盘）不算失败：等用户点"继续"，重新加载录像、设好镜头，再导出这一段
+#[allow(clippy::too_many_arguments)]
+fn export_checked(
+    host: &dyn Host,
+    ui: &mut Ui,
+    s: &mut Session,
+    rx: &Receiver<Value>,
+    job: &Job,
+    player: usize,
+    view: &mut View,
+) -> Result<PathBuf> {
     let planned = (job.to - job.from) as f64;
-    let mut last_err = None;
-    for attempt in 1..=2 {
-        let tried = spectator::focus(player, rx).and_then(|()| clip_builder::export(ui, s.con(), rx, job));
-        match tried {
+    let mut failures = 0;
+    loop {
+        // 暂停中就等；点了停止就返回错误
+        if cancel::paused() {
+            host.event(Event::Paused);
+            cancel::wait_while_paused()?;
+            host.event(Event::Resuming);
+        }
+        let mut tried = Ok(());
+        if cancel::take_pause_seen() {
+            tried = load_replay(host, view.r, s, rx).and_then(|()| setup_view(host, view, s, rx, ui, job.from, RESUME_COUNTDOWN));
+        } else if !view.ready {
+            tried = setup_view(host, view, s, rx, ui, job.from, COUNTDOWN);
+        }
+        let tried = tried.inspect(|()| view.ready = true).and_then(|()| {
+            spectator::focus(player, rx).and_then(|()| clip_builder::export(ui, s.con(), rx, job))
+        });
+        let err = match tried {
             Ok(exported) => {
                 let secs = media::mp4_duration(&exported.path)?;
                 if (secs - planned).abs() <= DURATION_TOLERANCE {
@@ -395,15 +441,19 @@ fn export_checked(host: &dyn Host, ui: &mut Ui, s: &mut Session, rx: &Receiver<V
                     return Ok(part);
                 }
                 let _ = std::fs::remove_file(&exported.path);
-                last_err = Some(anyhow::anyhow!("导出的视频 {secs:.1} 秒，计划 {planned:.1} 秒"));
+                anyhow::anyhow!("导出的视频 {secs:.1} 秒，计划 {planned:.1} 秒")
             }
-            Err(e) => last_err = Some(e),
-        }
-        // 停下了就不重来
+            Err(e) => e,
+        };
+        // 停下了就不重来；被暂停打断的不算一次失败
         cancel::check()?;
-        if attempt == 1 {
-            host.event(Event::Retrying { reason: format!("{:#}", last_err.as_ref().unwrap()) });
+        if cancel::paused() {
+            continue;
         }
+        failures += 1;
+        if failures >= 2 {
+            return Err(err);
+        }
+        host.event(Event::Retrying { reason: format!("{err:#}") });
     }
-    Err(last_err.unwrap())
 }

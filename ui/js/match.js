@@ -28,7 +28,7 @@ export async function showMatch(view, matchId, { back, record }) {
     record({
       matchId,
       player,
-      clips: sel.map((c) => c.index),
+      clips: sel,
       secs: sel.reduce((a, c) => a + c.duration, 0),
       minutes: (sel.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1),
     });
