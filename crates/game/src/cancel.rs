@@ -16,6 +16,8 @@ pub enum Reason {
     Input = 2,
     /// 按了取消快捷键
     Hotkey = 3,
+    /// 在桌面应用里点了停止
+    Stop = 4,
 }
 
 impl Reason {
@@ -24,6 +26,7 @@ impl Reason {
             Reason::CtrlC => "按了 Ctrl+C",
             Reason::Input => "检测到鼠标或键盘操作",
             Reason::Hotkey => "按了取消快捷键",
+            Reason::Stop => "点了停止",
         }
     }
 }
@@ -65,6 +68,7 @@ pub fn reason() -> Option<Reason> {
         1 => Some(Reason::CtrlC),
         2 => Some(Reason::Input),
         3 => Some(Reason::Hotkey),
+        4 => Some(Reason::Stop),
         _ => None,
     }
 }

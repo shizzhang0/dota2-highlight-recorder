@@ -18,6 +18,7 @@ export function openSettings(dialog, { onSaved }) {
     el("option", { value: "auto" }, t("settings.language.auto")),
     LANGS.map(([v, name]) => el("option", { value: v }, name)));
   lang.value = settings.language;
+  const ffmpeg = el("input", { type: "text", value: settings.ffmpeg, placeholder: t("settings.ffmpeg.auto") });
 
   const save = async () => {
     await replaceSettings({
@@ -27,6 +28,7 @@ export function openSettings(dialog, { onSaved }) {
       compile: compile.checked,
       quit_after: quit.checked,
       language: lang.value,
+      ffmpeg: ffmpeg.value.trim(),
     });
     dialog.close();
     onSaved();
@@ -41,6 +43,8 @@ export function openSettings(dialog, { onSaved }) {
       el("label", {}, t("settings.compile")), el("label", {}, compile, " ", t("settings.compile.hint")),
       el("label", {}, t("settings.quitAfter")), el("label", {}, quit),
       el("label", {}, t("settings.language")), lang,
+      el("label", {}, "ffmpeg"), ffmpeg,
+      el("div", { class: "hint" }, t("settings.ffmpeg.hint")),
     ),
     el("div", { class: "dialog-actions" },
       el("button", { type: "button", onclick: () => dialog.close() }, t("settings.cancel")),

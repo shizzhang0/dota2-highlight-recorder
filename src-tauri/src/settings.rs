@@ -19,6 +19,8 @@ pub struct Settings {
     pub quit_after: bool,
     /// 界面语言："auto" 跟随系统，或 "zh-CN" / "en"
     pub language: String,
+    /// ffmpeg.exe 或所在目录；空 = 自动找（程序目录、环境变量 D2HR_FFMPEG、PATH）
+    pub ffmpeg: String,
     /// 片段规则
     pub rules: Rules,
 }
@@ -32,6 +34,7 @@ impl Default for Settings {
             compile: false,
             quit_after: false,
             language: "auto".into(),
+            ffmpeg: String::new(),
             rules: Rules::default(),
         }
     }

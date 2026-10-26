@@ -4,6 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod matches;
+mod record;
 mod settings;
 
 use tauri::Manager;
@@ -25,6 +26,10 @@ fn main() {
             matches::hero_names,
             matches::now,
             matches::reveal,
+            record::start_recording,
+            record::stop_recording,
+            record::answer_confirm,
+            record::is_recording,
             settings::get_settings,
             settings::save_settings,
             settings::default_settings,

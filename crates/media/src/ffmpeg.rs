@@ -4,17 +4,30 @@
 //! 2026-10-22 用 ffprobe 看的），所以按整秒裁掉两头多留的部分可以直接切在关键帧上。
 
 use std::path::{Path, PathBuf};
+use std::os::windows::process::CommandExt;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub struct Ffmpeg {
     exe: PathBuf,
 }
 
 impl Ffmpeg {
-    /// 找 ffmpeg：先用给定路径（文件或所在目录），再看环境变量 `D2HR_FFMPEG`，最后在 PATH 里找
+    /// 找 ffmpeg：先用给定路径（文件或所在目录），再找程序自己所在的目录（安装包附带的放这里），
+    /// 再看环境变量 `D2HR_FFMPEG`，最后在 PATH 里找
     pub fn locate(given: Option<&Path>) -> Result<Ffmpeg> {
+        if given.is_none()
+            && let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf))
+        {
+            for exe in [dir.join("ffmpeg.exe"), dir.join("ffmpeg").join("ffmpeg.exe")] {
+                if exe.is_file() {
+                    return Ok(Ffmpeg { exe });
+                }
+            }
+        }
         let from_env = std::env::var_os("D2HR_FFMPEG").map(PathBuf::from);
         if let Some(p) = given.map(Path::to_path_buf).or(from_env) {
             let exe = if p.is_dir() { p.join("ffmpeg.exe") } else { p.clone() };
@@ -36,6 +49,8 @@ impl Ffmpeg {
 
     fn run(&self, args: &[&str]) -> Result<()> {
         let out = Command::new(&self.exe)
+            // 桌面应用里调用时不弹黑色控制台窗口
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["-hide_banner", "-loglevel", "error", "-y"])
             .args(args)
             .stdin(Stdio::null())

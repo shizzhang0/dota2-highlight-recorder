@@ -183,3 +183,21 @@ dialog h2 { margin: 0 0 14px; font-size: 16px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 .loading { padding: 40px; text-align: center; color: var(--muted); }
+
+/* 录制 */
+.warn {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--tag);
+  color: var(--tag-text);
+  font-weight: 600;
+}
+.step { font-size: 16px; font-weight: 600; margin: 12px 0 4px; }
+.bar { height: 8px; border-radius: 99px; background: var(--hover); overflow: hidden; margin-top: 10px; }
+.bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .3s linear; }
+.log { margin: 0; padding-left: 22px; max-height: 320px; overflow: auto; color: var(--muted); }
+.log li { margin: 2px 0; }
+.files { padding-left: 20px; }
+.files li { margin: 4px 0; }
+button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; }
+button.link:hover:not(:disabled) { background: none; text-decoration: underline; }

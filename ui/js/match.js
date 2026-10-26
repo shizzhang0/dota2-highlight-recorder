@@ -4,7 +4,7 @@ import { t } from "./i18n.js";
 import { clock, el, heroName, length } from "./format.js";
 import { settings, persist } from "./state.js";
 
-export async function showMatch(view, matchId, { back }) {
+export async function showMatch(view, matchId, { back, record }) {
   view.replaceChildren(el("div", { class: "loading" }, t("match.parsing")));
   let info;
   try {
@@ -21,7 +21,18 @@ export async function showMatch(view, matchId, { back }) {
   const playersBox = el("div", { class: "teams" });
   const clipsBox = el("div");
   const summary = el("span", { class: "muted" });
-  const recordBtn = el("button", { type: "button", class: "primary", disabled: true, title: t("match.recordSoon") }, t("match.record"));
+  const recordBtn = el("button", { type: "button", class: "primary" }, t("match.record"));
+  recordBtn.addEventListener("click", () => {
+    const sel = clips.filter((c) => picked.has(c.index));
+    if (!sel.length) return;
+    record({
+      matchId,
+      player,
+      clips: sel.map((c) => c.index),
+      secs: sel.reduce((a, c) => a + c.duration, 0),
+      minutes: (sel.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1),
+    });
+  });
 
   function renderPlayers() {
     const team = (id, label, won) => el("div", { class: `team ${id === 2 ? "radiant" : "dire"}` },
@@ -46,6 +57,7 @@ export async function showMatch(view, matchId, { back }) {
     summary.textContent = t("match.summary", {
       n: sel.length, total: clips.length, secs: length(secs), minutes: (est / 60).toFixed(1),
     });
+    recordBtn.disabled = sel.length === 0;
   }
 
   function tags(c) {

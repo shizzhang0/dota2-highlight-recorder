@@ -2,21 +2,32 @@
 import { applyStatic, loadLang, resolve } from "./i18n.js";
 import { loadSettings, settings } from "./state.js";
 import { setHeroNames } from "./format.js";
-import { heroNames } from "./api.js";
+import { heroNames, isRecording } from "./api.js";
 import { showList } from "./list.js";
 import { showMatch } from "./match.js";
+import { confirmStart, showRecording } from "./record.js";
 import { openSettings } from "./settings.js";
 
 const view = document.getElementById("view");
 const dialog = document.getElementById("settings");
+const confirmDialog = document.getElementById("confirm");
 let current = { name: "list" };
 
 function render() {
-  if (current.name === "match") showMatch(view, current.id, { back: home });
+  if (current.name === "match") showMatch(view, current.id, { back: home, record });
   else showList(view, { openMatch });
 }
 
-function home() {
+/** 比赛页点了开始录制：确认后进入进度页；录完"返回比赛"回到同一场 */
+async function record({ matchId, player, clips, secs, minutes }) {
+  if (!(await confirmStart(confirmDialog, { count: clips.length, secs, minutes }))) return;
+  current = { name: "recording", id: matchId };
+  showRecording(view, confirmDialog, { matchId, player, clips, back: () => openMatch(matchId) });
+}
+
+async function home() {
+  // 录制中不离开进度页（录完的结果也在这页）
+  if (current.name === "recording" && (await isRecording())) return;
   current = { name: "list" };
   render();
 }

@@ -61,7 +61,7 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
 }
 
 /// 解析一场录像（有缓存）。解析器递归较深，放到大栈线程里跑
-async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
+pub(crate) async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
     if let Some((_, r)) = PARSED.lock().unwrap().iter().find(|(id, _)| *id == match_id) {
         return Ok(r.clone());
     }
