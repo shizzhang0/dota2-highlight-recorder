@@ -1,5 +1,3 @@
-import { t } from "./i18n.js";
-
 /** 秒 → m:ss（号角前为负） */
 export function clock(secs) {
   const sign = secs < 0 ? "-" : "";
@@ -24,12 +22,16 @@ export function heroName(id) {
   return heroes[id] ?? id.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-/** 多久以前 */
-export function ago(thenSecs, nowSecs) {
-  const d = Math.max(0, nowSecs - thenSecs);
-  if (d < 3600) return t("ago.minutes", { n: Math.floor(d / 60) });
-  if (d < 86400) return t("ago.hours", { n: Math.floor(d / 3600) });
-  return t("ago.days", { n: Math.floor(d / 86400) });
+/** Unix 秒 → 本地时间 "10-26 21:10" */
+export function date(secs) {
+  const d = new Date(secs * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 文件路径 → 文件名 */
+export function baseName(path) {
+  return path.split(/[\\/]/).pop();
 }
 
 /** 生成元素：el("td", { class: "num" }, "文字", 子元素…) */

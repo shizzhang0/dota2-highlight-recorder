@@ -5,9 +5,18 @@
 <title>Dota 2 高光录制</title>
 <link rel="stylesheet" href="css/app.css">
 <header class="topbar">
-  <button class="brand" id="home" type="button"><span class="logo">D2</span><span data-t="app.title"></span></button>
+  <span class="brand"><span class="logo">D2</span><span data-t="app.title"></span></span>
+  <nav class="nav">
+    <button type="button" data-nav="home" data-t="nav.matches"></button>
+    <button type="button" data-nav="videos" data-t="nav.videos"></button>
+    <button type="button" data-nav="settings" data-t="nav.settings"></button>
+  </nav>
   <div class="spacer"></div>
-  <button class="ghost" id="open-settings" type="button" data-t="nav.settings"></button>
+  <span class="recording-badge" id="recording-badge" hidden data-t="nav.recording"></span>
+  <span class="game-status" id="game-status" hidden>
+    <span data-t="nav.gameOpen"></span>
+    <button type="button" class="link" id="quit-game" data-t="nav.quitGame"></button>
+  </span>
 </header>
 <main id="view"></main>
 <dialog id="settings"></dialog>

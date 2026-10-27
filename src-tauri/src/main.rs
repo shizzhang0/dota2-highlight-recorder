@@ -3,6 +3,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod history;
 mod matches;
 mod record;
 mod settings;
@@ -20,11 +21,12 @@ fn main() {
         }))
         .invoke_handler(tauri::generate_handler![
             matches::list_replays,
+            matches::download_replay,
+            matches::delete_replays,
             matches::open_match,
             matches::plan,
             matches::default_rules,
             matches::hero_names,
-            matches::now,
             matches::reveal,
             record::start_recording,
             record::stop_recording,
@@ -32,6 +34,10 @@ fn main() {
             record::answer_confirm,
             record::is_recording,
             record::quit_game,
+            record::game_open,
+            history::recorded_matches,
+            history::delete_match_record,
+            history::open_file,
             settings::get_settings,
             settings::save_settings,
             settings::default_settings,

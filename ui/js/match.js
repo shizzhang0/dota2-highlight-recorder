@@ -1,20 +1,24 @@
-// 比赛页：选玩家 → 片段列表（可勾选）→ 规则参数 → 底部汇总
+// 比赛页：选玩家 → 片段列表（默认不勾，标出已录过的）→ 规则参数 → 底部汇总
 import * as api from "./api.js";
 import { t } from "./i18n.js";
 import { clock, el, heroName, length } from "./format.js";
 import { settings, persist } from "./state.js";
 
-export async function showMatch(view, matchId, { back, record }) {
+/** `player` / `preselect`（片段文件名）从"已录视频"的"继续录未完成的"带过来：选好玩家、勾上这些片段 */
+export async function showMatch(view, matchId, { home, record, player: wanted, preselect }) {
   view.replaceChildren(el("div", { class: "loading" }, t("match.parsing")));
   let info;
   try {
     info = await api.openMatch(matchId);
   } catch (e) {
-    view.replaceChildren(el("button", { type: "button", onclick: back }, t("nav.back")), el("div", { class: "card error" }, e.message));
+    view.replaceChildren(el("button", { type: "button", onclick: home }, t("nav.back")), el("div", { class: "card error" }, e.message));
     return;
   }
 
-  let player = info.me ?? info.players[0].id;
+  let player = info.players.some((p) => p.id === wanted) ? wanted : info.me ?? info.players[0].id;
+  // 带过来的片段只在第一次算计划时用；规则改过的话可能对不上，提示一句
+  let pending = preselect ? new Set(preselect) : null;
+  const preselectNote = el("p", { class: "warn", hidden: true });
   let clips = [];
   let picked = new Set();
 
@@ -29,6 +33,7 @@ export async function showMatch(view, matchId, { back, record }) {
       matchId,
       player,
       clips: sel,
+      overwrite: sel.filter((c) => c.recorded).length,
       secs: sel.reduce((a, c) => a + c.duration, 0),
       minutes: (sel.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1),
     });
@@ -54,9 +59,10 @@ export async function showMatch(view, matchId, { back, record }) {
     const sel = clips.filter((c) => picked.has(c.index));
     const secs = sel.reduce((a, c) => a + c.duration, 0);
     const est = sel.reduce((a, c) => a + c.estimated_secs, 0);
+    const overwrite = sel.filter((c) => c.recorded).length;
     summary.textContent = t("match.summary", {
       n: sel.length, total: clips.length, secs: length(secs), minutes: (est / 60).toFixed(1),
-    });
+    }) + (overwrite ? t("match.overwrite", { n: overwrite }) : "");
     recordBtn.disabled = sel.length === 0;
   }
 
@@ -75,6 +81,7 @@ export async function showMatch(view, matchId, { back, record }) {
     }
     const all = el("input", { type: "checkbox", title: t("match.selectAll") });
     all.checked = picked.size === clips.length;
+    all.indeterminate = picked.size > 0 && picked.size < clips.length;
     all.addEventListener("change", () => {
       picked = all.checked ? new Set(clips.map((c) => c.index)) : new Set();
       renderClips();
@@ -85,6 +92,7 @@ export async function showMatch(view, matchId, { back, record }) {
       box.addEventListener("change", () => {
         box.checked ? picked.add(c.index) : picked.delete(c.index);
         all.checked = picked.size === clips.length;
+        all.indeterminate = picked.size > 0 && picked.size < clips.length;
         renderSummary();
       });
       return el("tr", { title: c.file_name },
@@ -95,6 +103,7 @@ export async function showMatch(view, matchId, { back, record }) {
         el("td", { class: "wrap" }, c.victims.map(heroName).join(", ")),
         el("td", {}, tags(c)),
         el("td", { class: "num" }, String(c.exports)),
+        el("td", {}, c.recorded ? el("span", { class: "ok", title: t("match.recordedHint") }, t("match.recorded")) : ""),
       );
     });
     clipsBox.replaceChildren(el("table", {},
@@ -103,6 +112,7 @@ export async function showMatch(view, matchId, { back, record }) {
         el("th", {}, t("match.col.time")), el("th", { class: "num" }, t("match.col.length")),
         el("th", {}, t("match.col.kills")), el("th", {}, t("match.col.tags")),
         el("th", { class: "num" }, t("match.col.exports")),
+        el("th", {}, t("match.col.status")),
       )),
       el("tbody", {}, rows),
     ));
@@ -116,7 +126,17 @@ export async function showMatch(view, matchId, { back, record }) {
       clipsBox.replaceChildren(el("p", { class: "error" }, e.message));
       clips = [];
     }
-    picked = new Set(clips.map((c) => c.index));
+    // 默认一个都不勾，用户自己挑
+    picked = new Set();
+    if (pending) {
+      const found = clips.filter((c) => pending.has(c.file_name));
+      picked = new Set(found.map((c) => c.index));
+      preselectNote.hidden = found.length === pending.size;
+      preselectNote.textContent = t("match.preselectMissing", { n: pending.size - found.length });
+      pending = null;
+    } else {
+      preselectNote.hidden = true;
+    }
     renderClips();
   }
 
@@ -156,12 +176,11 @@ export async function showMatch(view, matchId, { back, record }) {
 
   view.replaceChildren(
     el("div", { class: "row", style: "margin-bottom:12px" },
-      el("button", { type: "button", onclick: back }, t("nav.back")),
       el("h2", { style: "margin:0" }, t("match.title", { id: info.match_id })),
       el("span", { class: "muted" }, t("match.meta", { duration: clock(info.duration), build: info.game_build })),
     ),
     el("div", { class: "card" }, el("h2", {}, t("match.pickPlayer")), playersBox),
-    el("div", { class: "card" }, el("h2", {}, t("match.clips")), clipsBox,
+    el("div", { class: "card" }, el("h2", {}, t("match.clips")), preselectNote, clipsBox,
       el("details", { class: "rules", style: "margin-top:14px" }, el("summary", {}, t("rules.title")), rulesBox)),
     el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }), recordBtn),
   );

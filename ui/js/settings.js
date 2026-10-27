@@ -1,6 +1,7 @@
 // 设置对话框
 import { LANGS, t } from "./i18n.js";
 import { el } from "./format.js";
+import { reveal } from "./api.js";
 import { replaceSettings, settings } from "./state.js";
 
 const RESOLUTIONS = ["", "1920x1080", "2560x1440", "2560x1600", "1600x900", "1280x720"];
@@ -37,7 +38,9 @@ export function openSettings(dialog, { onSaved }) {
   dialog.replaceChildren(
     el("h2", {}, t("settings.title")),
     el("div", { class: "form" },
-      el("label", {}, t("settings.outDir")), out,
+      el("label", {}, t("settings.outDir")),
+      el("div", { class: "row", style: "flex-wrap:nowrap" }, out,
+        el("button", { type: "button", onclick: () => reveal(out.value.trim() || settings.out_dir) }, t("settings.outDir.open"))),
       el("label", {}, t("settings.resolution")), res,
       el("div", { class: "hint" }, t("settings.resolution.hint")),
       el("label", {}, t("settings.compile")), el("label", {}, compile, " ", t("settings.compile.hint")),

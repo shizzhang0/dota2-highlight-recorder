@@ -20,6 +20,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::settings::Settings;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+/// 上次录完后游戏留着没退
+static GAME_OPEN: AtomicBool = AtomicBool::new(false);
 static NEXT_QUESTION: AtomicU64 = AtomicU64::new(1);
 /// 正在等用户回答的确认请求
 static PENDING: Mutex<Option<(u64, Sender<bool>)>> = Mutex::new(None);
@@ -127,6 +129,9 @@ fn hide_overlay(app: &AppHandle) {
 /// 录制结束（录完、停下或出错）时发给界面
 #[derive(Serialize, Clone)]
 struct Finished {
+    match_id: u64,
+    /// 写录制记录失败的原因（界面提示一下，不影响已经录好的文件）
+    history_error: Option<String>,
     files: Vec<PathBuf>,
     /// 做好的片段序号（计划里的序号）
     completed: Vec<usize>,
@@ -223,8 +228,41 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
     });
     std::thread::spawn(move || {
         let host = AppHost { app: app.clone() };
+        let time = crate::matches::now();
         let report = pipeline::run(&host, &r, player, &selected, &p, &ff, &o);
+        // 记进"已录视频"：files 和 completed 一一对应，多出来的最后一个是合集
+        let done: std::collections::HashMap<usize, &PathBuf> = report.completed.iter().copied().zip(&report.files).collect();
+        let hero = |i: usize| r.players[i].hero.trim_start_matches("npc_dota_hero_").to_owned();
+        let run = crate::history::Run {
+            time,
+            match_id,
+            player,
+            hero: hero(player),
+            player_name: r.players[player].name.clone(),
+            is_me: game::steam::me() == Some(r.players[player].account_id),
+            clips: selected
+                .iter()
+                .map(|s| crate::history::RunClip {
+                    index: s.index,
+                    file_name: clips::file_name(&r, &s.clip),
+                    start: s.clip.start(),
+                    end: s.clip.end(),
+                    victims: s.clip.kills.iter().map(|&k| hero(r.kills[k].victim)).collect(),
+                    multi_kill: s.clip.multi_kill,
+                    path: done.get(&s.index).map(|p| (*p).clone()),
+                })
+                .collect(),
+            compilation: report.files.get(report.completed.len()).cloned(),
+            cancelled: report.cancelled.map(|c| c.describe().to_owned()),
+            error: report.error.as_ref().map(|e| format!("{e:#}")),
+            elapsed_secs: report.elapsed.as_secs_f32(),
+        };
+        let history_error = crate::history::add(run).err();
+        let game_open = !report.game_quit && game::window::dota_window().is_ok();
+        GAME_OPEN.store(game_open, Ordering::SeqCst);
         let finished = Finished {
+            match_id,
+            history_error,
             files: report.files,
             completed: report.completed,
             selected: clips,
@@ -232,7 +270,7 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
             error: report.error.map(|e| format!("{e:#}")),
             elapsed_secs: report.elapsed.as_secs_f32(),
             out_dir: o.out.to_string_lossy().into_owned(),
-            game_open: !report.game_quit && game::window::dota_window().is_ok(),
+            game_open,
         };
         RUNNING.store(false, Ordering::SeqCst);
         // 进度窗先显示结果，停留几秒再收起；主窗口切到前面显示结果页
@@ -246,10 +284,21 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
     Ok(())
 }
 
-/// 让录制用的游戏退出（结果页的"退出游戏"按钮）
+/// 让录制用的游戏退出（导航栏的"退出"）
 #[tauri::command]
 pub fn quit_game() -> Result<(), String> {
-    game::netcon::Netcon::connect(2121).and_then(|mut c| c.send("quit")).map_err(|e| format!("{e:#}"))
+    game::netcon::Netcon::connect(2121).and_then(|mut c| c.send("quit")).map_err(|e| format!("{e:#}"))?;
+    GAME_OPEN.store(false, Ordering::SeqCst);
+    Ok(())
+}
+
+/// 录制用的游戏还开着（录完留着的那个）。用户自己关掉游戏后变 false。导航栏定时问
+#[tauri::command]
+pub fn game_open() -> bool {
+    if GAME_OPEN.load(Ordering::SeqCst) && game::window::dota_window().is_err() {
+        GAME_OPEN.store(false, Ordering::SeqCst);
+    }
+    GAME_OPEN.load(Ordering::SeqCst)
 }
 
 /// 暂停后点了"继续"

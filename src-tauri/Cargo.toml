@@ -20,3 +20,5 @@ serde_json.workspace = true
 tauri = { version = "2", features = [] }
 # 同时只跑一个：第二次打开时把已有的窗口提到前面
 tauri-plugin-single-instance = "2"
+# 删除视频时移到回收站（SHFileOperationW）
+windows.workspace = true
