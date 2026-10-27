@@ -6,8 +6,11 @@
 
 use std::io::Read;
 use std::net::TcpListener;
+use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
+use std::thread::JoinHandle;
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
@@ -77,15 +80,41 @@ pub fn check_port(port: u16) -> Result<()> {
         .map_err(|e| anyhow!("GSI 端口 {port} 被占用（{e}），用 --gsi-port 换一个"))
 }
 
+/// 正在监听的 GSI 端口。当作收包的通道用（`Deref` 到 `Receiver`）；离开作用域时停掉服务器、释放端口。
+/// 桌面应用在同一个进程里连续录很多次，不释放的话第二次就会报端口被占用（2026-10-26 测试时遇到）
+pub struct Listener {
+    rx: Receiver<Value>,
+    server: Arc<tiny_http::Server>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Deref for Listener {
+    type Target = Receiver<Value>;
+    fn deref(&self) -> &Receiver<Value> {
+        &self.rx
+    }
+}
+
+impl Drop for Listener {
+    fn drop(&mut self) {
+        // 让卡在等请求的线程退出，端口随服务器一起释放
+        self.server.unblock();
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
 /// 监听 127.0.0.1:port，收到的每个包解析成 JSON 送进通道。收包先回 200，不让游戏等。
 /// 本机 dota2-game-helper2 也在收 GSI，两份配置都会生效，所以要认 token：
 /// 带了 auth 但 token 不对的丢弃；没带 auth 的放行（只警告一次）
-pub fn listen(port: u16) -> Result<Receiver<Value>> {
-    let server = tiny_http::Server::http(("127.0.0.1", port)).map_err(|e| anyhow!("无法监听 GSI 端口 {port}: {e}"))?;
+pub fn listen(port: u16) -> Result<Listener> {
+    let server = Arc::new(tiny_http::Server::http(("127.0.0.1", port)).map_err(|e| anyhow!("无法监听 GSI 端口 {port}: {e}"))?);
     let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
+    let srv = server.clone();
+    let thread = std::thread::spawn(move || {
         let mut warned = false;
-        for mut req in server.incoming_requests() {
+        for mut req in srv.incoming_requests() {
             if req.body_length().is_some_and(|n| n > MAX_BODY) {
                 let _ = req.respond(tiny_http::Response::from_string("too large").with_status_code(413));
                 continue;
@@ -112,7 +141,7 @@ pub fn listen(port: u16) -> Result<Receiver<Value>> {
             }
         }
     });
-    Ok(rx)
+    Ok(Listener { rx, server, thread: Some(thread) })
 }
 
 /// 我们关心的几个字段

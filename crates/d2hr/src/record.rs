@@ -18,12 +18,14 @@ impl Host for Console {
                 println!("请先退出 Dota（主菜单 → 退出游戏），退出后会自动继续；按 Ctrl+C 取消。");
             }
             Event::LaunchingGame { args } => println!("启动游戏：{}", args.join(" ")),
-            Event::ReplayLoaded => {}
-            Event::Countdown { secs, hotkey } => match hotkey {
-                Some(k) => println!("{secs} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘（一动就会停下；也可以按 {k} 或 Ctrl+C）…"),
-                None => println!("{secs} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘（要停下就按 Ctrl+C）…"),
-            },
-            Event::HotkeyUnavailable { hotkey } => println!("取消快捷键 {hotkey} 被别的程序占用了，要停下请按 Ctrl+C 或动一下鼠标"),
+            Event::ReplayLoaded | Event::Paused | Event::Resuming => {}
+            Event::Countdown { secs, input_guard } => {
+                if input_guard {
+                    println!("{secs} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘（要停下就按任意键或移动鼠标）…")
+                } else {
+                    println!("{secs} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘（要停下就按 Ctrl+C）…")
+                }
+            }
             Event::ClipStarted { n, total, index, name } => println!("[{n}/{total}] 片段 {index}：{name}"),
             Event::ExportStarted { .. } => {}
             Event::Exported { from, to, secs, render_secs } => {

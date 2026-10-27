@@ -18,6 +18,36 @@
         "minWidth": 820,
         "minHeight": 560,
         "center": true
+      },
+      {
+        "label": "overlay",
+        "url": "overlay.html",
+        "title": "d2hr overlay",
+        "visible": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "focus": false,
+        "width": 440,
+        "height": 132
+      },
+      {
+        "label": "prompt",
+        "url": "prompt.html",
+        "title": "d2hr prompt",
+        "visible": false,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false,
+        "center": true,
+        "width": 480,
+        "height": 240
       }
     ],
     "security": {

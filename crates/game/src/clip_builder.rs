@@ -128,8 +128,9 @@ pub fn export(ui: &mut Ui, con: &mut Netcon, gsi: &Receiver<Value>, job: &Job) -
     std::thread::sleep(Duration::from_millis(500));
     ui.shot("左把手时间")?;
     ui.click(layout::EXPORT, "导出视频")?;
-    // 丢掉之前积压的包，渲染期间的时钟才是导出的实际范围
+    // 丢掉之前积压的包和控制台输出：渲染期间的时钟才是导出的实际范围，渲染开始/结束的那两行也要是这一次的
     while gsi.try_recv().is_ok() {}
+    con.drain(Duration::from_millis(50), Duration::from_millis(300));
     ui.click(layout::DIALOG_EXPORT, "开始导出")?;
     if job.background_render {
         front = None;
@@ -140,12 +141,17 @@ pub fn export(ui: &mut Ui, con: &mut Netcon, gsi: &Receiver<Value>, job: &Job) -
         std::thread::sleep(Duration::from_millis(500));
     }
 
-    let waited = wait_render(gsi, job, &before);
+    let waited = wait_render(con, gsi, job, &before);
     if crate::cancel::requested() {
         // 渲染可能还没完，提示框还没出来，不去乱点；剪辑工具留给用户自己关
         return waited;
     }
 
+    // 渲染期间用户动了（暂停）：渲染不受影响，已经渲染完了；先把前台让出来，等用户点"继续"再去关提示框
+    if crate::cancel::paused() {
+        drop(front.take());
+        crate::cancel::wait_while_paused()?;
+    }
     // 不管成败都会弹"导出视频成功"，关掉它再关剪辑工具
     let _front: Foreground = match front {
         Some(f) => f,
@@ -158,15 +164,27 @@ pub fn export(ui: &mut Ui, con: &mut Netcon, gsi: &Receiver<Value>, job: &Job) -
     waited
 }
 
-fn wait_render(gsi: &Receiver<Value>, job: &Job, before: &HashSet<PathBuf>) -> Result<Exported> {
+/// 等渲染完。以游戏控制台的两行为准：`Started recording movie: <文件>` 表示开始，
+/// `Finishing movie: <文件> [N frames @ 60 == X seconds]` 表示写完。
+/// 原先靠"文件大小 10 秒没变"判断写完，2026-10-26 测试时暂停期间游戏失去焦点、写得慢，被误判成写完，
+/// 去读没写完的 mp4 读不出时长，整次录制出错结束（游戏其实还在渲染）
+fn wait_render(con: &mut Netcon, gsi: &Receiver<Value>, job: &Job, before: &HashSet<PathBuf>) -> Result<Exported> {
     let len = job.to - job.from;
     let started = Instant::now();
-    let timeout = Duration::from_secs_f32(len * 3.0 + 60.0);
+    let timeout = Duration::from_secs_f32(len * 4.0 + 90.0);
     let (mut first, mut last) = (None, None);
     let mut file: Option<PathBuf> = None;
+    let (mut recording, mut finished) = (false, false);
     let (mut size, mut stable_since) = (0, Instant::now());
     loop {
-        std::thread::sleep(Duration::from_millis(500));
+        // 等控制台输出当作每轮的间隔
+        if let Some(line) = con.wait_for(Duration::from_millis(500), |l| l.contains("Started recording movie") || l.contains("Finishing movie")) {
+            if line.contains("Finishing movie") {
+                finished = true;
+            } else {
+                recording = true;
+            }
+        }
         crate::cancel::check()?;
         while let Ok(v) = gsi.try_recv() {
             if let Some(c) = State::from_json(&v).clock {
@@ -182,22 +200,20 @@ fn wait_render(gsi: &Receiver<Value>, job: &Job, before: &HashSet<PathBuf>) -> R
             size = now;
             stable_since = Instant::now();
         }
-        let advanced = matches!((first, last), (Some(a), Some(b)) if b > a + 1);
-        let reached_end = last.is_some_and(|c| c as f32 >= job.to.floor() - 1.0);
-        let stable = stable_since.elapsed();
-        if size > 0 && (stable >= Duration::from_secs(4) && reached_end || stable >= Duration::from_secs(10)) {
-            let path = file.context("文件写完了却找不到路径")?;
+        // 写完之后文件尾部（moov）还要落盘，再等它大小稳定一下
+        if finished && size > 0 && stable_since.elapsed() >= Duration::from_millis(1500) {
+            let path = file.context("渲染完了却找不到输出文件")?;
             return Ok(Exported { path, bytes: size, render: started.elapsed(), clock_first: first, clock_last: last });
         }
-        // 超长导出的失败表现：文件一直是 0 字节，游戏也不播放
-        if size == 0 && !advanced && started.elapsed() > Duration::from_secs(20) {
+        // 超长导出的失败表现：游戏根本没开始录（对话框照样说成功，文件 0 字节）
+        if !recording && !finished && started.elapsed() > Duration::from_secs(20) {
             if let Some(p) = &file {
                 let _ = std::fs::remove_file(p);
             }
-            bail!("导出没有开始（文件 0 字节、回放没动），片段太长或没点到按钮");
+            bail!("导出没有开始（游戏没开始录制），片段太长或没点到按钮");
         }
         if started.elapsed() > timeout {
-            bail!("等了 {timeout:?} 导出还没完成（文件 {size} 字节，GSI 时钟 {first:?} → {last:?}）");
+            bail!("等了 {timeout:?} 导出还没完成（已开始 {recording}，文件 {size} 字节，GSI 时钟 {first:?} → {last:?}）");
         }
     }
 }

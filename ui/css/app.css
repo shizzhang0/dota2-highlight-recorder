@@ -56,6 +56,8 @@ button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
 button.ghost { border-color: transparent; background: transparent; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.danger:hover:not(:disabled) { filter: brightness(1.08); background: var(--danger); }
 
 input[type="text"], input[type="number"], select {
   border: 1px solid var(--line);
@@ -76,8 +78,7 @@ input[type="number"] { width: 90px; }
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: 10px; border: 0; background: none; font-weight: 600; font-size: 15px; padding: 4px; }
-.brand:hover:not(:disabled) { background: none; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; padding: 4px; margin-right: 12px; }
 .logo {
   display: inline-grid;
   place-items: center;
@@ -90,6 +91,14 @@ input[type="number"] { width: 90px; }
   font-weight: 700;
 }
 .spacer { flex: 1; }
+
+/* 顶部导航：比赛 · 已录视频 · 设置；录制中变灰 */
+.nav { display: flex; gap: 4px; }
+.nav button { border-color: transparent; background: transparent; }
+.nav button.active { background: var(--hover); font-weight: 600; }
+.recording-badge { color: var(--accent); font-weight: 600; }
+.recording-badge::before { content: "● "; }
+.game-status { color: var(--muted); }
 
 main { padding: 20px; max-width: 1200px; margin: 0 auto; }
 
@@ -183,3 +192,38 @@ dialog h2 { margin: 0 0 14px; font-size: 16px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 .loading { padding: 40px; text-align: center; color: var(--muted); }
+
+/* 已录视频：录制记录（折叠） */
+details.runs summary { cursor: pointer; color: var(--muted); }
+details.runs .log { margin-top: 10px; }
+
+/* 录制 */
+.warn {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--tag);
+  color: var(--tag-text);
+  font-weight: 600;
+}
+.step { font-size: 16px; font-weight: 600; margin: 12px 0 4px; }
+.bar { height: 8px; border-radius: 99px; background: var(--hover); overflow: hidden; margin-top: 10px; }
+.bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .3s linear; }
+.log { margin: 0; padding-left: 22px; max-height: 320px; overflow: auto; color: var(--muted); }
+.log li { margin: 2px 0; }
+.files { padding-left: 20px; }
+.files li { margin: 4px 0; }
+.paused {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--tag-text);
+  background: var(--tag);
+}
+.paused-title { font-size: 16px; font-weight: 700; color: var(--tag-text); }
+.paused p { margin: 6px 0 10px; }
+.result h2 { font-size: 17px; }
+.result.done h2, .ok { color: var(--radiant); }
+.result.stopped h2 { color: var(--tag-text); }
+.result.error h2 { color: var(--danger); }
+button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; }
+button.link:hover:not(:disabled) { background: none; text-decoration: underline; }

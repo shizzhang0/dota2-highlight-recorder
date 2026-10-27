@@ -1,5 +1,6 @@
-//! 录像列表、比赛详情、录制计划。解析结果缓存在内存里，改规则参数重算计划时不用重新解析。
+//! 本地录像列表、按比赛 ID 下载、比赛详情、录制计划。解析结果缓存在内存里，改规则参数重算计划时不用重新解析。
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,6 +27,8 @@ pub struct ReplayRow {
     size: u64,
     /// 下载时间（Unix 秒）
     modified: u64,
+    /// 比赛开始时间（Unix 秒，录像里的结束时间减去录像时长，差不多是进游戏的时间）；读不了时为 null
+    start_time: Option<u64>,
     /// 录像时长（秒）；读不了时为 null
     duration: Option<f32>,
     /// 我（Steam 当前账号）在这场玩的英雄，不在这场为 null
@@ -44,10 +47,20 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
         .map(|f| {
             let modified = f.modified.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
             let mut row =
-                ReplayRow { match_id: f.match_id, size: f.size, modified, duration: None, my_hero: None, my_won: None, error: None };
+                ReplayRow {
+                match_id: f.match_id,
+                size: f.size,
+                modified,
+                start_time: None,
+                duration: None,
+                my_hero: None,
+                my_won: None,
+                error: None,
+            };
             match replay::peek(&f.path) {
                 Ok(s) => {
                     row.duration = Some(s.playback_time);
+                    row.start_time = (s.end_time > 0).then(|| (s.end_time as u64).saturating_sub(s.playback_time as u64));
                     if let Some(p) = me.and_then(|id| s.players.iter().find(|p| p.account_id == id)) {
                         row.my_hero = Some(hero(&p.hero));
                         row.my_won = Some(p.team == s.winner);
@@ -60,8 +73,60 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
         .collect())
 }
 
+/// 正在下载的比赛，同一场不同时下两次
+static DOWNLOADING: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+/// 下载失败的原因：确定下不到的分三种，界面按种类提示；其余（网络等）带原文
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DownloadError {
+    NoMatch,
+    NoUrl,
+    Expired,
+    Busy,
+    Other { message: String },
+}
+
+impl From<anyhow::Error> for DownloadError {
+    fn from(e: anyhow::Error) -> Self {
+        use replay::download::Unavailable;
+        match e.downcast_ref::<Unavailable>() {
+            Some(Unavailable::NoMatch) => DownloadError::NoMatch,
+            Some(Unavailable::NoUrl) => DownloadError::NoUrl,
+            Some(Unavailable::Expired) => DownloadError::Expired,
+            None => DownloadError::Other { message: format!("{e:#}") },
+        }
+    }
+}
+
+fn other(message: impl ToString) -> DownloadError {
+    DownloadError::Other { message: message.to_string() }
+}
+
+/// 按比赛 ID 下载录像到游戏的 replays 目录（和游戏里点"下载"存的是同一个地方）。已经有了就直接返回
+#[tauri::command]
+pub async fn download_replay(match_id: u64) -> Result<(), DownloadError> {
+    let dest = replays_dir().map_err(other)?.join(format!("{match_id}.dem"));
+    if dest.is_file() {
+        return Ok(());
+    }
+    {
+        let mut d = DOWNLOADING.lock().unwrap();
+        if d.contains(&match_id) {
+            return Err(DownloadError::Busy);
+        }
+        d.push(match_id);
+    }
+    let result = tauri::async_runtime::spawn_blocking(move || replay::download::download_match(match_id, &dest))
+        .await
+        .map_err(other)
+        .and_then(|r| r.map_err(DownloadError::from));
+    DOWNLOADING.lock().unwrap().retain(|&id| id != match_id);
+    result
+}
+
 /// 解析一场录像（有缓存）。解析器递归较深，放到大栈线程里跑
-async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
+pub(crate) async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
     if let Some((_, r)) = PARSED.lock().unwrap().iter().find(|(id, _)| *id == match_id) {
         return Ok(r.clone());
     }
@@ -84,6 +149,20 @@ async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
     cache.insert(0, (match_id, r.clone()));
     cache.truncate(KEEP);
     Ok(r)
+}
+
+/// 删除本地录像（一场或多场）：一起移到回收站，游戏里也就看不到了（国服客户端进某些录像会闪退，用户要能清掉）。
+/// 录过的视频、录制记录不动。录制中不让删，录制要用这些文件。已经不在的跳过
+#[tauri::command]
+pub fn delete_replays(match_ids: Vec<u64>) -> Result<(), String> {
+    if crate::record::is_recording() {
+        return Err("正在录制，录完再删".into());
+    }
+    let dir = replays_dir()?;
+    let paths: Vec<PathBuf> = match_ids.iter().map(|id| dir.join(format!("{id}.dem"))).filter(|p| p.is_file()).collect();
+    crate::history::recycle(&paths)?;
+    PARSED.lock().unwrap().retain(|(id, _)| !match_ids.contains(id));
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -206,6 +285,8 @@ pub struct ClipRow {
     exports: usize,
     file_name: String,
     estimated_secs: f32,
+    /// 输出目录里已经有这个片段的文件（再录会覆盖）
+    recorded: bool,
 }
 
 #[derive(Serialize)]
@@ -220,6 +301,7 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
         return Err(format!("没有 {player} 号玩家"));
     }
     let p = rules.params();
+    let out_dir = PathBuf::from(crate::settings::get_settings().out_dir);
     let clips = clips::plan(&r, player, &p)
         .iter()
         .enumerate()
@@ -234,6 +316,7 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
             exports: c.exports.len(),
             file_name: clips::file_name(&r, c),
             estimated_secs: c.estimated_seconds(&p),
+            recorded: out_dir.join(format!("{}.mp4", clips::file_name(&r, c))).is_file(),
         })
         .collect();
     Ok(PlanInfo { clips })
@@ -241,13 +324,12 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
 
 /// 英雄显示名（读游戏的本地化文件）。`language` 是界面语言 "zh-CN" / "en"；读不到返回空表，前端退回内部名
 #[tauri::command]
-pub fn hero_names(language: String) -> std::collections::HashMap<String, String> {
+pub fn hero_names(language: String) -> HashMap<String, String> {
     let game_lang = if language.starts_with("zh") { "schinese" } else { "english" };
     game::heroes::names(game_lang).unwrap_or_default()
 }
 
-/// 现在的 Unix 秒，前端用来算"几分钟前"
-#[tauri::command]
+/// 现在的 Unix 秒（录制记录的时间）
 pub fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }

@@ -66,7 +66,7 @@ enum Command {
         /// 录完让游戏退出
         #[arg(long)]
         quit: bool,
-        /// 录制期间不检测鼠标键盘操作（默认一动就停下，另有取消快捷键 Ctrl+Shift+F12）
+        /// 录制期间不检测鼠标键盘操作（默认按任意键或移动鼠标就停下）
         #[arg(long)]
         allow_input: bool,
         #[command(flatten)]
@@ -171,7 +171,7 @@ fn run() -> Result<()> {
                 Some(d) => d,
                 None => PathBuf::from(std::env::var("USERPROFILE").context("找不到用户目录")?).join(r"Videos\d2hr"),
             };
-            let o = pipeline::Options { compile, resolution, out, gsi_port, quit, input_guard: !allow_input };
+            let o = pipeline::Options { compile, resolution, out, gsi_port, quit, on_input: (!allow_input).then_some(game::input_guard::OnInput::Stop), log_dir: None };
             record::run(&r, player, &selected, &p, &ff, &o)
         }
     }

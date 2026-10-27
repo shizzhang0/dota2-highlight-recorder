@@ -12,9 +12,13 @@ tauri-build = { version = "2", features = [] }
 anyhow.workspace = true
 clips = { path = "../crates/clips" }
 game = { path = "../crates/game" }
+media = { path = "../crates/media" }
+pipeline = { path = "../crates/pipeline" }
 replay = { path = "../crates/replay" }
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = [] }
 # 同时只跑一个：第二次打开时把已有的窗口提到前面
 tauri-plugin-single-instance = "2"
+# 删除视频时移到回收站（SHFileOperationW）
+windows.workspace = true

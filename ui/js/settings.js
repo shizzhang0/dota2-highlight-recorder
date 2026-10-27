@@ -1,6 +1,7 @@
 // 设置对话框
 import { LANGS, t } from "./i18n.js";
 import { el } from "./format.js";
+import { reveal } from "./api.js";
 import { replaceSettings, settings } from "./state.js";
 
 const RESOLUTIONS = ["", "1920x1080", "2560x1440", "2560x1600", "1600x900", "1280x720"];
@@ -13,11 +14,12 @@ export function openSettings(dialog, { onSaved }) {
   const compile = el("input", { type: "checkbox" });
   compile.checked = settings.compile;
   const quit = el("input", { type: "checkbox" });
-  quit.checked = settings.quit_after;
+  quit.checked = settings.quit_when_done;
   const lang = el("select", {},
     el("option", { value: "auto" }, t("settings.language.auto")),
     LANGS.map(([v, name]) => el("option", { value: v }, name)));
   lang.value = settings.language;
+  const ffmpeg = el("input", { type: "text", value: settings.ffmpeg, placeholder: t("settings.ffmpeg.auto") });
 
   const save = async () => {
     await replaceSettings({
@@ -25,8 +27,9 @@ export function openSettings(dialog, { onSaved }) {
       out_dir: out.value.trim() || settings.out_dir,
       resolution: res.value,
       compile: compile.checked,
-      quit_after: quit.checked,
+      quit_when_done: quit.checked,
       language: lang.value,
+      ffmpeg: ffmpeg.value.trim(),
     });
     dialog.close();
     onSaved();
@@ -35,12 +38,16 @@ export function openSettings(dialog, { onSaved }) {
   dialog.replaceChildren(
     el("h2", {}, t("settings.title")),
     el("div", { class: "form" },
-      el("label", {}, t("settings.outDir")), out,
+      el("label", {}, t("settings.outDir")),
+      el("div", { class: "row", style: "flex-wrap:nowrap" }, out,
+        el("button", { type: "button", onclick: () => reveal(out.value.trim() || settings.out_dir) }, t("settings.outDir.open"))),
       el("label", {}, t("settings.resolution")), res,
       el("div", { class: "hint" }, t("settings.resolution.hint")),
       el("label", {}, t("settings.compile")), el("label", {}, compile, " ", t("settings.compile.hint")),
-      el("label", {}, t("settings.quitAfter")), el("label", {}, quit),
+      el("label", {}, t("settings.quitAfter")), el("label", {}, quit, " ", t("settings.quitAfter.hint")),
       el("label", {}, t("settings.language")), lang,
+      el("label", {}, "ffmpeg"), ffmpeg,
+      el("div", { class: "hint" }, t("settings.ffmpeg.hint")),
     ),
     el("div", { class: "dialog-actions" },
       el("button", { type: "button", onclick: () => dialog.close() }, t("settings.cancel")),
