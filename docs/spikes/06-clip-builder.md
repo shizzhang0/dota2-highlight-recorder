@@ -9,6 +9,9 @@
 
 没有 Source 1 那种 `startmovie`，也没有触发剪辑的控制台命令（`help dota_clip_builder` 显示不存在），但有一组设置项，都带 `archive` 标记（会写进用户配置）：
 
+> **2026-11-04 更正**：`startmovie` / `endmovie` 是有的（`help startmovie` 能查到），能逐帧输出 JPG 或 TGA 加 WAV，游戏在后台也照样出帧，
+> 只是比剪辑工具慢。实测数据见 [recording-review.md](../recording-review.md)。
+
 | 设置项 | 默认值 | 说明 |
 |---|---|---|
 | `dota_clip_builder_format` | `mp4` | 输出格式 |
