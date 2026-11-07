@@ -8,6 +8,7 @@ pub mod input_guard;
 pub mod keys;
 pub mod launch;
 pub mod layout;
+pub mod movie;
 pub mod netcon;
 pub mod session;
 pub mod spectator;

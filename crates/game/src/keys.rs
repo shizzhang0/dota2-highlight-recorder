@@ -77,6 +77,28 @@ fn load() -> Result<[u16; 10], String> {
     Ok(keys)
 }
 
+/// 只看 `team` 一方视野（迷雾）用的虚拟键码：`SpectatorFOWRadient`（游戏里就是这么拼的）/ `SpectatorFOWDire`，
+/// 默认 F2 / F3（技术验证 5，2026-10-19）
+pub fn fog(team: crate::spectator::Team) -> Result<u16> {
+    let (action, default) = match team {
+        crate::spectator::Team::Radiant => ("SpectatorFOWRadient", 0x71),
+        crate::spectator::Team::Dire => ("SpectatorFOWDire", 0x72),
+    };
+    let Some(text) = crate::steam::me()
+        .and_then(|a| crate::steam::dota_user_dir(a).ok())
+        .and_then(|d| std::fs::read_to_string(d.join(r"remote\cfg\dotakeys_personal.lst")).ok())
+    else {
+        return Ok(default);
+    };
+    if let Some(m) = crate::steam::kv_path(&text, &["Keys", action, "Modifier"]) {
+        return Err(anyhow!("观战热键「{action}」带了修饰键 {m}，程序发不出组合键，请在游戏的热键设置里改成单个键"));
+    }
+    match crate::steam::kv_path(&text, &["Keys", action, "Key"]) {
+        None => Ok(default),
+        Some(n) => vk(&n).ok_or_else(|| anyhow!("认不出观战热键「{action}」的键 {n}")),
+    }
+}
+
 /// 追踪玩家 `player`（0–9）用的虚拟键码。热键文件只读一次（游戏运行期间改热键要重新运行程序）
 pub fn focus_player(player: usize) -> Result<u16> {
     static KEYS: OnceLock<Result<[u16; 10], String>> = OnceLock::new();

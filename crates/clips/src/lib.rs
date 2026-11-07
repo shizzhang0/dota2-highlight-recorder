@@ -3,7 +3,7 @@
 //! 1. 每次击杀一段：从"这波战斗开打前 `pre` 秒"到"击杀后 `post` 秒"，开打时间从伤害记录里往回找；
 //! 2. 相邻击杀间隔不超过 `merge_gap` 的合成一个片段；
 //! 3. 片段内两段之间的空档不超过 `keep_gap` 就保留，超过才剪掉；
-//! 4. 超过 `max_export` 的连续部分拆成多次导出，优先在保留下来的空档处拆。
+//! 4. 超过 `max_export` 的连续部分拆成多次导出，优先在保留下来的空档处拆（只有剪辑工具录制用；现在按 `spans` 整段录）。
 //!
 //! 时间都是游戏时钟（秒，开局号角为 0）。
 
@@ -51,17 +51,19 @@ pub struct Params {
     pub merge_gap: f32,
     /// 片段内空档不超过这么多秒就保留
     pub keep_gap: f32,
-    /// 单次导出的内容最长多少秒（剪辑工具单次超过约 60 秒会导出空文件；加上两头多留的部分不超过 58 秒）
+    /// 单次导出的内容最长多少秒（剪辑工具单次超过约 60 秒会导出空文件；加上两头多留的部分不超过 58 秒）。
+    /// 以下三项只有剪辑工具录制用（`exports`，技术验证的例子程序）；现在用 `startmovie` 录，按 `spans` 整段录，不用拆
     pub max_export: f32,
     /// 导出时选区开头多留多少秒，拼接时剪掉。跳转后游戏会补放天赋变化的通知，
     /// 在画面右侧挂约 2.5 秒（2026-10-23 实测，和开头留多少无关），留 4 秒就都剪掉了
     pub export_lead: f32,
     /// 导出时选区结尾多留多少秒，拼接时剪掉
     pub export_margin: f32,
-    /// 剪辑工具渲染耗时 ≈ 视频时长 × 这个倍数
-    pub render_factor: f32,
-    /// 每次导出的固定开销（切前台、点界面、确认对话框、等文件），秒
-    pub export_overhead: f32,
+    /// 录制速度：每秒墙钟能录多少秒画面。`startmovie` 逐帧渲染，1080p 团战约 0.7（2026-11-07 实测）；
+    /// 桌面应用用这台机器上次实测的速度
+    pub speed: f32,
+    /// 每段的固定开销（跳转、补按追踪键、合进声音），秒
+    pub segment_overhead: f32,
 }
 
 impl Default for Params {
@@ -78,11 +80,14 @@ impl Default for Params {
             max_export: 53.0,
             export_lead: 4.0,
             export_margin: 1.0,
-            render_factor: 1.8,
-            export_overhead: 17.5,
+            speed: 0.65,
+            segment_overhead: 6.0,
         }
     }
 }
+
+/// 每段开头多录、再丢掉的秒数：跳转后第一帧上有"回放已暂停"字样（2026-11-07 实测）
+pub const LEAD: f32 = 0.5;
 
 /// 一段连续的游戏时间
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -138,9 +143,9 @@ impl Clip {
         self.spans.iter().map(Span::len).sum()
     }
 
-    /// 录这个片段预计要多少秒：每次导出的固定开销 + 渲染（含两头余量）
+    /// 录这个片段预计要多少秒：每段的固定开销 + 按录制速度录（含开头丢掉的 `LEAD`）
     pub fn estimated_seconds(&self, p: &Params) -> f32 {
-        self.exports.iter().map(|e| p.export_overhead + (e.span.len() + p.export_lead + p.export_margin) * p.render_factor).sum()
+        self.spans.iter().map(|s| p.segment_overhead + (s.len() + LEAD) / p.speed.max(0.05)).sum()
     }
 }
 

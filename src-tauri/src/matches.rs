@@ -282,7 +282,6 @@ pub struct ClipRow {
     victims: Vec<String>,
     multi_kill: u32,
     kill_streak: u32,
-    exports: usize,
     file_name: String,
     estimated_secs: f32,
     /// 输出目录里已经有这个片段的文件（再录会覆盖）
@@ -300,8 +299,11 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
     if player >= r.players.len() {
         return Err(format!("没有 {player} 号玩家"));
     }
-    let p = rules.params();
-    let out_dir = PathBuf::from(crate::settings::get_settings().out_dir);
+    let settings = crate::settings::get_settings();
+    // 规则用界面上正在调的；录制速度用这台机器实测的
+    let mut p = rules.params();
+    p.speed = settings.params().speed;
+    let out_dir = PathBuf::from(&settings.out_dir);
     let clips = clips::plan(&r, player, &p)
         .iter()
         .enumerate()
@@ -313,7 +315,6 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
             victims: c.kills.iter().map(|&k| hero(&r.players[r.kills[k].victim].hero)).collect(),
             multi_kill: c.multi_kill,
             kill_streak: c.kill_streak,
-            exports: c.exports.len(),
             file_name: clips::file_name(&r, c),
             estimated_secs: c.estimated_seconds(&p),
             recorded: out_dir.join(format!("{}.mp4", clips::file_name(&r, c))).is_file(),

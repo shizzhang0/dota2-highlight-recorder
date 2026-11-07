@@ -56,7 +56,7 @@ function setRecording(on) {
 }
 
 /** 比赛页点了开始录制（`clips` 是 plan 返回的片段行）：确认后进入进度页；录完跳到这场比赛的录制详情 */
-async function record({ matchId, player, clips, secs, minutes, overwrite }) {
+async function record({ matchId, player, clips, camera, secs, minutes, overwrite }) {
   if (!(await confirmStart(confirmDialog, { count: clips.length, secs, minutes, overwrite }))) return;
   current = { name: "recording", id: matchId };
   setRecording(true);
@@ -64,6 +64,7 @@ async function record({ matchId, player, clips, secs, minutes, overwrite }) {
     matchId,
     player,
     clips,
+    camera,
     onFinished: (f) => {
       setRecording(false);
       current = { name: "video", id: matchId, latest: f };

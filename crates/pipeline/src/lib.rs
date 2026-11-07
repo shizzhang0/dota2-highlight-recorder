@@ -1,5 +1,9 @@
 //! 录制流程：录一个玩家选定的高光片段，每个片段输出一个视频，可选拼成合集。
-//! 命令行（`d2hr record`）和桌面应用共用。流程见 docs/phase1-plan.md「录制流程」。
+//! 命令行（`d2hr record`）和桌面应用共用。
+//!
+//! 用控制台录（2026-11 起，见 docs/prototype-walkthrough.md）：控制台命令切镜头，`startmovie` 逐帧输出画面，
+//! 边录边用显卡编码；游戏最小化在后台，不点界面，录制期间用户可以用电脑。
+//! 原先点游戏自带剪辑工具的做法见 docs/phase1-plan.md「录制流程」。
 //!
 //! 和外界只通过 `Host` 打交道：进度用事件报告，需要用户拍板的事（例如重启游戏）用确认请求。
 
@@ -8,28 +12,47 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use clips::{Clip, Params};
+use clips::{Clip, LEAD};
 use game::cancel::{self, Reason};
-use game::clip_builder::{self, Job};
+use game::clip_builder;
 use game::gsi;
+use game::movie::{self, Movie};
 use game::netcon::Netcon;
 use game::session::Session;
-use game::spectator::{self, Panel, Team};
+pub use game::spectator::Camera;
+use game::spectator::{self, Team};
 use game::ui::Ui;
+use media::encode::{Codec, EncodeHow, Encoder, Format};
 use media::ffmpeg::Ffmpeg;
 use replay::Replay;
 use serde::Serialize;
 use serde_json::Value;
 
 const NETCON_PORT: u16 = 2121;
-/// 导出文件实际时长和计划长度允许差多少秒，超了就重新导出一次
-const DURATION_TOLERANCE: f64 = 2.0;
-/// 剪辑工具的时间轴窗口（秒）：选区落在中间，离两边远，把手不容易被夹住
-const WINDOW: f32 = 120.0;
-/// 开始操作游戏界面前的倒计时（秒）
-const COUNTDOWN: u32 = 5;
-/// 暂停后点"继续"，再倒计时这么久才开始（给用户松开鼠标的时间）
-const RESUME_COUNTDOWN: u32 = 3;
+/// 录出来的时长和计划长度允许差多少秒，超了就重录一次
+const DURATION_TOLERANCE: f64 = 1.0;
+/// 录制帧率
+const FPS: u32 = 60;
+/// 录像每秒的 tick 数
+const TICKS_PER_SECOND: f32 = 30.0;
+/// `startmovie` 输出文件名的前缀，开始录制前清掉上一轮崩溃留下的
+const MOVIE_PREFIX: &str = "d2hr_";
+/// 画面中间亮度低于这个就当世界画面没画出来（只有 HUD）。正常约 70–80，黑的约 30（2026-11-08 实测）
+const BLACK_BRIGHTNESS: f32 = 45.0;
+/// 每段开录后在这几帧（开头丢掉的部分之后）查一次亮度，都低于 `BLACK_BRIGHTNESS` 才算黑
+const BLACK_CHECKS: [u32; 3] = [15, 30, 60];
+
+/// 录到的世界画面是黑的（只有 HUD）：要把游戏窗口恢复、正常渲染一下再最小化，重录这一段
+#[derive(Debug)]
+struct BlackWorld(f32);
+
+impl std::fmt::Display for BlackWorld {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "录到的画面中间是黑的（亮度 {:.0}），游戏没画出场景", self.0)
+    }
+}
+
+impl std::error::Error for BlackWorld {}
 
 pub struct Options {
     pub compile: bool,
@@ -39,7 +62,9 @@ pub struct Options {
     /// 全部录完后让游戏退出；中途停下或出错时保留，方便接着录。
     /// 用 `resolution` 启动的游戏无论如何都会退出：它退出时会把这个窗口大小写进显示设置，要等它退出后改回去
     pub quit: bool,
-    /// 录制期间检测用户的鼠标键盘操作：按任意键或移动鼠标就停止（命令行）或暂停（应用）；None 不检测
+    /// 镜头：英雄追踪或玩家视角
+    pub camera: Camera,
+    /// 录制期间检测用户在 Dota 里的操作（Dota 在前台时按键、动鼠标）：停止（命令行）或暂停（应用）；None 不检测
     pub on_input: Option<game::input_guard::OnInput>,
     /// 运行日志放在这里（每次录制一个文件，只留最近 20 个）；None 不写。命令行的进度已经打在终端上，不用
     pub log_dir: Option<PathBuf>,
@@ -76,7 +101,7 @@ impl Logged<'_> {
                     let now = cancel::paused();
                     if now != was {
                         was = now;
-                        write_line(&f, started, if now { "暂停（检测到鼠标或键盘操作）" } else { "继续" });
+                        write_line(&f, started, if now { "暂停（检测到在游戏里的操作）" } else { "继续" });
                     }
                     std::thread::sleep(Duration::from_millis(200));
                 }
@@ -133,21 +158,24 @@ pub enum Event {
     WaitingForDotaToQuit,
     /// 启动游戏，带这些启动参数
     LaunchingGame { args: Vec<String> },
-    /// 录像加载好了，马上倒计时
+    /// 录像加载好了
     ReplayLoaded,
-    /// 倒计时：还有几秒开始操作游戏界面。`input_guard` 为真时，按任意键或移动鼠标就会停止或暂停
-    Countdown { secs: u32, input_guard: bool },
-    /// 暂停了（桌面应用里用户动了鼠标键盘），等用户点"继续"或"停止"
+    /// 镜头设好、游戏已最小化到后台，开始录。`input_guard` 为真时，在 Dota 里操作就会停止或暂停；
+    /// `encoder` 是用的编码器，`total_secs` 是要录的画面总长（秒）
+    Recording { input_guard: bool, encoder: String, total_secs: f32 },
+    /// 暂停了（桌面应用里用户在 Dota 里操作了），等用户点"继续"或"停止"
     Paused,
-    /// 用户点了"继续"：重新加载录像、设好镜头，再接着录被打断的那一段
+    /// 用户点了"继续"：重设镜头、重新最小化游戏，再录被打断的那一段（不重新加载录像）
     Resuming,
     /// 开始录第 `n` 个（共 `total` 个）选定的片段，它在计划里是第 `index` 个
     ClipStarted { n: usize, total: usize, index: usize, name: String },
-    /// 开始导出一段：游戏时间范围和预计渲染秒数
-    ExportStarted { from: f32, to: f32, estimated_secs: f32 },
-    /// 一段导出完成
-    Exported { from: f32, to: f32, secs: f64, render_secs: f32 },
-    /// 导出不对，重来一次
+    /// 开始录一段：游戏时间范围和要录的帧数
+    SegmentStarted { from: f32, to: f32, frames: u32 },
+    /// 这一段录了多少帧（大约每半秒报一次）
+    SegmentProgress { frames: u32, total: u32 },
+    /// 一段录完：视频时长、用了多少秒墙钟
+    SegmentDone { from: f32, to: f32, secs: f64, wall_secs: f32 },
+    /// 录得不对，重来一次
     Retrying { reason: String },
     /// 一个片段做好了
     ClipDone { index: usize, path: PathBuf, secs: f64 },
@@ -159,7 +187,7 @@ pub enum Event {
     WindowSizeNotRestored { width: u32, height: u32, error: String },
     /// 游戏设置没能全部恢复
     RestoreFailed { error: String },
-    /// 出错时保留了排查用的截图和日志
+    /// 出错时保留了排查用的控制台日志
     DiagnosticsKept { dir: PathBuf },
 }
 
@@ -183,6 +211,8 @@ pub struct Report {
     pub elapsed: Duration,
     /// 结束时让游戏退出了（录完且设了 `quit`，或者用了 `resolution`）
     pub game_quit: bool,
+    /// 这台机器的录制速度：每秒墙钟录了多少秒画面（没录成一段时为 None）。桌面应用存下来估下次的耗时
+    pub speed: Option<f32>,
 }
 
 fn dota_running() -> bool {
@@ -260,34 +290,36 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path) -> Result<(Netcon, gsi::Li
 }
 
 /// 录制。调用方负责在开始前清掉上一轮的取消标记（`game::cancel::reset`），命令行另外负责接管 Ctrl+C
-pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], p: &Params, ff: &Ffmpeg, o: &Options) -> Report {
+pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options) -> Report {
     let started = Instant::now();
     let log = Logged { inner: host, file: o.log_dir.as_deref().and_then(open_log).map(|f| std::sync::Arc::new(std::sync::Mutex::new(f))), started };
     let pause_watch = log.watch_pause();
     let indices: Vec<usize> = selected.iter().map(|s| s.index).collect();
     log.line(&format!(
-        "开始：比赛 {}，玩家 #{player}，片段 {indices:?}，输出到 {}，分辨率 {:?}，合集 {}，录完退出 {}",
+        "开始：比赛 {}，玩家 #{player}，片段 {indices:?}，输出到 {}，分辨率 {:?}，镜头 {:?}，合集 {}，录完退出 {}",
         r.match_id,
         o.out.display(),
         o.resolution,
+        o.camera,
         o.compile,
         o.quit
     ));
     // 开始时的前台窗口（终端或应用）：不管怎么结束，最后都切回它，用户回来能直接看到结果
     let origin = game::ui::foreground();
     let mut done = Done::default();
-    let error = run_inner(&log, r, player, selected, p, ff, o, &mut done).err();
+    let error = run_inner(&log, r, player, selected, ff, o, origin, &mut done).err();
     pause_watch.store(true, std::sync::atomic::Ordering::SeqCst);
     game::ui::bring_to_front(origin);
     // 停下的原因要在 hold 之外读（restore 期间读不到）
     let cancelled = cancel::reason();
     log.line(&format!(
-        "结束：完成 {:?}，文件 {:?}，停下 {:?}，出错 {}，退出游戏 {}",
+        "结束：完成 {:?}，文件 {:?}，停下 {:?}，出错 {}，退出游戏 {}，录制速度 {:?}",
         done.completed,
         done.files,
         cancelled.map(|c| c.describe()),
         error.as_ref().map_or("无".into(), |e| format!("{e:#}")),
-        done.game_quit
+        done.game_quit,
+        done.speed
     ));
     Report {
         files: done.files,
@@ -296,6 +328,7 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], p:
         error: if cancelled.is_some() { None } else { error },
         elapsed: started.elapsed(),
         game_quit: done.game_quit,
+        speed: done.speed,
     }
 }
 
@@ -305,19 +338,11 @@ struct Done {
     files: Vec<PathBuf>,
     completed: Vec<usize>,
     game_quit: bool,
+    speed: Option<f32>,
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_inner(
-    host: &dyn Host,
-    r: &Replay,
-    player: usize,
-    selected: &[Selected],
-    p: &Params,
-    ff: &Ffmpeg,
-    o: &Options,
-    done: &mut Done,
-) -> Result<()> {
+fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options, origin: isize, done: &mut Done) -> Result<()> {
     if selected.is_empty() {
         bail!("没有选定要录的片段");
     }
@@ -326,16 +351,17 @@ fn run_inner(
     let diag = o.out.join("diag");
     std::fs::create_dir_all(&tmp)?;
     std::fs::create_dir_all(&diag)?;
-    // 上一轮出错时留下的截图和日志：编号会和这一轮的混在一起，清掉（排查用的运行日志另存在 log_dir）
+    // 上一轮出错时留下的控制台日志，清掉（排查用的运行日志另存在 log_dir）
     for e in std::fs::read_dir(&diag)?.flatten() {
         let _ = std::fs::remove_file(e.path());
     }
-    // 上一轮在渲染途中停下时，游戏会把渲染完的视频留在 tmp 里；这个目录只放我们的中间文件，清掉
+    // tmp 只放我们的中间文件；上一轮程序崩溃时可能还留着，游戏的 movie 目录里也可能留着帧
     for e in std::fs::read_dir(&tmp)?.flatten() {
         if e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("mp4")) {
             let _ = std::fs::remove_file(e.path());
         }
     }
+    movie::clean_leftovers(MOVIE_PREFIX);
 
     // 带 -w -h 启动的游戏退出时会把这个窗口大小写进显示设置，先记下原来的
     let account = game::steam::me();
@@ -348,22 +374,20 @@ fn run_inner(
             return Err(e);
         }
     };
-    // 设置守护：离开作用域（包括出错）时恢复，并删掉 GSI 配置
+    // 设置守护：离开作用域（包括出错）时恢复，并删掉 GSI 配置。改的设置在 `spectator::console_setup` 里
     let mut s = Session::new(con);
     s.remove_gsi_on_exit();
-    // 第三个参数是游戏默认值：当前值已经是我们要设的值时（上一轮的残留），结束时恢复成它
-    s.set_or_default("dota_spectator_enable_edgepan_temporary_free_camera", "0", Some("true"))?;
-    s.set_or_default("dota_clip_builder_max_duration", &WINDOW.to_string(), Some("60"))?;
-    s.set_or_default("dota_clip_builder_output_folder", &tmp.to_string_lossy().replace('\\', "/"), Some(""))?;
 
-    let result = record_all(host, r, player, team, selected, p, ff, o, &mut s, &rx, &tmp, &diag, done);
+    let result = record_all(host, r, player, team, selected, ff, o, &mut s, &rx, &tmp, origin, done);
     let restored = s.restore();
     // 下面这些收尾也不能被取消打断
     let hold = cancel::hold();
-    // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）
+    // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）；保留的话把窗口恢复（录制时最小化了）
     if (o.quit && result.is_ok()) || sized {
         let _ = s.con().send("quit");
         done.game_quit = true;
+    } else if let Ok(w) = game::window::dota_window() {
+        game::window::restore(w);
     }
     if sized && let (Some(account), Some((width, height))) = (account, original_size) {
         host.event(Event::RestoringWindowSize { width, height });
@@ -387,6 +411,31 @@ fn run_inner(
     result
 }
 
+/// 录制时共用的东西
+struct Rec<'a> {
+    host: &'a dyn Host,
+    r: &'a Replay,
+    rx: &'a Receiver<Value>,
+    ff: &'a Ffmpeg,
+    codec: Codec,
+    player: usize,
+    camera: Camera,
+    team: Team,
+    tmp: &'a Path,
+    /// 录像里游戏时钟的范围
+    first: f32,
+    last: f32,
+    /// 录了多少秒画面、用了多少秒墙钟，算这台机器的录制速度
+    game_secs: f32,
+    wall_secs: f32,
+    /// 每段录制的编号（`startmovie` 的文件名前缀）
+    seq: u32,
+    /// 开始录制时的前台窗口（应用或终端）：游戏最小化后若自己跑到前台，把前台还给它
+    origin: isize,
+    /// 游戏窗口应有的大小（带 `-w -h` 启动的）；None = 跟用户的设置一致，只等它稳定
+    size: Option<(u32, u32)>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn record_all(
     host: &dyn Host,
@@ -394,65 +443,73 @@ fn record_all(
     player: usize,
     team: Team,
     selected: &[Selected],
-    p: &Params,
     ff: &Ffmpeg,
     o: &Options,
     s: &mut Session,
     rx: &Receiver<Value>,
     tmp: &Path,
-    diag: &Path,
+    origin: isize,
     done: &mut Done,
 ) -> Result<()> {
     load_replay(host, r, s, rx)?;
+    let codec = ff.pick_codec();
+    let mut rec = Rec {
+        host,
+        r,
+        rx,
+        ff,
+        codec,
+        player,
+        camera: o.camera,
+        team,
+        tmp,
+        first: r.clock.first().map_or(f32::MIN, |c| c.game_time),
+        last: r.clock.last().map_or(f32::MAX, |c| c.game_time),
+        game_secs: 0.0,
+        wall_secs: 0.0,
+        seq: 0,
+        origin,
+        size: o.resolution,
+    };
+    // 先跳到第一段附近再设镜头（刚加载完镜头是自由视角），然后把游戏最小化到后台
+    let at = (selected[0].clip.start() - 5.0).max(rec.first);
+    seek(&rec, s, at)?;
+    setup_view(&rec, s)?;
 
-    // 从这里起用户不能碰鼠标键盘：开着输入检测，一动就停止（命令行）或暂停（应用）。离开这个函数时卸掉
+    // 从这里起检测用户在 Dota 里的操作：一动就停止（命令行）或暂停（应用）。离开这个函数时卸掉
     let _guard = match o.on_input {
         Some(mode) => Some(game::input_guard::start(mode)?),
         None => None,
     };
-    let mut ui = Ui::attach()?;
-    ui.set_diag_dir(diag)?;
-
-    let first = r.clock.first().map_or(f32::MIN, |c| c.game_time);
-    let last = r.clock.last().map_or(f32::MAX, |c| c.game_time);
-    // 镜头和迷雾在第一段导出前设；暂停过的话，继续时要重新加载录像再设（见 export_checked）
-    let mut view = View { r, team, first, guard: o.on_input.is_some(), ready: false };
+    let total_secs = selected.iter().map(|s| s.clip.duration()).sum();
+    host.event(Event::Recording { input_guard: o.on_input.is_some(), encoder: codec.name().into(), total_secs });
 
     let mut outputs = Vec::new();
-    for (n, sel) in selected.iter().enumerate() {
-        let clip = &sel.clip;
-        let name = clips::file_name(r, clip);
-        host.event(Event::ClipStarted { n: n + 1, total: selected.len(), index: sel.index, name: name.clone() });
-        let mut cuts = Vec::new();
-        for (k, e) in clip.exports.iter().enumerate() {
-            let from = (e.span.start - p.export_lead).max(first);
-            let to = (e.span.end + p.export_margin).min(last);
-            let job = Job {
-                from,
-                to,
-                center_tick: r.tick_at((from + to) / 2.0).context("超出录像范围")?,
-                window: WINDOW,
-                out_dir: tmp,
-                background_render: false,
-                player,
-            };
-            let part = export_checked(host, &mut ui, s, rx, &job, player, (to - from) * p.render_factor, &mut view)?;
-            // 裁掉两头多留的部分：起点落在关键帧上（每整秒一个），所以多加一点点，免得落到前一个关键帧
-            let cut = tmp.join(format!("cut_{n}_{k}.mp4"));
-            ff.cut(&part, (e.span.start - from) as f64 + 0.02, e.span.len() as f64, &cut)?;
-            let _ = std::fs::remove_file(&part);
-            cuts.push(cut);
+    let result = (|| -> Result<()> {
+        for (n, sel) in selected.iter().enumerate() {
+            let clip = &sel.clip;
+            let name = clips::file_name(r, clip);
+            host.event(Event::ClipStarted { n: n + 1, total: selected.len(), index: sel.index, name: name.clone() });
+            let mut parts = Vec::new();
+            for span in &clip.spans {
+                parts.push(record_span(&mut rec, s, span.start, span.end)?);
+            }
+            let dest = o.out.join(format!("{name}.mp4"));
+            ff.concat(&parts, &dest)?;
+            for p in &parts {
+                let _ = std::fs::remove_file(p);
+            }
+            host.event(Event::ClipDone { index: sel.index, path: dest.clone(), secs: media::mp4_duration(&dest)? });
+            done.files.push(dest.clone());
+            done.completed.push(sel.index);
+            outputs.push(dest);
         }
-        let dest = o.out.join(format!("{name}.mp4"));
-        ff.concat(&cuts, &dest)?;
-        for c in &cuts {
-            let _ = std::fs::remove_file(c);
-        }
-        host.event(Event::ClipDone { index: sel.index, path: dest.clone(), secs: media::mp4_duration(&dest)? });
-        done.files.push(dest.clone());
-        done.completed.push(sel.index);
-        outputs.push(dest);
+        Ok(())
+    })();
+    if rec.wall_secs > 0.0 {
+        done.speed = Some(rec.game_secs / rec.wall_secs);
     }
+    result?;
 
     if o.compile && outputs.len() > 1 {
         let hero = r.players[player].hero.trim_start_matches("npc_dota_hero_");
@@ -464,16 +521,7 @@ fn record_all(
     Ok(())
 }
 
-/// 游戏画面的准备状态：镜头和迷雾设好没有。暂停过就要重新加载录像（用户可能在游戏里点过东西，界面状态没法保证）
-struct View<'a> {
-    r: &'a Replay,
-    team: Team,
-    first: f32,
-    guard: bool,
-    ready: bool,
-}
-
-/// 加载录像，等到能跳转为止。重新加载会把镜头重置成自由视角、把观战面板收起
+/// 加载录像，等到能跳转为止。重新加载会把镜头重置成自由视角
 fn load_replay(host: &dyn Host, r: &Replay, s: &mut Session, rx: &Receiver<Value>) -> Result<()> {
     s.con().send(&format!("playdemo replays/{}", r.match_id))?;
     s.con()
@@ -486,77 +534,180 @@ fn load_replay(host: &dyn Host, r: &Replay, s: &mut Session, rx: &Receiver<Value
     Ok(())
 }
 
-/// 倒计时，然后跳到 `at` 前 5 秒设镜头和迷雾（不能直接跳到导出段中点：暂停在同一 tick 时再跳，游戏不输出完成标志）。
-/// 倒计时期间用户一动就算暂停，返回错误
-fn setup_view(host: &dyn Host, v: &View, s: &mut Session, rx: &Receiver<Value>, ui: &mut Ui, at: f32, secs: u32) -> Result<()> {
-    for left in (1..=secs).rev() {
-        host.event(Event::Countdown { secs: left, input_guard: v.guard });
-        std::thread::sleep(Duration::from_secs(1));
-        cancel::check_not_paused()?;
+/// 用控制台命令设镜头、迷雾、收面板、隐藏鼠标指针，然后把游戏最小化（照样出帧，用户也不会误点进去）。
+/// 暂停后继续时再调一次：用户可能在游戏里点过东西、把窗口恢复了
+fn setup_view(rec: &Rec, s: &mut Session) -> Result<()> {
+    // 一开始就最小化、一直不让它露面，偶尔会录到黑的世界画面（只有 HUD；2026-11-08 命令行实测 5 次里出现 1 次，原因没查清，
+    // 猜是带 -w -h 启动后窗口大小改得晚，正好赶上最小化）。所以先让窗口露出来（放到其他窗口后面，不抢焦点），
+    // 等大小稳定，在露面的时候设镜头、正常渲染 2 秒，再最小化。万一还是黑的，`capture` 会查出来重录
+    let dota = game::window::dota_window()?;
+    game::window::restore(dota);
+    game::window::send_to_back(dota);
+    if game::ui::foreground() == dota.0 as isize {
+        game::ui::bring_to_front(rec.origin);
     }
-    let prep = (at - 5.0).max(v.first);
-    clip_builder::goto(s.con(), rx, v.r.tick_at(prep).context("超出录像范围")?, prep)?;
-    let _front = ui.front()?;
-    spectator::setup(ui, Panel::Collapsed, v.team)
+    wait_window_settled(rec.size);
+    spectator::console_setup(s, rec.player, rec.camera, rec.team)?;
+    std::thread::sleep(Duration::from_secs(2));
+    game::window::minimize(dota);
+    // 最小化后 Dota 有时还是前台窗口（2026-11-07 实测），这时用户的按键会发给它：把前台还回去
+    std::thread::sleep(Duration::from_millis(300));
+    if game::ui::foreground() == dota.0 as isize {
+        game::ui::bring_to_front(rec.origin);
+    }
+    Ok(())
 }
 
-/// 导出一段并核对时长；导出失败、文件 0 字节或时长偏差超过容差时重来一次。
-/// 暂停（桌面应用里用户动了鼠标键盘）不算失败：等用户点"继续"，重新加载录像、设好镜头，再导出这一段
-#[allow(clippy::too_many_arguments)]
-fn export_checked(
-    host: &dyn Host,
-    ui: &mut Ui,
-    s: &mut Session,
-    rx: &Receiver<Value>,
-    job: &Job,
-    player: usize,
-    estimated_secs: f32,
-    view: &mut View,
-) -> Result<PathBuf> {
-    let planned = (job.to - job.from) as f64;
+/// 等游戏窗口大小稳定（1 秒内不变；给了 `want` 的话还要等于它），最多等 15 秒
+fn wait_window_settled(want: Option<(u32, u32)>) {
+    let started = Instant::now();
+    let mut last = None;
+    let mut since = Instant::now();
+    while started.elapsed() < Duration::from_secs(15) {
+        let now = client_size();
+        if now != last {
+            last = now;
+            since = Instant::now();
+        } else if now.is_some() && want.is_none_or(|w| now == Some(w)) && since.elapsed() >= Duration::from_secs(1) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+}
+
+/// 跳到游戏时钟 `at` 并暂停，重新追踪玩家：跳转会取消选中英雄，底部技能栏、装备栏就空了，
+/// 要补按追踪热键（PostMessage，游戏最小化也行；2026-11-07 实测）
+fn seek(rec: &Rec, s: &mut Session, at: f32) -> Result<()> {
+    clip_builder::goto(s.con(), rec.rx, rec.r.tick_at(at).context("超出录像范围")?, at)?;
+    s.con().send(&format!("dota_spectator_hero_index {}", rec.player))?;
+    s.con().send(&format!("dota_camera_focus_player {}", rec.player))?;
+    spectator::focus(rec.player, rec.rx)
+}
+
+/// 录一段，核对时长；失败重来一次。
+/// 暂停（桌面应用里用户在 Dota 里操作了）不算失败：这一段丢掉，等用户点"继续"，重设镜头、重新最小化，再录这一段（不重新加载录像）
+fn record_span(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf> {
     let mut failures = 0;
+    let mut black = false;
     loop {
-        // 暂停中就等；点了停止就返回错误
         if cancel::paused() {
-            host.event(Event::Paused);
+            rec.host.event(Event::Paused);
             cancel::wait_while_paused()?;
-            host.event(Event::Resuming);
+            rec.host.event(Event::Resuming);
         }
         let mut tried = Ok(());
-        if cancel::take_pause_seen() {
-            tried = load_replay(host, view.r, s, rx).and_then(|()| setup_view(host, view, s, rx, ui, job.from, RESUME_COUNTDOWN));
-        } else if !view.ready {
-            tried = setup_view(host, view, s, rx, ui, job.from, COUNTDOWN);
+        // 暂停过（用户可能在游戏里点过东西、把窗口恢复了），或者上一次录到的画面是黑的：重设镜头、重新最小化
+        if cancel::take_pause_seen() || black {
+            tried = setup_view(rec, s);
         }
-        let tried = tried.inspect(|()| view.ready = true).and_then(|()| {
-            // 每次真正开始导出都报一次（暂停后继续、重来时也报），界面据此显示片段和渲染进度
-            host.event(Event::ExportStarted { from: job.from, to: job.to, estimated_secs });
-            spectator::focus(player, rx).and_then(|()| clip_builder::export(ui, s.con(), rx, job))
-        });
-        // 读不出时长（文件没写完、坏了）也算这一次失败，重来
-        let tried = tried.and_then(|e| media::mp4_duration(&e.path).map(|secs| (e, secs)));
-        let err = match tried {
-            Ok((exported, secs)) => {
-                if (secs - planned).abs() <= DURATION_TOLERANCE {
-                    host.event(Event::Exported { from: job.from, to: job.to, secs, render_secs: exported.render.as_secs_f32() });
-                    let part = job.out_dir.join(format!("part_{}.mp4", job.center_tick));
-                    std::fs::rename(&exported.path, &part)?;
-                    return Ok(part);
-                }
-                let _ = std::fs::remove_file(&exported.path);
-                anyhow::anyhow!("导出的视频 {secs:.1} 秒，计划 {planned:.1} 秒")
-            }
+        let err = match tried.and_then(|()| capture(rec, s, from, to)) {
+            Ok(part) => return Ok(part),
             Err(e) => e,
         };
-        // 停下了就不重来；被暂停打断的不算一次失败
+        black = err.downcast_ref::<BlackWorld>().is_some();
+        // 停下了就不重来；被暂停打断的不算一次失败（用户可能已经点了"继续"，所以看暂停过没有，不只看现在是不是暂停着；
+        // 2026-11-08 实测：继续后重设镜头期间又被检测到操作，等发现时已经又点了继续，被当成了一次失败）
         cancel::check()?;
-        if cancel::paused() {
+        if cancel::paused() || cancel::pause_seen() {
             continue;
         }
         failures += 1;
         if failures >= 2 {
             return Err(err);
         }
-        host.event(Event::Retrying { reason: format!("{err:#}") });
+        rec.host.event(Event::Retrying { reason: format!("{err:#}") });
     }
+}
+
+/// 录游戏时钟 `from`–`to` 这一段：跳到 `from` 前 `LEAD` 秒，`startmovie` 逐帧输出 TGA，边出帧边喂给编码器，
+/// 开头 `LEAD` 秒丢掉（第一帧上有"回放已暂停"字样），最后合进声音。返回带声音的 mp4
+fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf> {
+    let start = (from - LEAD).max(rec.first);
+    let end = to.min(rec.last);
+    seek(rec, s, start)?;
+    let (t0, t1) = (rec.r.tick_at(start).context("超出录像范围")?, rec.r.tick_at(end).context("超出录像范围")?);
+    let frames = |ticks: u32| (ticks as f32 / TICKS_PER_SECOND * FPS as f32).round() as u32;
+    let expected = frames(t1 - t0);
+    let skip = ((from.max(start) - start) * FPS as f32).round() as u32;
+    rec.seq += 1;
+    let prefix = format!("{MOVIE_PREFIX}{}_{}", rec.r.match_id, rec.seq);
+    let video = rec.tmp.join(format!("{prefix}.mp4"));
+    let mut movie = Movie::start(s.con(), &prefix, FPS)?;
+
+    let result = (|| -> Result<PathBuf> {
+        // 万一我们读帧慢了，回放也停在终点，不会多录
+        s.con().send(&format!("demo_pauseatservertick {t1}"))?;
+        s.con().send("demo_resume")?;
+        rec.host.event(Event::SegmentStarted { from, to: end, frames: expected - skip });
+        let started = Instant::now();
+        // 正常是实时的 0.5–0.8 倍；按 0.1 倍算还没录完就当卡住了
+        let timeout = Duration::from_secs_f32((end - start) / 0.1 + 60.0);
+        let mut reported = Instant::now();
+        let mut enc: Option<Encoder> = None;
+        let mut dark = Vec::new();
+        while movie.taken() < expected {
+            // 用户在 Dota 里操作了（暂停）或点了停止：这一段不要了
+            cancel::check_not_paused()?;
+            let Some(frame) = movie.take()? else {
+                if started.elapsed() > timeout {
+                    bail!("等了 {timeout:?} 只录了 {} 帧（共 {expected} 帧），游戏卡住了？", movie.taken());
+                }
+                std::thread::sleep(Duration::from_millis(2));
+                continue;
+            };
+            let n = movie.taken() - 1;
+            if n < skip {
+                continue;
+            }
+            // 世界画面有没有画出来：开头几帧都暗得不正常就不录了
+            if let Some(k) = BLACK_CHECKS.iter().position(|&c| n == skip + c) {
+                dark.push(frame.center_brightness());
+                if k + 1 == BLACK_CHECKS.len() && dark.iter().all(|&b| b < BLACK_BRIGHTNESS) {
+                    let max = dark.iter().copied().fold(0.0, f32::max);
+                    return Err(BlackWorld(max).into());
+                }
+            }
+            let e = match &mut enc {
+                Some(e) => e,
+                None => {
+                    let f = Format { width: frame.width, height: frame.height, fps: FPS, bottom_up: frame.bottom_up };
+                    enc.insert(rec.ff.encoder(rec.codec, f, &video, EncodeHow::default())?)
+                }
+            };
+            e.write(&frame.bgra)?;
+            if reported.elapsed() > Duration::from_millis(500) {
+                rec.host.event(Event::SegmentProgress { frames: n + 1 - skip, total: expected - skip });
+                reported = Instant::now();
+            }
+        }
+        let wall = started.elapsed().as_secs_f32();
+        movie.end(s.con())?;
+        s.con().send("demo_pause")?;
+        // 数够了之后、endmovie 之前多出的帧不要
+        while movie.take()?.is_some() {}
+        enc.context("一帧都没录到")?.finish()?;
+        let part = rec.tmp.join(format!("{prefix}_av.mp4"));
+        rec.ff.mux_audio(&video, &movie.wav(), skip as f32 / FPS as f32, &part)?;
+        let secs = media::mp4_duration(&part)?;
+        let planned = (end - from) as f64;
+        if (secs - planned).abs() > DURATION_TOLERANCE {
+            let _ = std::fs::remove_file(&part);
+            bail!("录出来 {secs:.1} 秒，计划 {planned:.1} 秒");
+        }
+        rec.game_secs += (end - start).max(0.0);
+        rec.wall_secs += wall;
+        rec.host.event(Event::SegmentDone { from, to: end, secs, wall_secs: wall });
+        Ok(part)
+    })();
+
+    if result.is_err() {
+        // 中途放弃：停掉录制、暂停回放（编码进程在 Encoder 被丢掉时就结束了）
+        if !movie.ended() {
+            let _ = movie.end(s.con());
+        }
+        let _ = s.con().send("demo_pause");
+    }
+    movie.remove();
+    let _ = std::fs::remove_file(&video);
+    result
 }

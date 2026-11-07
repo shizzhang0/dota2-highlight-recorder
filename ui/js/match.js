@@ -26,13 +26,19 @@ export async function showMatch(view, matchId, { home, record, player: wanted, p
   const clipsBox = el("div");
   const summary = el("span", { class: "muted" });
   const recordBtn = el("button", { type: "button", class: "primary" }, t("match.record"));
+  // 镜头：对这次录的所有片段生效，记住上次选的（开始录制时存进设置）
+  const camera = el("select", { title: t("match.camera.hint") },
+    ["hero_chase", "player_view"].map((v) => el("option", { value: v }, t(`match.camera.${v}`))));
+  camera.value = settings.camera === "player_view" ? "player_view" : "hero_chase";
   recordBtn.addEventListener("click", () => {
     const sel = clips.filter((c) => picked.has(c.index));
     if (!sel.length) return;
+    settings.camera = camera.value;
     record({
       matchId,
       player,
       clips: sel,
+      camera: camera.value,
       overwrite: sel.filter((c) => c.recorded).length,
       secs: sel.reduce((a, c) => a + c.duration, 0),
       minutes: (sel.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1),
@@ -102,7 +108,6 @@ export async function showMatch(view, matchId, { home, record, player: wanted, p
         el("td", { class: "num" }, length(c.duration)),
         el("td", { class: "wrap" }, c.victims.map(heroName).join(", ")),
         el("td", {}, tags(c)),
-        el("td", { class: "num" }, String(c.exports)),
         el("td", {}, c.recorded ? el("span", { class: "ok", title: t("match.recordedHint") }, t("match.recorded")) : ""),
       );
     });
@@ -111,7 +116,6 @@ export async function showMatch(view, matchId, { home, record, player: wanted, p
         el("th", {}, all), el("th", { class: "num" }, "#"),
         el("th", {}, t("match.col.time")), el("th", { class: "num" }, t("match.col.length")),
         el("th", {}, t("match.col.kills")), el("th", {}, t("match.col.tags")),
-        el("th", { class: "num" }, t("match.col.exports")),
         el("th", {}, t("match.col.status")),
       )),
       el("tbody", {}, rows),
@@ -182,7 +186,8 @@ export async function showMatch(view, matchId, { home, record, player: wanted, p
     el("div", { class: "card" }, el("h2", {}, t("match.pickPlayer")), playersBox),
     el("div", { class: "card" }, el("h2", {}, t("match.clips")), preselectNote, clipsBox,
       el("details", { class: "rules", style: "margin-top:14px" }, el("summary", {}, t("rules.title")), rulesBox)),
-    el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }), recordBtn),
+    el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }),
+      el("label", { class: "row", style: "gap:6px" }, t("match.camera"), camera), recordBtn),
   );
   renderPlayers();
   renderRules();

@@ -19,6 +19,8 @@ fn main() {
                 let _ = w.set_focus();
             }
         }))
+        // 录完或出错时弹系统通知
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             matches::list_replays,
             matches::download_replay,

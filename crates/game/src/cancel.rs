@@ -4,8 +4,8 @@
 //! 各个等待点看到标记就停下来，让调用方照常恢复设置、删 GSI 配置、交还前台。
 //! Ctrl+C 第二次按才交给系统默认处理（直接结束进程，设置来不及恢复）。
 //!
-//! 暂停（桌面应用）：检测到用户动了鼠标键盘只是暂停。正在点界面就马上停手（`ui` 看到暂停就报错），
-//! 正在渲染就让它渲染完；之后等用户在应用里点"继续"（`resume`）或"停止"。
+//! 暂停（桌面应用）：检测到用户在 Dota 里操作只是暂停。正在录的那一段马上停下、丢掉，
+//! 等用户在应用里点"继续"（`resume`）后重录这一段，或者点"停止"。
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -92,7 +92,7 @@ pub fn reset() {
 }
 
 static PAUSED: AtomicBool = AtomicBool::new(false);
-/// 暂停过、还没重新加载录像恢复界面状态
+/// 暂停过、调用方还没处理（重设镜头等）
 static PAUSE_SEEN: AtomicBool = AtomicBool::new(false);
 /// 点"继续"后的这段时间（Unix 毫秒）里不理会输入：点按钮、松开鼠标本身也是输入
 static GRACE_UNTIL: AtomicU64 = AtomicU64::new(0);
@@ -124,9 +124,14 @@ pub fn resume() {
     PAUSED.store(false, Ordering::SeqCst);
 }
 
-/// 暂停过的话返回 true 并清掉记号：调用方要重新加载录像、重设镜头，恢复到已知的界面状态
+/// 暂停过的话返回 true 并清掉记号：调用方要重设镜头、重新最小化游戏，恢复到已知的状态
 pub fn take_pause_seen() -> bool {
     PAUSE_SEEN.swap(false, Ordering::SeqCst)
+}
+
+/// 暂停过、还没处理（不清记号）。用户可能在调用方发现之前就点了"继续"，只看 `paused` 会漏掉这次暂停
+pub fn pause_seen() -> bool {
+    PAUSE_SEEN.load(Ordering::SeqCst)
 }
 
 /// 暂停中就一直等，直到用户点"继续"（返回 Ok）或者停止（返回错误）
@@ -138,7 +143,7 @@ pub fn wait_while_paused() -> Result<()> {
     check()
 }
 
-/// 暂停了就返回错误（点界面前用：用户在动鼠标，再点就会点错）
+/// 暂停了就返回错误（录制循环里用：用户在游戏里操作，录下来的画面不能要）
 pub fn check_not_paused() -> Result<()> {
     check()?;
     if paused() {

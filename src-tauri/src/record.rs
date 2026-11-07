@@ -3,8 +3,9 @@
 //! 事件：`record-event`（`pipeline::Event`）、`record-confirm`（{id, question}）、`record-finished`（`Finished`）、
 //! `record-paused` / `record-resumed` / `record-stopping`。一次只能录一场；录制在单独的线程里跑，命令立刻返回。
 //!
-//! 游戏开着时基本是全屏，要用户拍板的事（暂停后继续还是停止、要不要重启游戏）弹一个置顶的小对话框（`prompt` 窗口），
-//! 不把用户切回主窗口；主窗口上同样能操作，哪边先回答都行，另一边跟着收起。
+//! 录制在后台进行（游戏最小化），用户可能在用别的程序：进度显示在主窗口和任务栏图标上，录完或出错弹系统通知。
+//! 要用户拍板的事（暂停后继续还是停止、要不要重启游戏）弹一个置顶的小对话框（`prompt` 窗口）；
+//! 主窗口上同样能操作，哪边先回答都行，另一边跟着收起。
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -13,9 +14,11 @@ use std::sync::mpsc::{self, Sender};
 
 use game::cancel::{self, Reason};
 use media::ffmpeg::Ffmpeg;
-use pipeline::{Event, Host, Options, Selected};
+use pipeline::{Camera, Event, Host, Options, Selected};
 use serde::Serialize;
+use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 
 use crate::settings::Settings;
 
@@ -28,6 +31,24 @@ static PENDING: Mutex<Option<(u64, Sender<bool>)>> = Mutex::new(None);
 
 struct AppHost {
     app: AppHandle,
+    progress: Mutex<Progress>,
+}
+
+/// 整次录制的进度（秒数都是画面时长），用来更新任务栏图标上的进度条
+#[derive(Default)]
+struct Progress {
+    total: f32,
+    /// 已经录完的段
+    done: f32,
+    /// 正在录的这一段录了多少
+    current: f32,
+}
+
+/// 任务栏图标上的进度条：`progress` 是 0–100；status 为 None 时去掉
+fn taskbar(app: &AppHandle, status: ProgressBarStatus, progress: Option<u64>) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_progress_bar(ProgressBarState { status: Some(status), progress });
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -38,6 +59,25 @@ struct Question {
 
 impl Host for AppHost {
     fn event(&self, e: Event) {
+        {
+            let mut p = self.progress.lock().unwrap();
+            let mut status = ProgressBarStatus::Normal;
+            match &e {
+                Event::Recording { total_secs, .. } => p.total = *total_secs,
+                Event::SegmentStarted { .. } => p.current = 0.0,
+                Event::SegmentProgress { frames, .. } => p.current = *frames as f32 / 60.0,
+                Event::SegmentDone { secs, .. } => {
+                    p.done += *secs as f32;
+                    p.current = 0.0;
+                }
+                Event::Paused => status = ProgressBarStatus::Paused,
+                _ => {}
+            }
+            if p.total > 0.0 {
+                let pct = ((p.done + p.current) / p.total * 100.0).clamp(0.0, 100.0) as u64;
+                taskbar(&self.app, status, Some(pct));
+            }
+        }
         let _ = self.app.emit("record-event", e);
     }
 
@@ -49,13 +89,6 @@ impl Host for AppHost {
         let _ = self.app.emit("record-confirm", q.clone());
         show_prompt(&self.app, Prompt::Confirm(q));
         rx.recv().unwrap_or(false)
-    }
-}
-
-fn bring_to_front(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.unminimize();
-        let _ = w.set_focus();
     }
 }
 
@@ -97,33 +130,29 @@ pub fn answer_confirm(app: AppHandle, id: u64, yes: bool) {
     }
 }
 
-/// 开始录制时发给界面（进度窗用来算还剩多久）
+/// 开始录制时发给界面
 #[derive(Serialize, Clone)]
 struct Started {
     clips: usize,
-    /// 预计总耗时（秒，不含启动游戏）
+    /// 预计总耗时（秒，不含启动游戏），按这台机器实测的录制速度估
     estimated_secs: f32,
 }
 
-/// 录制期间的置顶进度窗：录制时游戏在前台，主窗口看不到，用户需要知道录到哪了、怎么停。
-/// 鼠标穿透、不抢焦点，放在屏幕左侧中上，避开程序要点的地方（右上角观战菜单、底部剪辑工具、中间对话框）。
-/// 剪辑工具在引擎里渲染，不截屏幕，所以它不会出现在视频里
-fn show_overlay(app: &AppHandle) {
-    let Some(w) = app.get_webview_window("overlay") else { return };
-    if let Ok(Some(m)) = app.primary_monitor() {
-        let (pos, size) = (m.position(), m.size());
-        let x = pos.x + (size.width as f64 * 0.012) as i32;
-        let y = pos.y + (size.height as f64 * 0.30) as i32;
-        let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
-    }
-    let _ = w.set_ignore_cursor_events(true);
-    let _ = w.show();
-}
-
-fn hide_overlay(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("overlay") {
-        let _ = w.hide();
-    }
+/// 录完或出错时弹系统通知（用户可能在用别的程序）。`lang` 是界面语言
+fn notify(app: &AppHandle, f: &Finished, lang: &str) {
+    let en = lang.starts_with("en");
+    let (title, body) = match (&f.error, &f.cancelled) {
+        (Some(e), _) => (if en { "Recording failed" } else { "录制出错了" }.to_owned(), e.clone()),
+        (None, Some(reason)) => (
+            if en { "Recording stopped" } else { "录制已停止" }.to_owned(),
+            if en { format!("{} of {} clips done ({reason})", f.completed.len(), f.selected.len()) } else { format!("完成 {}/{} 个片段（{reason}）", f.completed.len(), f.selected.len()) },
+        ),
+        (None, None) => (
+            if en { "Recording finished" } else { "录完了" }.to_owned(),
+            if en { format!("{} clips, {:.1} min", f.completed.len(), f.elapsed_secs / 60.0) } else { format!("{} 个片段，用时 {:.1} 分钟", f.completed.len(), f.elapsed_secs / 60.0) },
+        ),
+    };
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 /// 录制结束（录完、停下或出错）时发给界面
@@ -144,30 +173,27 @@ struct Finished {
     out_dir: String,
     /// 录制用的游戏还开着（停下或出错时保留，或者设置了录完不退出）
     game_open: bool,
+    /// 这次实测的录制速度（每秒墙钟录多少秒画面）
+    speed: Option<f32>,
 }
 
-fn options(s: &Settings) -> Result<Options, String> {
-    let resolution = match s.resolution.trim() {
-        "" => None,
-        r => {
-            let (w, h) = r.split_once(['x', 'X']).ok_or(format!("分辨率要写成 宽x高：{r}"))?;
-            Some((w.trim().parse().map_err(|_| format!("分辨率不对：{r}"))?, h.trim().parse().map_err(|_| format!("分辨率不对：{r}"))?))
-        }
-    };
-    Ok(Options {
+fn options(s: &Settings) -> Options {
+    Options {
         compile: s.compile,
-        resolution,
+        resolution: s.capture_size(),
         out: PathBuf::from(&s.out_dir),
         gsi_port: game::gsi::DEFAULT_PORT,
         quit: s.quit_when_done,
+        camera: if s.camera == "player_view" { Camera::PlayerView } else { Camera::HeroChase },
         on_input: Some(game::input_guard::OnInput::Pause),
         log_dir: crate::settings::logs_dir(),
-    })
+    }
 }
 
-/// 开始录制 `clips`（计划里的序号）。设置读当前保存的
+/// 开始录制 `clips`（计划里的序号）。`camera` 是比赛页上选的镜头（存进设置，下次默认用它），`lang` 是界面语言（通知用）。
+/// 其他设置读当前保存的
 #[tauri::command]
-pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips: Vec<usize>) -> Result<(), String> {
+pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips: Vec<usize>, camera: String, lang: String) -> Result<(), String> {
     if clips.is_empty() {
         return Err("没有选片段".into());
     }
@@ -175,12 +201,16 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
         return Err("已经在录了".into());
     }
     let prepared = async {
-        let settings = crate::settings::get_settings();
-        let o = options(&settings)?;
+        let mut settings = crate::settings::get_settings();
+        if settings.camera != camera {
+            settings.camera = camera;
+            crate::settings::save_settings(settings.clone())?;
+        }
+        let o = options(&settings);
         let ffmpeg = settings.ffmpeg.trim();
         let ff = Ffmpeg::locate((!ffmpeg.is_empty()).then(|| std::path::Path::new(ffmpeg))).map_err(|e| format!("{e:#}"))?;
         let r = crate::matches::parsed(match_id).await?;
-        let p = settings.rules.params();
+        let p = settings.params();
         let plan = clips::plan(&r, player, &p);
         let selected: Vec<Selected> = clips
             .iter()
@@ -199,10 +229,10 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
 
     cancel::reset();
     let estimated_secs: f32 = selected.iter().map(|s| s.clip.estimated_seconds(&p)).sum();
-    show_overlay(&app);
+    taskbar(&app, ProgressBarStatus::Normal, Some(0));
     let _ = app.emit("record-started", Started { clips: selected.len(), estimated_secs });
-    // 盯着暂停和停止：用户一动就马上告诉界面"已暂停"并把应用切到前面（流程要做完手上这一步才真正停住）；
-    // 点了停止就告诉进度窗"正在停下"（恢复设置要几秒）
+    // 盯着暂停和停止：用户在游戏里一动就马上告诉界面"已暂停"、弹置顶对话框（流程要停掉手上这一段才真正停住）；
+    // 点了停止就告诉界面"正在停下"（恢复设置要几秒）
     let watcher = app.clone();
     std::thread::spawn(move || {
         let mut was_paused = false;
@@ -216,7 +246,7 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
             if paused != was_paused {
                 was_paused = paused;
                 let _ = watcher.emit(if paused { "record-paused" } else { "record-resumed" }, ());
-                // 游戏基本是全屏的：在游戏上面弹置顶对话框问继续还是停止，不把用户切回主窗口
+                // 用户刚在游戏里操作过：在最上面弹置顶对话框问继续还是停止，不把用户切回主窗口
                 if paused {
                     show_prompt(&watcher, Prompt::Pause);
                 } else {
@@ -227,9 +257,15 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
         }
     });
     std::thread::spawn(move || {
-        let host = AppHost { app: app.clone() };
+        let host = AppHost { app: app.clone(), progress: Mutex::new(Progress::default()) };
         let time = crate::matches::now();
-        let report = pipeline::run(&host, &r, player, &selected, &p, &ff, &o);
+        let report = pipeline::run(&host, &r, player, &selected, &ff, &o);
+        // 记下这台机器的录制速度，下次估耗时用（明显不合理的不要）
+        if let Some(speed) = report.speed.filter(|s| (0.05..5.0).contains(s)) {
+            let mut settings = crate::settings::get_settings();
+            settings.measured_speed = Some(speed);
+            let _ = crate::settings::save_settings(settings);
+        }
         // 记进"已录视频"：files 和 completed 一一对应，多出来的最后一个是合集
         let done: std::collections::HashMap<usize, &PathBuf> = report.completed.iter().copied().zip(&report.files).collect();
         let hero = |i: usize| r.players[i].hero.trim_start_matches("npc_dota_hero_").to_owned();
@@ -271,15 +307,13 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
             elapsed_secs: report.elapsed.as_secs_f32(),
             out_dir: o.out.to_string_lossy().into_owned(),
             game_open,
+            speed: report.speed,
         };
         RUNNING.store(false, Ordering::SeqCst);
-        // 进度窗先显示结果，停留几秒再收起；主窗口切到前面显示结果页
+        taskbar(&app, ProgressBarStatus::None, None);
+        notify(&app, &finished, &lang);
+        // 主窗口显示这场比赛的录制详情；不抢前台（用户可能在用别的程序），点通知或任务栏图标就能看到
         let _ = app.emit("record-finished", finished);
-        bring_to_front(&app);
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        if !RUNNING.load(Ordering::SeqCst) {
-            hide_overlay(&app);
-        }
     });
     Ok(())
 }

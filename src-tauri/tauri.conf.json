@@ -20,21 +20,6 @@
         "center": true
       },
       {
-        "label": "overlay",
-        "url": "overlay.html",
-        "title": "d2hr overlay",
-        "visible": false,
-        "transparent": true,
-        "decorations": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": false,
-        "shadow": false,
-        "focus": false,
-        "width": 440,
-        "height": 132
-      },
-      {
         "label": "prompt",
         "url": "prompt.html",
         "title": "d2hr prompt",
@@ -56,7 +41,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
   }
 }
