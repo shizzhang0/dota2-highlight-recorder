@@ -1,6 +1,11 @@
 //! 观战设置：英雄追踪镜头、阵营迷雾、追踪指定玩家。
 //!
-//! 镜头模式和迷雾没有控制台命令（`spec_mode` 等对 Dota 的镜头无效），只能点右上角的观战菜单。
+//! 两种做法：
+//! - 点右上角的观战菜单（`setup`），剪辑工具录制用；
+//! - 控制台命令（`console_setup`），`startmovie` 录制用，不点界面、游戏不用在前台。
+//!   `dota_spectator_mode` 等几个命令 `help` 和 `cvarlist` 里都查不到，但能用（2026-11-04 实测；`spec_mode` 对 Dota 无效）。
+//!   迷雾没有命令，用热键（PostMessage 发，不需要前台）。
+//!
 //! 重新加载录像（playdemo）会把镜头重置成自由视角、把面板收起，所以每次加载后都要重新设。
 
 use std::sync::mpsc::Receiver;
@@ -72,4 +77,30 @@ pub fn focus(player: usize, gsi: &Receiver<Value>) -> Result<()> {
         crate::cancel::check()?;
     }
     Err(anyhow::anyhow!("GSI 最后看到追踪的是 {seen:?}")).context(format!("按了 3 次追踪热键，GSI 还是没显示在追踪玩家 #{player}"))
+}
+
+/// 控制台能切的镜头
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Camera {
+    /// 英雄一直在画面中间（`dota_spectator_mode 2`）
+    HeroChase,
+    /// 还原这名玩家当时自己的镜头，画面跟着他当时看的地方走（`dota_spectator_mode 3`）
+    PlayerView,
+}
+
+/// 用控制台命令设好观战：追踪 `player`（0–9）、镜头模式、`team` 一方的迷雾，收起右上角回放控制面板，隐藏鼠标指针。
+/// 改的设置都记进 `s`，结束时恢复。不点界面，游戏不用在前台
+pub fn console_setup(s: &mut crate::session::Session, player: usize, camera: Camera, team: Team) -> Result<()> {
+    let mode = match camera {
+        Camera::HeroChase => "2",
+        Camera::PlayerView => "3",
+    };
+    s.con().send(&format!("dota_spectator_hero_index {player}"))?;
+    s.set("dota_spectator_mode", mode)?;
+    s.con().send(&format!("dota_camera_focus_player {player}"))?;
+    s.set("dota_spectator_options_enabled", "0")?;
+    // 单独 dota_hide_cursor 1 没用，要先开 sv_cheats（只在这次回放里有效；2026-11-06 实测）
+    s.set("sv_cheats", "1")?;
+    s.set("dota_hide_cursor", "1")?;
+    crate::window::post_key(crate::window::dota_window()?, crate::keys::fog(team)?)
 }

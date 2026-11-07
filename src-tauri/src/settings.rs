@@ -11,11 +11,15 @@ use crate::matches::Rules;
 pub struct Settings {
     /// 输出目录
     pub out_dir: String,
-    /// 录制分辨率，例如 "1920x1080"；空 = 跟游戏窗口一致
-    pub resolution: String,
+    /// 录制画面大小："1080p"（以 1920×1080 启动游戏，比 2560×1600 录得快约一倍）或 "native"（跟游戏窗口一致）。
+    /// 原先叫 resolution、可填任意大小、默认跟游戏窗口一致；2026-11 改成这两个选项、默认 1080p，旧值不再沿用
+    pub capture: String,
+    /// 镜头："hero_chase"（英雄一直在画面中间）或 "player_view"（还原玩家当时自己的镜头）。比赛页上选，记住上次的
+    pub camera: String,
     /// 录完再拼一个合集
     pub compile: bool,
-    /// 全部录完后让游戏退出（中途停下或出错时保留，方便接着录）。原先叫 quit_after、默认关，改名后旧值不再沿用
+    /// 全部录完后让游戏退出（中途停下或出错时保留，方便接着录）。只对 "native" 有用：1080p 录完一定退出（要改回显示设置）。
+    /// 原先叫 quit_after、默认关，改名后旧值不再沿用
     pub quit_when_done: bool,
     /// 界面语言："auto" 跟随系统，或 "zh-CN" / "en"
     pub language: String,
@@ -23,6 +27,24 @@ pub struct Settings {
     pub ffmpeg: String,
     /// 片段规则
     pub rules: Rules,
+    /// 这台机器上次实测的录制速度（每秒墙钟录多少秒画面），估录制耗时用；没录过为 null
+    pub measured_speed: Option<f32>,
+}
+
+impl Settings {
+    /// 片段规则参数，录制速度用这台机器实测的
+    pub fn params(&self) -> clips::Params {
+        let mut p = self.rules.params();
+        if let Some(speed) = self.measured_speed {
+            p.speed = speed;
+        }
+        p
+    }
+
+    /// 录制时用的游戏窗口大小；None = 跟游戏窗口一致
+    pub fn capture_size(&self) -> Option<(u32, u32)> {
+        (self.capture != "native").then_some((1920, 1080))
+    }
 }
 
 impl Default for Settings {
@@ -30,12 +52,14 @@ impl Default for Settings {
         let videos = std::env::var("USERPROFILE").map(|h| PathBuf::from(h).join(r"Videos\d2hr")).unwrap_or_default();
         Settings {
             out_dir: videos.to_string_lossy().into_owned(),
-            resolution: String::new(),
+            capture: "1080p".into(),
+            camera: "hero_chase".into(),
             compile: false,
             quit_when_done: true,
             language: "auto".into(),
             ffmpeg: String::new(),
             rules: Rules::default(),
+            measured_speed: None,
         }
     }
 }

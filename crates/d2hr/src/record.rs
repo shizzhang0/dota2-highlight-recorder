@@ -3,7 +3,6 @@
 use std::io::{BufRead, Write};
 
 use anyhow::{Result, bail};
-use clips::Params;
 use media::ffmpeg::Ffmpeg;
 use pipeline::{Event, Host, Options, Selected};
 use replay::Replay;
@@ -18,20 +17,18 @@ impl Host for Console {
                 println!("请先退出 Dota（主菜单 → 退出游戏），退出后会自动继续；按 Ctrl+C 取消。");
             }
             Event::LaunchingGame { args } => println!("启动游戏：{}", args.join(" ")),
-            Event::ReplayLoaded | Event::Paused | Event::Resuming => {}
-            Event::Countdown { secs, input_guard } => {
+            Event::ReplayLoaded | Event::Paused | Event::Resuming | Event::SegmentStarted { .. } | Event::SegmentProgress { .. } => {}
+            Event::Recording { input_guard, encoder, .. } => {
+                println!("开始录制：游戏已最小化到后台，用 {encoder} 编码。录制期间可以用电脑，但不要点 Dota 的窗口。");
                 if input_guard {
-                    println!("{secs} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘（要停下就按任意键或移动鼠标）…")
-                } else {
-                    println!("{secs} 秒后开始操作游戏界面，录完之前请不要动鼠标键盘（要停下就按 Ctrl+C）…")
+                    println!("（Dota 在前台时按键或动鼠标会停下；要停下也可以按 Ctrl+C）");
                 }
             }
             Event::ClipStarted { n, total, index, name } => println!("[{n}/{total}] 片段 {index}：{name}"),
-            Event::ExportStarted { .. } => {}
-            Event::Exported { from, to, secs, render_secs } => {
-                println!("  导出 {}–{}：{secs:.1} 秒，渲染 {render_secs:.0} 秒", clips::mmss(from), clips::mmss(to))
+            Event::SegmentDone { from, to, secs, wall_secs } => {
+                println!("  录 {}–{}：{secs:.1} 秒，用了 {wall_secs:.0} 秒", clips::mmss(from), clips::mmss(to))
             }
-            Event::Retrying { reason } => println!("  第一次导出不对（{reason}），重来一次"),
+            Event::Retrying { reason } => println!("  第一次没录好（{reason}），重来一次"),
             Event::ClipDone { path, secs, .. } => println!("  → {}（{secs:.1} 秒）", path.display()),
             Event::CompilationDone { path, secs } => println!("合集 → {}（{secs:.1} 秒）", path.display()),
             Event::RestoringWindowSize { width, height } => println!("让游戏退出，把显示设置里的窗口大小改回 {width}×{height}…"),
@@ -40,7 +37,7 @@ impl Host for Console {
                 println!("没能改回窗口大小（{error}），请在游戏的视频设置里自己改回 {width}×{height}")
             }
             Event::RestoreFailed { error } => println!("恢复游戏设置时出错：{error}"),
-            Event::DiagnosticsKept { dir } => println!("排查用的截图和控制台日志在 {}", dir.display()),
+            Event::DiagnosticsKept { dir } => println!("排查用的控制台日志在 {}", dir.display()),
         }
     }
 
@@ -52,10 +49,10 @@ impl Host for Console {
     }
 }
 
-pub fn run(r: &Replay, player: usize, selected: &[Selected], p: &Params, ff: &Ffmpeg, o: &Options) -> Result<()> {
+pub fn run(r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options) -> Result<()> {
     // 第一次 Ctrl+C 只做标记：做完手上这一步就停，照常恢复设置
     game::cancel::install()?;
-    let report = pipeline::run(&Console, r, player, selected, p, ff, o);
+    let report = pipeline::run(&Console, r, player, selected, ff, o);
 
     let left: Vec<String> =
         selected.iter().map(|s| s.index).filter(|i| !report.completed.contains(i)).map(|i| i.to_string()).collect();

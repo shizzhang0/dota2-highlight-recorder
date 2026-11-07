@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub struct Ffmpeg {
     exe: PathBuf,
@@ -47,11 +47,16 @@ impl Ffmpeg {
         }
     }
 
-    fn run(&self, args: &[&str]) -> Result<()> {
-        let out = Command::new(&self.exe)
-            // 桌面应用里调用时不弹黑色控制台窗口
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(["-hide_banner", "-loglevel", "error", "-y"])
+    /// 带公共参数的 ffmpeg 命令：不弹黑色控制台窗口（桌面应用里调用时），只输出错误，覆盖已有文件
+    pub(crate) fn command(&self) -> Command {
+        let mut cmd = Command::new(&self.exe);
+        cmd.creation_flags(CREATE_NO_WINDOW).args(["-hide_banner", "-loglevel", "error", "-y"]);
+        cmd
+    }
+
+    pub(crate) fn run(&self, args: &[&str]) -> Result<()> {
+        let out = self
+            .command()
             .args(args)
             .stdin(Stdio::null())
             .output()

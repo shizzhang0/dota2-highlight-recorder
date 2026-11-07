@@ -1,21 +1,24 @@
-//! 录制期间检测用户动了鼠标键盘：按任意键或移动鼠标，命令行里就停止（`cancel::Reason::Input`），桌面应用里暂停。
+//! 录制期间检测用户在 Dota 里的操作：Dota 在前台时按键或动鼠标，命令行里就停止（`cancel::Reason::Input`），桌面应用里暂停。
+//! 录制用控制台命令、不点界面，用户在别的程序里的操作不影响录制，所以只管 Dota 在前台的时候。
+//! 只看"Dota 在前台"不够：没人碰电脑时 Dota 也会自己变成前台窗口（2026-11-07 实测），要前台 + 有输入才算。
+//! 录制期间 Dota 是最小化的，鼠标碰不到它：最小化时只算键盘输入（这时它若在前台，按键会发给它）。
 //! 原先另注册了全局快捷键 `Ctrl+Shift+F12`，但按下 Ctrl 那一刻就已经停了，快捷键多余，2026-10-26 去掉。
 //!
 //! 用低级键盘、鼠标钩子（`WH_KEYBOARD_LL` / `WH_MOUSE_LL`）：程序用 `SendInput` / `keybd_event`
 //! 发的事件带 `INJECTED` 标记，`PostMessage` 发的点击和按键根本不经过钩子，所以没标记的就是用户的真实输入。
 //! 低级钩子要求装钩子的线程跑消息循环，所以单独开一个线程。
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow};
-use windows::Win32::Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetMessageW, HHOOK, KBDLLHOOKSTRUCT, LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED, LLMHF_INJECTED,
+    CallNextHookEx, GetForegroundWindow, GetMessageW, HHOOK, IsIconic, KBDLLHOOKSTRUCT, LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED, LLMHF_INJECTED,
     LLMHF_LOWER_IL_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
     WH_KEYBOARD_LL, WH_MOUSE_LL, WM_MOUSEMOVE, WM_QUIT,
 };
@@ -54,8 +57,17 @@ pub enum OnInput {
 }
 
 static PAUSE_MODE: AtomicBool = AtomicBool::new(false);
+/// 游戏窗口句柄：只有它在前台时的输入才算；0 表示不限（开始检测时找不到游戏窗口）
+static DOTA: AtomicIsize = AtomicIsize::new(0);
 
-fn user_input(what: &str) {
+fn user_input(what: &str, mouse: bool) {
+    let dota = DOTA.load(Ordering::SeqCst);
+    if dota != 0 {
+        let hwnd = HWND(dota as *mut _);
+        if unsafe { GetForegroundWindow() } != hwnd || (mouse && unsafe { IsIconic(hwnd) }.as_bool()) {
+            return;
+        }
+    }
     if PAUSE_MODE.load(Ordering::SeqCst) {
         cancel::request_pause();
     } else if cancel::request(Reason::Input) {
@@ -69,7 +81,7 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
         let injected = info.flags & (LLMHF_INJECTED | LLMHF_LOWER_IL_INJECTED) != 0;
         let ours = wparam.0 as u32 == WM_MOUSEMOVE && ours(info.pt.x, info.pt.y);
         if !injected && !ours {
-            user_input("鼠标");
+            user_input("鼠标", true);
         }
     }
     unsafe { CallNextHookEx(HHOOK::default(), code, wparam, lparam) }
@@ -80,7 +92,7 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         let injected = info.flags.0 & (LLKHF_INJECTED.0 | LLKHF_LOWER_IL_INJECTED.0) != 0;
         if !injected {
-            user_input("键盘");
+            user_input("键盘", false);
         }
     }
     unsafe { CallNextHookEx(HHOOK::default(), code, wparam, lparam) }
@@ -92,9 +104,10 @@ pub struct Guard {
     thread: Option<JoinHandle<()>>,
 }
 
-/// 开始检测
+/// 开始检测（游戏要已经开着）
 pub fn start(on_input: OnInput) -> Result<Guard> {
     PAUSE_MODE.store(on_input == OnInput::Pause, Ordering::SeqCst);
+    DOTA.store(crate::window::dota_window().map_or(0, |w| w.0 as isize), Ordering::SeqCst);
     let (tx, rx) = mpsc::channel();
     let thread = std::thread::spawn(move || unsafe {
         let module = GetModuleHandleW(None).map(|m| HINSTANCE(m.0)).unwrap_or_default();

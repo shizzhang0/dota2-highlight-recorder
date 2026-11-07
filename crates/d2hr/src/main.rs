@@ -37,7 +37,7 @@ enum Command {
         #[command(flatten)]
         rules: Rules,
     },
-    /// 录制高光片段（会启动或重启 Dota，录完之前不要动鼠标键盘）
+    /// 录制高光片段（会启动或重启 Dota，游戏最小化在后台录，录完之前不要点 Dota 的窗口）
     Record {
         /// 比赛 ID（在录像目录里找），或者录像文件路径
         replay: String,
@@ -51,9 +51,13 @@ enum Command {
         #[arg(long)]
         compile: bool,
         /// 录制分辨率，例如 1920x1080；默认跟游戏窗口一致。和游戏现在的窗口大小不同时要重启游戏，
-        /// 录完游戏会退出（它退出时会把这个大小存进显示设置，程序等它退出后改回原来的大小）
+        /// 录完游戏会退出（它退出时会把这个大小存进显示设置，程序等它退出后改回原来的大小）。
+        /// 1080p 比 2560×1600 录得快约一倍（2026-11 实测）
         #[arg(long, value_parser = parse_resolution)]
         resolution: Option<(u32, u32)>,
+        /// 镜头：hero = 英雄追踪（英雄一直在画面中间），player = 玩家视角（还原玩家当时自己的镜头）
+        #[arg(long, value_enum, default_value_t = CameraArg::Hero)]
+        camera: CameraArg,
         /// 输出目录，默认是「视频\d2hr」
         #[arg(long)]
         out: Option<PathBuf>,
@@ -66,7 +70,7 @@ enum Command {
         /// 录完让游戏退出
         #[arg(long)]
         quit: bool,
-        /// 录制期间不检测鼠标键盘操作（默认按任意键或移动鼠标就停下）
+        /// 录制期间不检测在 Dota 里的操作（默认 Dota 在前台时按键或动鼠标就停下）
         #[arg(long)]
         allow_input: bool,
         #[command(flatten)]
@@ -80,6 +84,12 @@ fn parse_resolution(s: &str) -> Result<(u32, u32), String> {
         (Ok(w), Ok(h)) if w >= 640 && h >= 480 => Ok((w, h)),
         _ => Err("要写成 宽x高，例如 1920x1080".into()),
     }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum CameraArg {
+    Hero,
+    Player,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -149,7 +159,7 @@ fn run() -> Result<()> {
     match cli.command {
         Command::List => list(&dir),
         Command::Plan { replay, player, rules } => plan(&dir, &replay, player, &rules.params()),
-        Command::Record { replay, player, clips, compile, resolution, out, ffmpeg, gsi_port, quit, allow_input, rules } => {
+        Command::Record { replay, player, clips, compile, resolution, camera, out, ffmpeg, gsi_port, quit, allow_input, rules } => {
             // 先找 ffmpeg，免得游戏都开起来了才发现缺东西
             let ff = media::ffmpeg::Ffmpeg::locate(ffmpeg.as_deref())?;
             let p = rules.params();
@@ -166,13 +176,26 @@ fn run() -> Result<()> {
             }
             let secs: f32 = selected.iter().map(|s| s.clip.estimated_seconds(&p)).sum();
             let hero_name = hero(&r.players[player].hero);
-            println!("录 #{player} {hero_name} 的 {} 个片段，预计约 {:.1} 分钟（不含启动游戏），期间请勿操作鼠标键盘。", selected.len(), secs / 60.0);
+            println!("录 #{player} {hero_name} 的 {} 个片段，预计约 {:.1} 分钟（不含启动游戏）。", selected.len(), secs / 60.0);
             let out = match out {
                 Some(d) => d,
                 None => PathBuf::from(std::env::var("USERPROFILE").context("找不到用户目录")?).join(r"Videos\d2hr"),
             };
-            let o = pipeline::Options { compile, resolution, out, gsi_port, quit, on_input: (!allow_input).then_some(game::input_guard::OnInput::Stop), log_dir: None };
-            record::run(&r, player, &selected, &p, &ff, &o)
+            let camera = match camera {
+                CameraArg::Hero => pipeline::Camera::HeroChase,
+                CameraArg::Player => pipeline::Camera::PlayerView,
+            };
+            let o = pipeline::Options {
+                compile,
+                resolution,
+                out,
+                gsi_port,
+                quit,
+                camera,
+                on_input: (!allow_input).then_some(game::input_guard::OnInput::Stop),
+                log_dir: None,
+            };
+            record::run(&r, player, &selected, &ff, &o)
         }
     }
 }
@@ -282,7 +305,7 @@ fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> 
         println!("这名玩家整场没有击杀，没有可录的片段。");
         return Ok(());
     }
-    println!("\n{:>3}  {:<13} {:>6}  {:<28} {:>4}  文件名", "#", "时间", "时长", "击杀", "导出");
+    println!("\n{:>3}  {:<13} {:>6}  {:<28} {:>4}  文件名", "#", "时间", "时长", "击杀", "段数");
     for (i, c) in clips.iter().enumerate() {
         let victims: Vec<&str> = c.kills.iter().map(|&k| hero(&r.players[r.kills[k].victim].hero)).collect();
         let range = format!("{}–{}", clock(c.start()), clock(c.end()));
@@ -291,15 +314,15 @@ fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> 
             i + 1,
             c.duration(),
             victims.join(", "),
-            c.exports.len(),
+            c.spans.len(),
             clips::file_name(&r, c)
         );
     }
     let total: f32 = clips.iter().map(|c| c.duration()).sum();
-    let exports: usize = clips.iter().map(|c| c.exports.len()).sum();
+    let spans: usize = clips.iter().map(|c| c.spans.len()).sum();
     let secs: f32 = clips.iter().map(|c| c.estimated_seconds(p)).sum();
     println!(
-        "\n共 {} 个片段，成片 {:.0} 秒，导出 {exports} 次。预计录制约 {:.1} 分钟（不含启动游戏），期间请勿操作鼠标键盘。",
+        "\n共 {} 个片段，成片 {:.0} 秒，分 {spans} 段录。预计录制约 {:.1} 分钟（不含启动游戏）。",
         clips.len(),
         total,
         secs / 60.0
