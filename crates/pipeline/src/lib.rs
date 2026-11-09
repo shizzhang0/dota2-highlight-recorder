@@ -369,6 +369,10 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     // 带 -w -h 启动的游戏退出时会把这个窗口大小写进显示设置，先记下原来的
     let account = game::steam::me();
     let original_size = account.and_then(|a| game::steam::video(a).ok()).and_then(|v| v.width.zip(v.height));
+    // 游戏一启动就会抢前台（启动、加载录像时也会），这些都还回去；开始录制后只在程序让回放播放后的一小段时间里还。
+    // 要在启动游戏前就开始盯：窗口一出来就抢（2026-11-09 实测，连上控制台再盯的话前台被占了 8 秒多）
+    game::window::expect_focus_steals();
+    let keeper = FocusKeeper::start(origin);
     let (con, rx, sized) = match prepare(host, o, &diag) {
         Ok(v) => v,
         Err(e) => {
@@ -383,6 +387,8 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
 
     let result = record_all(host, r, player, team, selected, ff, o, &mut s, &rx, &tmp, origin, done);
     let restored = s.restore();
+    // 收尾（退出游戏）时不用再管前台了
+    drop(keeper);
     // 下面这些收尾也不能被取消打断
     let hold = cancel::hold();
     // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）；保留的话把窗口恢复（万一被最小化了）
@@ -484,7 +490,8 @@ fn record_all(
         Some(mode) => Some(game::input_guard::start(mode)?),
         None => None,
     };
-    let _keeper = FocusKeeper::start(origin);
+    // 加载、设画面期间抢前台都还回去；从这里起只在程序让回放播放后的一小段时间里还
+    game::window::end_focus_steals();
     let total_secs = selected.iter().map(|s| s.clip.duration()).sum();
     host.event(Event::Recording { input_guard: o.on_input.is_some(), encoder: codec.name().into(), total_secs });
 
@@ -557,8 +564,9 @@ fn setup_view(rec: &Rec, s: &mut Session) -> Result<()> {
     Ok(())
 }
 
-/// 录制期间盯着前台：程序刚让回放播放、Dota 抢走了前台，就把前台还给开始录制时的窗口、把 Dota 放回后面。
-/// 用户自己点进 Dota（不在那个时间窗里）不管，交给输入检测暂停
+/// 录制期间盯着前台：Dota 在程序引起的时间里抢走了前台（`game::window::focus_steal_expected`），就把前台还给
+/// 它抢之前用户在用的窗口（找不到就还给开始录制时的窗口）、把 Dota 放回后面。
+/// 用户自己点进 Dota（不在那个时间里）不管，交给输入检测暂停
 struct FocusKeeper {
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -570,13 +578,21 @@ impl FocusKeeper {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let flag = stop.clone();
         let thread = std::thread::spawn(move || {
+            // 用户最近在用的窗口（不是 Dota 的前台窗口）。开始录制时的窗口可能已经最小化、藏进托盘了，
+            // 还给它会失败（2026-11-09 实测：开始时前台是最小化的微信，Dota 一直占着前台）
+            let mut last = origin;
             while !flag.load(Ordering::SeqCst) {
-                if game::window::focus_steal_expected()
-                    && let Ok(dota) = game::window::dota_window()
-                    && game::ui::foreground() == dota.0 as isize
-                {
-                    game::ui::bring_to_front(origin);
-                    game::window::send_to_back(dota);
+                let fg = game::ui::foreground();
+                match game::window::dota_window() {
+                    Ok(dota) if fg == dota.0 as isize => {
+                        if game::window::focus_steal_expected() {
+                            let _ = game::ui::bring_to_front(last) || game::ui::bring_to_front(origin);
+                            // 还不回去也放到后面，至少不挡着
+                            game::window::send_to_back(dota);
+                        }
+                    }
+                    _ if fg != 0 => last = fg,
+                    _ => {}
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
@@ -591,6 +607,8 @@ impl Drop for FocusKeeper {
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+        // 没开始录就出错时，加载阶段的"一直算"还开着
+        game::window::end_focus_steals();
     }
 }
 
@@ -682,8 +700,9 @@ fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf
     let mut movie = Movie::start(s.con(), &prefix, FPS)?;
 
     let result = (|| -> Result<PathBuf> {
-        // 万一我们读帧慢了，回放也停在终点，不会多录
-        s.con().send(&format!("demo_pauseatservertick {t1}"))?;
+        // 原先还发 demo_pauseatservertick 让回放停在终点，但它要的是服务器 tick，和录像 tick 差几百
+        // （2026-11-09 实测：终点算成"已经过了"，立刻暂停，偶尔压过随后的 demo_resume，整段录成静止画面）。
+        // 段长靠数帧控制，到数就 endmovie、暂停，多出的帧丢掉，用不着它
         game::window::expect_focus_steal();
         s.con().send("demo_resume")?;
         rec.host.event(Event::SegmentStarted { from, to: end, frames: expected - skip });

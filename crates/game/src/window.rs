@@ -4,8 +4,9 @@
 //!
 //! 回放每次从暂停开始播放（`demo_resume`），Dota 都会把自己的窗口提到最前面、抢走前台：最小化的会恢复，
 //! 放在后面的会跳到最前；移到屏幕外也照抢（2026-11-08 实测）。只抢一次，还回去之后不再抢。
-//! 所以录制时游戏放在其他窗口后面，程序每次让回放播放前调 `expect_focus_steal`，在随后的一小段时间里
-//! 把前台还给用户（`pipeline`），输入检测也不把这段时间的输入算成用户在游戏里操作（`input_guard`）。
+//! 游戏启动、加载录像时也会抢。所以录制时游戏放在其他窗口后面：启动游戏前调 `expect_focus_steals`、开始录制时调
+//! `end_focus_steals`，录制中每次让回放播放前调 `expect_focus_steal`；这些时间里 Dota 抢了前台就还给用户（`pipeline`），
+//! 输入检测也不把这段时间的输入算成用户在游戏里操作（`input_guard`）。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -67,8 +68,8 @@ pub fn send_to_back(window: HWND) {
 
 /// 程序让回放开始播放后，Dota 抢前台的时间窗
 const STEAL_WINDOW: Duration = Duration::from_millis(1500);
-/// 上次让回放播放的时间（Unix 毫秒）
-static RESUMED_AT: AtomicU64 = AtomicU64::new(0);
+/// 到这个时间（Unix 毫秒）之前，Dota 抢前台都算程序引起的
+static STEAL_UNTIL: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
@@ -76,10 +77,22 @@ fn now_ms() -> u64 {
 
 /// 程序要让回放播放了（发 `demo_resume` 前调）：接下来 Dota 会抢前台
 pub fn expect_focus_steal() {
-    RESUMED_AT.store(now_ms(), Ordering::SeqCst);
+    let until = now_ms() + STEAL_WINDOW.as_millis() as u64;
+    // 正处在"一直算"的阶段（启动、加载录像）就别缩短
+    STEAL_UNTIL.fetch_max(until, Ordering::SeqCst);
 }
 
-/// 现在是不是在"程序刚让回放播放、Dota 可能正在抢前台"的时间窗里
+/// 从现在起 Dota 抢前台都算程序引起的，直到 `end_focus_steals`：游戏启动、加载录像期间用，用户这时不会去用游戏
+pub fn expect_focus_steals() {
+    STEAL_UNTIL.store(u64::MAX, Ordering::SeqCst);
+}
+
+/// 结束 `expect_focus_steals`（开始录制时调）：之后只有程序让回放播放后的一小段时间算
+pub fn end_focus_steals() {
+    STEAL_UNTIL.store(0, Ordering::SeqCst);
+}
+
+/// 现在是不是在"程序引起 Dota 抢前台"的时间里
 pub fn focus_steal_expected() -> bool {
-    now_ms().saturating_sub(RESUMED_AT.load(Ordering::SeqCst)) < STEAL_WINDOW.as_millis() as u64
+    now_ms() < STEAL_UNTIL.load(Ordering::SeqCst)
 }
