@@ -1,5 +1,6 @@
 // 录制：开始前确认 → 进度（事件来自 Rust 的 pipeline）。录完的结果在"已录视频"里看（videos.js）。
-// 录制在后台进行（游戏最小化），用户可以用别的程序；在 Dota 里操作才会暂停，暂停时弹置顶对话框，这里也能点
+// Dota 放在其他窗口后面录，每段开录时它会弹出来一下，程序马上放回后面；用户可以用别的程序，
+// 在 Dota 里点鼠标或按键才会暂停，暂停时弹置顶对话框，这里也能点
 import * as api from "./api.js";
 import { resolve, t } from "./i18n.js";
 import { el, length } from "./format.js";
@@ -16,8 +17,9 @@ export function confirmStart(dialog, { count, secs, minutes, overwrite }) {
     dialog.replaceChildren(
       el("h2", {}, t("rec.confirm.title")),
       el("p", {}, t("rec.confirm.what", { n: count, secs: length(secs), minutes })),
-      overwrite ? el("p", { class: "muted" }, t("rec.confirm.overwrite", { n: overwrite })) : null,
-      el("p", { class: "warn" }, t("rec.confirm.background")),
+      // replaceChildren 会把 null 写成文字 "null"，没有就放空字符串
+      overwrite ? el("p", { class: "muted" }, t("rec.confirm.overwrite", { n: overwrite })) : "",
+      el("p", { class: "warn" }, t("rec.confirm.window")),
       el("p", { class: "muted" }, t("rec.confirm.pause")),
       el("p", { class: "muted" }, t(native ? "rec.confirm.restartNative" : "rec.confirm.restart1080")),
       el("div", { class: "dialog-actions" },
@@ -71,7 +73,7 @@ export async function showRecording(view, dialog, { matchId, player, clips, came
     el("div", { class: "row" }, resumeBtn,
       el("button", { type: "button", onclick: () => api.stopRecording() }, t("rec.paused.stop"))),
   );
-  const note = el("p", { class: "warn" }, t("rec.background"));
+  const note = el("p", { class: "warn" }, t("rec.window"));
   const body = el("div", { class: "card" },
     el("h2", { style: "margin:0" }, t("rec.title")),
     note, pausedBox,

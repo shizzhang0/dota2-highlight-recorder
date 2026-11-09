@@ -78,6 +78,7 @@ fn find_playhead(ui: &Ui, frame: &Frame) -> Option<f32> {
 /// 跳到 `tick`（游戏时钟 `clock` 秒）并暂停，用 GSI 确认真的到了。
 /// 要在播放状态下跳：暂停时跳转，控制台照样报完成，但画面和剪辑工具的时间轴都不更新（2026-10-22 实测）
 pub fn goto(con: &mut Netcon, gsi: &Receiver<Value>, tick: u32, clock: f32) -> Result<()> {
+    crate::window::expect_focus_steal();
     con.send("demo_resume")?;
     con.seek(tick, Duration::from_secs(60))?;
     crate::gsi::drain(gsi);

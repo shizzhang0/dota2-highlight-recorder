@@ -2,7 +2,8 @@
 //! 命令行（`d2hr record`）和桌面应用共用。
 //!
 //! 用控制台录（2026-11 起，见 docs/prototype-walkthrough.md）：控制台命令切镜头，`startmovie` 逐帧输出画面，
-//! 边录边用显卡编码；游戏最小化在后台，不点界面，录制期间用户可以用电脑。
+//! 边录边用显卡编码；游戏放在其他窗口后面，不点界面，录制期间用户可以用电脑。
+//! 回放每次开始播放 Dota 都会抢一下前台（最小化也会自己恢复），由 `FocusKeeper` 马上还回去。
 //! 原先点游戏自带剪辑工具的做法见 docs/phase1-plan.md「录制流程」。
 //!
 //! 和外界只通过 `Host` 打交道：进度用事件报告，需要用户拍板的事（例如重启游戏）用确认请求。
@@ -42,7 +43,7 @@ const BLACK_BRIGHTNESS: f32 = 45.0;
 /// 每段开录后在这几帧（开头丢掉的部分之后）查一次亮度，都低于 `BLACK_BRIGHTNESS` 才算黑
 const BLACK_CHECKS: [u32; 3] = [15, 30, 60];
 
-/// 录到的世界画面是黑的（只有 HUD）：要把游戏窗口恢复、正常渲染一下再最小化，重录这一段
+/// 录到的世界画面是黑的（只有 HUD）：重新设好画面、渲染一下，重录这一段
 #[derive(Debug)]
 struct BlackWorld(f32);
 
@@ -160,12 +161,12 @@ pub enum Event {
     LaunchingGame { args: Vec<String> },
     /// 录像加载好了
     ReplayLoaded,
-    /// 镜头设好、游戏已最小化到后台，开始录。`input_guard` 为真时，在 Dota 里操作就会停止或暂停；
+    /// 镜头设好、游戏已放到后台，开始录。`input_guard` 为真时，在 Dota 里操作就会停止或暂停；
     /// `encoder` 是用的编码器，`total_secs` 是要录的画面总长（秒）
     Recording { input_guard: bool, encoder: String, total_secs: f32 },
     /// 暂停了（桌面应用里用户在 Dota 里操作了），等用户点"继续"或"停止"
     Paused,
-    /// 用户点了"继续"：重设镜头、重新最小化游戏，再录被打断的那一段（不重新加载录像）
+    /// 用户点了"继续"：重设镜头、把游戏放回后面，再录被打断的那一段（不重新加载录像）
     Resuming,
     /// 开始录第 `n` 个（共 `total` 个）选定的片段，它在计划里是第 `index` 个
     ClipStarted { n: usize, total: usize, index: usize, name: String },
@@ -177,6 +178,8 @@ pub enum Event {
     SegmentDone { from: f32, to: f32, secs: f64, wall_secs: f32 },
     /// 录得不对，重来一次
     Retrying { reason: String },
+    /// 游戏窗口的状态（排查用，界面不显示）：`at` 是在哪一步记的
+    GameWindow { at: String, minimized: bool, foreground: bool },
     /// 一个片段做好了
     ClipDone { index: usize, path: PathBuf, secs: f64 },
     /// 合集做好了
@@ -382,7 +385,7 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     let restored = s.restore();
     // 下面这些收尾也不能被取消打断
     let hold = cancel::hold();
-    // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）；保留的话把窗口恢复（录制时最小化了）
+    // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）；保留的话把窗口恢复（万一被最小化了）
     if (o.quit && result.is_ok()) || sized {
         let _ = s.con().send("quit");
         done.game_quit = true;
@@ -471,7 +474,7 @@ fn record_all(
         origin,
         size: o.resolution,
     };
-    // 先跳到第一段附近再设镜头（刚加载完镜头是自由视角），然后把游戏最小化到后台
+    // 先跳到第一段附近再设镜头（刚加载完镜头是自由视角），然后把游戏放到后面
     let at = (selected[0].clip.start() - 5.0).max(rec.first);
     seek(&rec, s, at)?;
     setup_view(&rec, s)?;
@@ -481,6 +484,7 @@ fn record_all(
         Some(mode) => Some(game::input_guard::start(mode)?),
         None => None,
     };
+    let _keeper = FocusKeeper::start(origin);
     let total_secs = selected.iter().map(|s| s.clip.duration()).sum();
     host.event(Event::Recording { input_guard: o.on_input.is_some(), encoder: codec.name().into(), total_secs });
 
@@ -537,9 +541,9 @@ fn load_replay(host: &dyn Host, r: &Replay, s: &mut Session, rx: &Receiver<Value
 /// 用控制台命令设镜头、迷雾、收面板、隐藏鼠标指针，然后把游戏最小化（照样出帧，用户也不会误点进去）。
 /// 暂停后继续时再调一次：用户可能在游戏里点过东西、把窗口恢复了
 fn setup_view(rec: &Rec, s: &mut Session) -> Result<()> {
-    // 一开始就最小化、一直不让它露面，偶尔会录到黑的世界画面（只有 HUD；2026-11-08 命令行实测 5 次里出现 1 次，原因没查清，
-    // 猜是带 -w -h 启动后窗口大小改得晚，正好赶上最小化）。所以先让窗口露出来（放到其他窗口后面，不抢焦点），
-    // 等大小稳定，在露面的时候设镜头、正常渲染 2 秒，再最小化。万一还是黑的，`capture` 会查出来重录
+    // 游戏放在其他窗口后面（不最小化：回放一播放它就自己恢复、抢前台，2026-11-08 实测）。
+    // 用户暂停时可能把窗口挪到了前面，这里放回去；等窗口大小稳定，设好镜头、渲染 2 秒再录
+    // （一直最小化时偶尔录到黑的世界画面，原因没查清；万一还是黑的，`capture` 会查出来重录）
     let dota = game::window::dota_window()?;
     game::window::restore(dota);
     game::window::send_to_back(dota);
@@ -549,13 +553,56 @@ fn setup_view(rec: &Rec, s: &mut Session) -> Result<()> {
     wait_window_settled(rec.size);
     spectator::console_setup(s, rec.player, rec.camera, rec.team)?;
     std::thread::sleep(Duration::from_secs(2));
-    game::window::minimize(dota);
-    // 最小化后 Dota 有时还是前台窗口（2026-11-07 实测），这时用户的按键会发给它：把前台还回去
-    std::thread::sleep(Duration::from_millis(300));
-    if game::ui::foreground() == dota.0 as isize {
-        game::ui::bring_to_front(rec.origin);
-    }
+    window_state(rec, "设好画面后");
     Ok(())
+}
+
+/// 录制期间盯着前台：程序刚让回放播放、Dota 抢走了前台，就把前台还给开始录制时的窗口、把 Dota 放回后面。
+/// 用户自己点进 Dota（不在那个时间窗里）不管，交给输入检测暂停
+struct FocusKeeper {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl FocusKeeper {
+    fn start(origin: isize) -> FocusKeeper {
+        use std::sync::atomic::Ordering;
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = stop.clone();
+        let thread = std::thread::spawn(move || {
+            while !flag.load(Ordering::SeqCst) {
+                if game::window::focus_steal_expected()
+                    && let Ok(dota) = game::window::dota_window()
+                    && game::ui::foreground() == dota.0 as isize
+                {
+                    game::ui::bring_to_front(origin);
+                    game::window::send_to_back(dota);
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        FocusKeeper { stop, thread: Some(thread) }
+    }
+}
+
+impl Drop for FocusKeeper {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+/// 把游戏窗口现在是否最小化、是否在前台记进日志（2026-11-08：用户问录制时是不是真的最小化了，之前没核实过）
+fn window_state(rec: &Rec, at: &str) {
+    if let Ok(dota) = game::window::dota_window() {
+        rec.host.event(Event::GameWindow {
+            at: at.into(),
+            minimized: game::window::is_minimized(dota),
+            foreground: game::ui::foreground() == dota.0 as isize,
+        });
+    }
 }
 
 /// 等游戏窗口大小稳定（1 秒内不变；给了 `want` 的话还要等于它），最多等 15 秒
@@ -585,7 +632,7 @@ fn seek(rec: &Rec, s: &mut Session, at: f32) -> Result<()> {
 }
 
 /// 录一段，核对时长；失败重来一次。
-/// 暂停（桌面应用里用户在 Dota 里操作了）不算失败：这一段丢掉，等用户点"继续"，重设镜头、重新最小化，再录这一段（不重新加载录像）
+/// 暂停（桌面应用里用户在 Dota 里操作了）不算失败：这一段丢掉，等用户点"继续"，重设镜头、把游戏放回后面，再录这一段（不重新加载录像）
 fn record_span(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf> {
     let mut failures = 0;
     let mut black = false;
@@ -596,7 +643,7 @@ fn record_span(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<Pat
             rec.host.event(Event::Resuming);
         }
         let mut tried = Ok(());
-        // 暂停过（用户可能在游戏里点过东西、把窗口恢复了），或者上一次录到的画面是黑的：重设镜头、重新最小化
+        // 暂停过（用户可能在游戏里点过东西、把窗口挪到了前面），或者上一次录到的画面是黑的：重设镜头、放回后面
         if cancel::take_pause_seen() || black {
             tried = setup_view(rec, s);
         }
@@ -637,8 +684,10 @@ fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf
     let result = (|| -> Result<PathBuf> {
         // 万一我们读帧慢了，回放也停在终点，不会多录
         s.con().send(&format!("demo_pauseatservertick {t1}"))?;
+        game::window::expect_focus_steal();
         s.con().send("demo_resume")?;
         rec.host.event(Event::SegmentStarted { from, to: end, frames: expected - skip });
+        window_state(rec, "开录");
         let started = Instant::now();
         // 正常是实时的 0.5–0.8 倍；按 0.1 倍算还没录完就当卡住了
         let timeout = Duration::from_secs_f32((end - start) / 0.1 + 60.0);

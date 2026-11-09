@@ -37,7 +37,7 @@ enum Command {
         #[command(flatten)]
         rules: Rules,
     },
-    /// 录制高光片段（会启动或重启 Dota，游戏最小化在后台录，录完之前不要点 Dota 的窗口）
+    /// 录制高光片段（会启动或重启 Dota；每段开头 Dota 会弹出来一下，程序会放回后面，录完之前不要操作 Dota）
     Record {
         /// 比赛 ID（在录像目录里找），或者录像文件路径
         replay: String,

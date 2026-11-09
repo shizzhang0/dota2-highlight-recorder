@@ -44,7 +44,7 @@ fn main() {
             settings::save_settings,
             settings::default_settings,
         ])
-        // 关主窗口就退出：隐藏的进度窗也算窗口，不然进程会留在后台。
+        // 关主窗口就退出：隐藏的置顶对话框也算窗口，不然进程会一直留着。
         // 录制中先不关，当作点了停止：等流程停下、恢复完游戏设置，用户再关
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event

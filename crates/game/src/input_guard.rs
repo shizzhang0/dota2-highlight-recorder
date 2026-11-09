@@ -1,7 +1,8 @@
 //! 录制期间检测用户在 Dota 里的操作：Dota 在前台时按键或动鼠标，命令行里就停止（`cancel::Reason::Input`），桌面应用里暂停。
 //! 录制用控制台命令、不点界面，用户在别的程序里的操作不影响录制，所以只管 Dota 在前台的时候。
-//! 只看"Dota 在前台"不够：没人碰电脑时 Dota 也会自己变成前台窗口（2026-11-07 实测），要前台 + 有输入才算。
-//! 录制期间 Dota 是最小化的，鼠标碰不到它：最小化时只算键盘输入（这时它若在前台，按键会发给它）。
+//! 只看"Dota 在前台"不够：回放每次开始播放，Dota 都会自己抢到前台（2026-11-08 实测，见 `window`），
+//! 所以只算真正会作用到游戏上的输入：鼠标点击、滚轮、按键；鼠标移动不算（只会让游戏显示悬停提示）。
+//! 程序刚让回放播放的那一小段时间（Dota 正在抢前台、程序正要把前台还回去）里的输入也不算。
 //! 原先另注册了全局快捷键 `Ctrl+Shift+F12`，但按下 Ctrl 那一刻就已经停了，快捷键多余，2026-10-26 去掉。
 //!
 //! 用低级键盘、鼠标钩子（`WH_KEYBOARD_LL` / `WH_MOUSE_LL`）：程序用 `SendInput` / `keybd_event`
@@ -18,9 +19,10 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetForegroundWindow, GetMessageW, HHOOK, IsIconic, KBDLLHOOKSTRUCT, LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED, LLMHF_INJECTED,
+    CallNextHookEx, GetForegroundWindow, GetMessageW, HHOOK, KBDLLHOOKSTRUCT, LLKHF_INJECTED, LLKHF_LOWER_IL_INJECTED, LLMHF_INJECTED,
     LLMHF_LOWER_IL_INJECTED, MSG, MSLLHOOKSTRUCT, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
-    WH_KEYBOARD_LL, WH_MOUSE_LL, WM_MOUSEMOVE, WM_QUIT,
+    WH_KEYBOARD_LL, WH_MOUSE_LL, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN,
+    WM_XBUTTONDOWN,
 };
 
 use crate::cancel::{self, Reason};
@@ -60,13 +62,10 @@ static PAUSE_MODE: AtomicBool = AtomicBool::new(false);
 /// 游戏窗口句柄：只有它在前台时的输入才算；0 表示不限（开始检测时找不到游戏窗口）
 static DOTA: AtomicIsize = AtomicIsize::new(0);
 
-fn user_input(what: &str, mouse: bool) {
+fn user_input(what: &str) {
     let dota = DOTA.load(Ordering::SeqCst);
-    if dota != 0 {
-        let hwnd = HWND(dota as *mut _);
-        if unsafe { GetForegroundWindow() } != hwnd || (mouse && unsafe { IsIconic(hwnd) }.as_bool()) {
-            return;
-        }
+    if dota != 0 && (unsafe { GetForegroundWindow() } != HWND(dota as *mut _) || crate::window::focus_steal_expected()) {
+        return;
     }
     if PAUSE_MODE.load(Ordering::SeqCst) {
         cancel::request_pause();
@@ -79,9 +78,14 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
     if code >= 0 {
         let info = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
         let injected = info.flags & (LLMHF_INJECTED | LLMHF_LOWER_IL_INJECTED) != 0;
+        // 只算点击和滚轮：鼠标移动不会改动游戏（程序自己放光标的移动也在这里排除）
+        let clicked = matches!(
+            wparam.0 as u32,
+            WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN | WM_MOUSEWHEEL | WM_MOUSEHWHEEL
+        );
         let ours = wparam.0 as u32 == WM_MOUSEMOVE && ours(info.pt.x, info.pt.y);
-        if !injected && !ours {
-            user_input("鼠标", true);
+        if !injected && !ours && clicked {
+            user_input("鼠标");
         }
     }
     unsafe { CallNextHookEx(HHOOK::default(), code, wparam, lparam) }
@@ -92,7 +96,7 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let info = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         let injected = info.flags.0 & (LLKHF_INJECTED.0 | LLKHF_LOWER_IL_INJECTED.0) != 0;
         if !injected {
-            user_input("键盘", false);
+            user_input("键盘");
         }
     }
     unsafe { CallNextHookEx(HHOOK::default(), code, wparam, lparam) }

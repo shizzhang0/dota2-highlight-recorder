@@ -3,7 +3,7 @@
 //! 事件：`record-event`（`pipeline::Event`）、`record-confirm`（{id, question}）、`record-finished`（`Finished`）、
 //! `record-paused` / `record-resumed` / `record-stopping`。一次只能录一场；录制在单独的线程里跑，命令立刻返回。
 //!
-//! 录制在后台进行（游戏最小化），用户可能在用别的程序：进度显示在主窗口和任务栏图标上，录完或出错弹系统通知。
+//! 录制期间用户可能在用别的程序：进度显示在主窗口，录完或出错弹系统通知。
 //! 要用户拍板的事（暂停后继续还是停止、要不要重启游戏）弹一个置顶的小对话框（`prompt` 窗口）；
 //! 主窗口上同样能操作，哪边先回答都行，另一边跟着收起。
 
@@ -16,7 +16,6 @@ use game::cancel::{self, Reason};
 use media::ffmpeg::Ffmpeg;
 use pipeline::{Camera, Event, Host, Options, Selected};
 use serde::Serialize;
-use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
@@ -31,24 +30,6 @@ static PENDING: Mutex<Option<(u64, Sender<bool>)>> = Mutex::new(None);
 
 struct AppHost {
     app: AppHandle,
-    progress: Mutex<Progress>,
-}
-
-/// 整次录制的进度（秒数都是画面时长），用来更新任务栏图标上的进度条
-#[derive(Default)]
-struct Progress {
-    total: f32,
-    /// 已经录完的段
-    done: f32,
-    /// 正在录的这一段录了多少
-    current: f32,
-}
-
-/// 任务栏图标上的进度条：`progress` 是 0–100；status 为 None 时去掉
-fn taskbar(app: &AppHandle, status: ProgressBarStatus, progress: Option<u64>) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.set_progress_bar(ProgressBarState { status: Some(status), progress });
-    }
 }
 
 #[derive(Serialize, Clone)]
@@ -59,25 +40,6 @@ struct Question {
 
 impl Host for AppHost {
     fn event(&self, e: Event) {
-        {
-            let mut p = self.progress.lock().unwrap();
-            let mut status = ProgressBarStatus::Normal;
-            match &e {
-                Event::Recording { total_secs, .. } => p.total = *total_secs,
-                Event::SegmentStarted { .. } => p.current = 0.0,
-                Event::SegmentProgress { frames, .. } => p.current = *frames as f32 / 60.0,
-                Event::SegmentDone { secs, .. } => {
-                    p.done += *secs as f32;
-                    p.current = 0.0;
-                }
-                Event::Paused => status = ProgressBarStatus::Paused,
-                _ => {}
-            }
-            if p.total > 0.0 {
-                let pct = ((p.done + p.current) / p.total * 100.0).clamp(0.0, 100.0) as u64;
-                taskbar(&self.app, status, Some(pct));
-            }
-        }
         let _ = self.app.emit("record-event", e);
     }
 
@@ -229,7 +191,6 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
 
     cancel::reset();
     let estimated_secs: f32 = selected.iter().map(|s| s.clip.estimated_seconds(&p)).sum();
-    taskbar(&app, ProgressBarStatus::Normal, Some(0));
     let _ = app.emit("record-started", Started { clips: selected.len(), estimated_secs });
     // 盯着暂停和停止：用户在游戏里一动就马上告诉界面"已暂停"、弹置顶对话框（流程要停掉手上这一段才真正停住）；
     // 点了停止就告诉界面"正在停下"（恢复设置要几秒）
@@ -257,7 +218,7 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
         }
     });
     std::thread::spawn(move || {
-        let host = AppHost { app: app.clone(), progress: Mutex::new(Progress::default()) };
+        let host = AppHost { app: app.clone() };
         let time = crate::matches::now();
         let report = pipeline::run(&host, &r, player, &selected, &ff, &o);
         // 记下这台机器的录制速度，下次估耗时用（明显不合理的不要）
@@ -310,7 +271,6 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
             speed: report.speed,
         };
         RUNNING.store(false, Ordering::SeqCst);
-        taskbar(&app, ProgressBarStatus::None, None);
         notify(&app, &finished, &lang);
         // 主窗口显示这场比赛的录制详情；不抢前台（用户可能在用别的程序），点通知或任务栏图标就能看到
         let _ = app.emit("record-finished", finished);
