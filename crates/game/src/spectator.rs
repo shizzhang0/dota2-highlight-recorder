@@ -88,7 +88,7 @@ pub enum Camera {
     PlayerView,
 }
 
-/// 用控制台命令设好观战：追踪 `player`（0–9）、镜头模式、`team` 一方的迷雾，收起右上角回放控制面板，隐藏鼠标指针。
+/// 用控制台命令设好观战：关掉鼠标靠边接管镜头，追踪 `player`（0–9）、镜头模式、`team` 一方的迷雾，收起右上角回放控制面板，隐藏鼠标指针。
 /// 改的设置都记进 `s`，结束时恢复。不点界面，游戏不用在前台
 pub fn console_setup(s: &mut crate::session::Session, player: usize, camera: Camera, team: Team) -> Result<()> {
     let mode = match camera {
@@ -96,6 +96,9 @@ pub fn console_setup(s: &mut crate::session::Session, player: usize, camera: Cam
         Camera::PlayerView => "3",
     };
     s.con().send(&format!("dota_spectator_hero_index {player}"))?;
+    // 鼠标碰到画面边缘时镜头会被临时接管、变成自由视角，录制时 Dota 在最前面，用户一动鼠标镜头就被推走
+    // （2026-11-10 应用实测）。要在设镜头模式之前关：已经进了自由视角再关也切不回来（2026-10 端到端实测）
+    s.set("dota_spectator_enable_edgepan_temporary_free_camera", "0")?;
     s.set("dota_spectator_mode", mode)?;
     s.con().send(&format!("dota_camera_focus_player {player}"))?;
     s.set("dota_spectator_options_enabled", "0")?;

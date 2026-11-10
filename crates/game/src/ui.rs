@@ -66,7 +66,6 @@ pub struct Foreground {
 
 impl Drop for Foreground {
     fn drop(&mut self) {
-        crate::input_guard::expect_cursor(self.cursor.x, self.cursor.y);
         unsafe {
             let _ = SetCursorPos(self.cursor.x, self.cursor.y);
             alt_tap();
@@ -156,10 +155,9 @@ impl Ui {
 
     /// 让游戏内的光标移到 `p`：放好系统光标，再微移让游戏收到移动事件；有偏差就按实际位置校正
     fn move_to(&self, p: Pt, held: bool) -> Result<()> {
-        // 停止或暂停了就不再动鼠标：用户在动鼠标，再点就会点错（拖动到一半时也停，调用方会松开左键）
-        crate::cancel::check_not_paused()?;
+        // 停止了就不再动鼠标（拖动到一半时也停，调用方会松开左键）
+        crate::cancel::check()?;
         let target = self.to_screen(p);
-        crate::input_guard::expect_cursor(target.x, target.y);
         unsafe {
             SetCursorPos(target.x, target.y)?;
         }

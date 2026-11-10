@@ -67,6 +67,13 @@ input[type="text"], input[type="number"], select {
 }
 input[type="number"] { width: 90px; }
 
+/* 两段切换按钮：选项只有两三个时代替下拉框（比赛页的镜头） */
+.segmented { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--hover); }
+.segmented button { border: 0; border-radius: 6px; padding: 5px 14px; background: transparent; color: var(--muted); }
+.segmented button:hover:not(:disabled) { background: transparent; color: var(--text); }
+.segmented button.on,
+.segmented button.on:hover:not(:disabled) { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+
 .topbar {
   position: sticky;
   top: 0;
@@ -212,15 +219,6 @@ details.runs .log { margin-top: 10px; }
 .log li { margin: 2px 0; }
 .files { padding-left: 20px; }
 .files li { margin: 4px 0; }
-.paused {
-  margin: 12px 0;
-  padding: 14px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--tag-text);
-  background: var(--tag);
-}
-.paused-title { font-size: 16px; font-weight: 700; color: var(--tag-text); }
-.paused p { margin: 6px 0 10px; }
 .result h2 { font-size: 17px; }
 .result.done h2, .ok { color: var(--radiant); }
 .result.stopped h2 { color: var(--tag-text); }

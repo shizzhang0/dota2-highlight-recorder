@@ -1,22 +1,16 @@
-//! 游戏窗口：发按键（切换追踪的玩家、迷雾），最小化、放到后面，以及"回放开始播放时会抢前台"的记号。
+//! 游戏窗口：发按键（切换追踪的玩家、迷雾），最小化、恢复，窗口在屏幕上的位置。
 //!
 //! 按键用 PostMessage 直接投递到窗口，不需要游戏在前台，也不影响用户的键盘。
 //!
 //! 回放每次从暂停开始播放（`demo_resume`），Dota 都会把自己的窗口提到最前面、抢走前台：最小化的会恢复，
-//! 放在后面的会跳到最前；移到屏幕外也照抢（2026-11-08 实测）。只抢一次，还回去之后不再抢。
-//! 游戏启动、加载录像时也会抢。所以录制时游戏放在其他窗口后面：启动游戏前调 `expect_focus_steals`、开始录制时调
-//! `end_focus_steals`，录制中每次让回放播放前调 `expect_focus_steal`；这些时间里 Dota 抢了前台就还给用户（`pipeline`），
-//! 输入检测也不把这段时间的输入算成用户在游戏里操作（`input_guard`）。
-
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+//! 放在后面的会跳到最前；移到屏幕外也照抢（2026-11-08 实测）。所以录制时游戏就放在最前面（`pipeline`）。
 
 use anyhow::{Result, bail};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::Input::KeyboardAndMouse::{MAPVK_VK_TO_VSC, MapVirtualKeyW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, HWND_BOTTOM, IsIconic, PostMessageW, SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, ShowWindow,
-    WM_KEYDOWN, WM_KEYUP,
+    FindWindowW, GetClientRect, IsIconic, PostMessageW, SW_HIDE, SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, ShowWindow, WM_KEYDOWN, WM_KEYUP,
 };
 use windows::core::w;
 
@@ -54,45 +48,25 @@ pub fn restore(window: HWND) {
     }
 }
 
+/// 隐藏窗口
+pub fn hide(window: HWND) {
+    unsafe {
+        let _ = ShowWindow(window, SW_HIDE);
+    }
+}
+
 /// 窗口现在是不是最小化的
 pub fn is_minimized(window: HWND) -> bool {
     unsafe { IsIconic(window) }.as_bool()
 }
 
-/// 放到所有窗口后面，不抢焦点
-pub fn send_to_back(window: HWND) {
+/// 游戏画面（客户区）左上角在屏幕上的位置和画面大小，物理像素
+pub fn client_rect(window: HWND) -> Option<(i32, i32, i32, i32)> {
+    let mut r = RECT::default();
+    let mut origin = POINT::default();
     unsafe {
-        let _ = SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        GetClientRect(window, &mut r).ok()?;
+        ClientToScreen(window, &mut origin).ok().ok()?;
     }
-}
-
-/// 程序让回放开始播放后，Dota 抢前台的时间窗
-const STEAL_WINDOW: Duration = Duration::from_millis(1500);
-/// 到这个时间（Unix 毫秒）之前，Dota 抢前台都算程序引起的
-static STEAL_UNTIL: AtomicU64 = AtomicU64::new(0);
-
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
-}
-
-/// 程序要让回放播放了（发 `demo_resume` 前调）：接下来 Dota 会抢前台
-pub fn expect_focus_steal() {
-    let until = now_ms() + STEAL_WINDOW.as_millis() as u64;
-    // 正处在"一直算"的阶段（启动、加载录像）就别缩短
-    STEAL_UNTIL.fetch_max(until, Ordering::SeqCst);
-}
-
-/// 从现在起 Dota 抢前台都算程序引起的，直到 `end_focus_steals`：游戏启动、加载录像期间用，用户这时不会去用游戏
-pub fn expect_focus_steals() {
-    STEAL_UNTIL.store(u64::MAX, Ordering::SeqCst);
-}
-
-/// 结束 `expect_focus_steals`（开始录制时调）：之后只有程序让回放播放后的一小段时间算
-pub fn end_focus_steals() {
-    STEAL_UNTIL.store(0, Ordering::SeqCst);
-}
-
-/// 现在是不是在"程序引起 Dota 抢前台"的时间里
-pub fn focus_steal_expected() -> bool {
-    now_ms() < STEAL_UNTIL.load(Ordering::SeqCst)
+    Some((origin.x, origin.y, r.right - r.left, r.bottom - r.top))
 }

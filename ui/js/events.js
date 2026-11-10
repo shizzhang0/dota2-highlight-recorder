@@ -9,8 +9,6 @@ export function describe(e) {
     case "launching_game": return t("ev.launch", { args: e.args.join(" ") });
     case "replay_loaded": return t("ev.loaded");
     case "recording": return t("ev.recording", { encoder: e.encoder });
-    case "paused": return t("ev.paused");
-    case "resuming": return t("ev.resuming");
     case "clip_started": return t("ev.clip", { n: e.n, total: e.total, name: e.name });
     case "segment_started": return t("ev.segment", { from: clock(e.from), to: clock(e.to) });
     case "segment_done": return t("ev.segmentDone", { from: clock(e.from), to: clock(e.to), secs: e.secs.toFixed(1), wall: Math.round(e.wall_secs) });

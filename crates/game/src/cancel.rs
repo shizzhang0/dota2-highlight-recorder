@@ -1,14 +1,9 @@
-//! 停止和暂停。
+//! 停止：Ctrl+C、在应用里点了停止，都只做标记，各个等待点看到标记就停下来，
+//! 让调用方照常恢复设置、删 GSI 配置、交还前台。Ctrl+C 第二次按才交给系统默认处理（直接结束进程，设置来不及恢复）。
 //!
-//! 停止：Ctrl+C、录制期间检测到用户动了鼠标键盘（命令行）、在应用里点了停止，都只做标记，
-//! 各个等待点看到标记就停下来，让调用方照常恢复设置、删 GSI 配置、交还前台。
-//! Ctrl+C 第二次按才交给系统默认处理（直接结束进程，设置来不及恢复）。
-//!
-//! 暂停（桌面应用）：检测到用户在 Dota 里操作只是暂停。正在录的那一段马上停下、丢掉，
-//! 等用户在应用里点"继续"（`resume`）后重录这一段，或者点"停止"。
+//! 原先还有"检测到用户在 Dota 里操作就停止（命令行）或暂停（应用）"，2026-11-10 改成直接拦下这些操作（`input_guard`），去掉了。
 
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use anyhow::{Result, bail};
 use windows::Win32::Foundation::BOOL;
@@ -18,8 +13,6 @@ use windows::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT, SetConsole
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reason {
     CtrlC = 1,
-    /// 录制期间检测到真实的鼠标键盘输入（包括按 Esc）
-    Input = 2,
     /// 在桌面应用里点了停止
     Stop = 3,
 }
@@ -28,7 +21,6 @@ impl Reason {
     pub fn describe(self) -> &'static str {
         match self {
             Reason::CtrlC => "按了 Ctrl+C",
-            Reason::Input => "检测到鼠标或键盘操作",
             Reason::Stop => "点了停止",
         }
     }
@@ -74,7 +66,6 @@ pub fn reason() -> Option<Reason> {
 pub fn pending() -> Option<Reason> {
     match REQUESTED.load(Ordering::SeqCst) {
         1 => Some(Reason::CtrlC),
-        2 => Some(Reason::Input),
         3 => Some(Reason::Stop),
         _ => None,
     }
@@ -84,72 +75,9 @@ pub fn requested() -> bool {
     reason().is_some()
 }
 
-/// 清掉停止和暂停标记，开始新的一轮录制前调用（桌面应用里一个进程会录很多次）
+/// 清掉停止标记，开始新的一轮录制前调用（桌面应用里一个进程会录很多次）
 pub fn reset() {
     REQUESTED.store(0, Ordering::SeqCst);
-    PAUSED.store(false, Ordering::SeqCst);
-    PAUSE_SEEN.store(false, Ordering::SeqCst);
-}
-
-static PAUSED: AtomicBool = AtomicBool::new(false);
-/// 暂停过、调用方还没处理（重设镜头等）
-static PAUSE_SEEN: AtomicBool = AtomicBool::new(false);
-/// 点"继续"后的这段时间（Unix 毫秒）里不理会输入：点按钮、松开鼠标本身也是输入
-static GRACE_UNTIL: AtomicU64 = AtomicU64::new(0);
-const GRACE: Duration = Duration::from_millis(1500);
-
-fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
-}
-
-/// 检测到用户输入时暂停；刚点完"继续"的宽限期内不算。返回是否这次才进入暂停
-pub fn request_pause() -> bool {
-    if now_ms() < GRACE_UNTIL.load(Ordering::SeqCst) {
-        return false;
-    }
-    let first = !PAUSED.swap(true, Ordering::SeqCst);
-    if first {
-        PAUSE_SEEN.store(true, Ordering::SeqCst);
-    }
-    first
-}
-
-pub fn paused() -> bool {
-    PAUSED.load(Ordering::SeqCst)
-}
-
-/// 用户点了"继续"
-pub fn resume() {
-    GRACE_UNTIL.store(now_ms() + GRACE.as_millis() as u64, Ordering::SeqCst);
-    PAUSED.store(false, Ordering::SeqCst);
-}
-
-/// 暂停过的话返回 true 并清掉记号：调用方要重设镜头、重新最小化游戏，恢复到已知的状态
-pub fn take_pause_seen() -> bool {
-    PAUSE_SEEN.swap(false, Ordering::SeqCst)
-}
-
-/// 暂停过、还没处理（不清记号）。用户可能在调用方发现之前就点了"继续"，只看 `paused` 会漏掉这次暂停
-pub fn pause_seen() -> bool {
-    PAUSE_SEEN.load(Ordering::SeqCst)
-}
-
-/// 暂停中就一直等，直到用户点"继续"（返回 Ok）或者停止（返回错误）
-pub fn wait_while_paused() -> Result<()> {
-    while paused() {
-        check()?;
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    check()
-}
-
-/// 暂停了就返回错误（录制循环里用：用户在游戏里操作，录下来的画面不能要）
-pub fn check_not_paused() -> Result<()> {
-    check()?;
-    if paused() {
-        bail!("已暂停");
-    }
-    Ok(())
 }
 
 /// 返回值存活期间不响应取消标记（Ctrl+C 再按一次仍会直接结束进程）

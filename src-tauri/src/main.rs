@@ -32,7 +32,6 @@ fn main() {
             matches::reveal,
             record::start_recording,
             record::stop_recording,
-            record::resume_recording,
             record::answer_confirm,
             record::is_recording,
             record::quit_game,

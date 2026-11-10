@@ -18,15 +18,13 @@ impl Host for Console {
             }
             Event::LaunchingGame { args } => println!("启动游戏：{}", args.join(" ")),
             Event::ReplayLoaded
-            | Event::Paused
-            | Event::Resuming
             | Event::SegmentStarted { .. }
             | Event::SegmentProgress { .. }
             | Event::GameWindow { .. } => {}
-            Event::Recording { input_guard, encoder, .. } => {
-                println!("开始录制，用 {encoder} 编码。Dota 每段开头会弹出来一下，程序会自动把它放回后面；期间可以用别的程序，但不要操作 Dota。");
-                if input_guard {
-                    println!("（在 Dota 里点鼠标或按键会停下；要停下也可以按 Ctrl+C）");
+            Event::Recording { block_input, encoder, .. } => {
+                println!("开始录制，用 {encoder} 编码。Dota 在最前面录；要停下，切回这里按 Ctrl+C。");
+                if block_input {
+                    println!("（发给 Dota 的点击和按键会被拦下，不影响录制）");
                 }
             }
             Event::ClipStarted { n, total, index, name } => println!("[{n}/{total}] 片段 {index}：{name}"),

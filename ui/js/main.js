@@ -42,7 +42,7 @@ function render() {
 }
 
 function go(page) {
-  // 录制中只看进度：在主窗口上点东西本身就会触发暂停，要操作走暂停对话框
+  // 录制中只看进度，不能换页（录完自动跳到结果）
   if (current.name === "recording") return;
   current = page;
   render();
