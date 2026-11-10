@@ -17,11 +17,14 @@ impl Host for Console {
                 println!("请先退出 Dota（主菜单 → 退出游戏），退出后会自动继续；按 Ctrl+C 取消。");
             }
             Event::LaunchingGame { args } => println!("启动游戏：{}", args.join(" ")),
-            Event::ReplayLoaded | Event::Paused | Event::Resuming | Event::SegmentStarted { .. } | Event::SegmentProgress { .. } => {}
-            Event::Recording { input_guard, encoder, .. } => {
-                println!("开始录制：游戏已最小化到后台，用 {encoder} 编码。录制期间可以用电脑，但不要点 Dota 的窗口。");
-                if input_guard {
-                    println!("（Dota 在前台时按键或动鼠标会停下；要停下也可以按 Ctrl+C）");
+            Event::ReplayLoaded
+            | Event::SegmentStarted { .. }
+            | Event::SegmentProgress { .. }
+            | Event::GameWindow { .. } => {}
+            Event::Recording { block_input, encoder, .. } => {
+                println!("开始录制，用 {encoder} 编码。Dota 在最前面录；要停下，切回这里按 Ctrl+C。");
+                if block_input {
+                    println!("（发给 Dota 的点击和按键会被拦下，不影响录制）");
                 }
             }
             Event::ClipStarted { n, total, index, name } => println!("[{n}/{total}] 片段 {index}：{name}"),

@@ -1,5 +1,5 @@
 // 录制：开始前确认 → 进度（事件来自 Rust 的 pipeline）。录完的结果在"已录视频"里看（videos.js）。
-// 录制在后台进行（游戏最小化），用户可以用别的程序；在 Dota 里操作才会暂停，暂停时弹置顶对话框，这里也能点
+// Dota 放在最前面录，发给它的点击和按键被拦下；Dota 左上角有置顶的进度窗（overlay.js），那里和这里都能停止
 import * as api from "./api.js";
 import { resolve, t } from "./i18n.js";
 import { el, length } from "./format.js";
@@ -16,9 +16,10 @@ export function confirmStart(dialog, { count, secs, minutes, overwrite }) {
     dialog.replaceChildren(
       el("h2", {}, t("rec.confirm.title")),
       el("p", {}, t("rec.confirm.what", { n: count, secs: length(secs), minutes })),
-      overwrite ? el("p", { class: "muted" }, t("rec.confirm.overwrite", { n: overwrite })) : null,
-      el("p", { class: "warn" }, t("rec.confirm.background")),
-      el("p", { class: "muted" }, t("rec.confirm.pause")),
+      // replaceChildren 会把 null 写成文字 "null"，没有就放空字符串
+      overwrite ? el("p", { class: "muted" }, t("rec.confirm.overwrite", { n: overwrite })) : "",
+      el("p", { class: "warn" }, t("rec.confirm.window")),
+      el("p", { class: "muted" }, t("rec.confirm.block")),
       el("p", { class: "muted" }, t(native ? "rec.confirm.restartNative" : "rec.confirm.restart1080")),
       el("div", { class: "dialog-actions" },
         el("button", { type: "button", onclick: () => close(false) }, t("settings.cancel")),
@@ -59,22 +60,14 @@ export async function showRecording(view, dialog, { matchId, player, clips, came
   const bar = el("div", { class: "bar-fill" });
   const barBox = el("div", { class: "bar", hidden: true }, bar);
   const log = el("ol", { class: "log" });
-  // 暂停面板：用户在 Dota 里操作时出现，点"继续"重录被打断的那一段，点"停止"彻底结束
-  const resumeBtn = el("button", {
+  const stopBtn = el("button", {
     type: "button",
-    class: "primary",
-    onclick: () => { resumeBtn.disabled = true; api.resumeRecording(); },
-  }, t("rec.paused.resume"));
-  const pausedBox = el("div", { class: "paused", hidden: true },
-    el("div", { class: "paused-title" }, t("rec.paused.title")),
-    el("p", {}, t("rec.paused.what")),
-    el("div", { class: "row" }, resumeBtn,
-      el("button", { type: "button", onclick: () => api.stopRecording() }, t("rec.paused.stop"))),
-  );
-  const note = el("p", { class: "warn" }, t("rec.background"));
+    onclick: () => { stopBtn.disabled = true; api.stopRecording(); },
+  }, t("rec.stop"));
+  const note = el("p", { class: "warn" }, t("rec.window"));
   const body = el("div", { class: "card" },
-    el("h2", { style: "margin:0" }, t("rec.title")),
-    note, pausedBox,
+    el("div", { class: "row" }, el("h2", { style: "margin:0;flex:1" }, t("rec.title")), stopBtn),
+    note,
     step, clipLine, barBox,
   );
   view.replaceChildren(body, el("div", { class: "card" }, el("h2", {}, t("rec.log")), log));
@@ -94,17 +87,8 @@ export async function showRecording(view, dialog, { matchId, player, clips, came
       else if (e.kind === "segment_done") setBar(1);
       if (text && e.kind !== "clip_started") step.textContent = text;
     }),
-    listen("record-paused", () => {
-      pausedBox.hidden = false;
-      note.hidden = true;
-      resumeBtn.disabled = false;
-    }),
-    listen("record-resumed", () => {
-      pausedBox.hidden = true;
-      note.hidden = false;
-    }),
     listen("record-stopping", (reason) => {
-      pausedBox.hidden = true;
+      stopBtn.disabled = true;
       step.textContent = t("rec.stopping", { reason });
     }),
     listen("record-confirm", async (q) => {

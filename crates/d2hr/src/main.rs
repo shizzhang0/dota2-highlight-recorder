@@ -37,7 +37,7 @@ enum Command {
         #[command(flatten)]
         rules: Rules,
     },
-    /// 录制高光片段（会启动或重启 Dota，游戏最小化在后台录，录完之前不要点 Dota 的窗口）
+    /// 录制高光片段（会启动或重启 Dota；录制时 Dota 在最前面，发给它的点击和按键会被拦下，要停下按 Ctrl+C）
     Record {
         /// 比赛 ID（在录像目录里找），或者录像文件路径
         replay: String,
@@ -70,7 +70,7 @@ enum Command {
         /// 录完让游戏退出
         #[arg(long)]
         quit: bool,
-        /// 录制期间不检测在 Dota 里的操作（默认 Dota 在前台时按键或动鼠标就停下）
+        /// 录制期间不拦截发给 Dota 的点击和按键（默认拦下，怎么操作都不影响录制）
         #[arg(long)]
         allow_input: bool,
         #[command(flatten)]
@@ -192,7 +192,7 @@ fn run() -> Result<()> {
                 gsi_port,
                 quit,
                 camera,
-                on_input: (!allow_input).then_some(game::input_guard::OnInput::Stop),
+                block_input: !allow_input,
                 log_dir: None,
             };
             record::run(&r, player, &selected, &ff, &o)

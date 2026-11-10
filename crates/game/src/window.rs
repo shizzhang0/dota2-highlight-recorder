@@ -1,13 +1,16 @@
-//! 游戏窗口：发按键（切换追踪的玩家、迷雾），最小化。
+//! 游戏窗口：发按键（切换追踪的玩家、迷雾），最小化、恢复，窗口在屏幕上的位置。
 //!
 //! 按键用 PostMessage 直接投递到窗口，不需要游戏在前台，也不影响用户的键盘。
+//!
+//! 回放每次从暂停开始播放（`demo_resume`），Dota 都会把自己的窗口提到最前面、抢走前台：最小化的会恢复，
+//! 放在后面的会跳到最前；移到屏幕外也照抢（2026-11-08 实测）。所以录制时游戏就放在最前面（`pipeline`）。
 
 use anyhow::{Result, bail};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::Input::KeyboardAndMouse::{MAPVK_VK_TO_VSC, MapVirtualKeyW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, HWND_BOTTOM, PostMessageW, SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, ShowWindow,
-    WM_KEYDOWN, WM_KEYUP,
+    FindWindowW, GetClientRect, IsIconic, PostMessageW, SW_HIDE, SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, ShowWindow, WM_KEYDOWN, WM_KEYUP,
 };
 use windows::core::w;
 
@@ -45,9 +48,25 @@ pub fn restore(window: HWND) {
     }
 }
 
-/// 放到所有窗口后面，不抢焦点
-pub fn send_to_back(window: HWND) {
+/// 隐藏窗口
+pub fn hide(window: HWND) {
     unsafe {
-        let _ = SetWindowPos(window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        let _ = ShowWindow(window, SW_HIDE);
     }
+}
+
+/// 窗口现在是不是最小化的
+pub fn is_minimized(window: HWND) -> bool {
+    unsafe { IsIconic(window) }.as_bool()
+}
+
+/// 游戏画面（客户区）左上角在屏幕上的位置和画面大小，物理像素
+pub fn client_rect(window: HWND) -> Option<(i32, i32, i32, i32)> {
+    let mut r = RECT::default();
+    let mut origin = POINT::default();
+    unsafe {
+        GetClientRect(window, &mut r).ok()?;
+        ClientToScreen(window, &mut origin).ok().ok()?;
+    }
+    Some((origin.x, origin.y, r.right - r.left, r.bottom - r.top))
 }

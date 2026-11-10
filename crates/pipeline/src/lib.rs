@@ -2,7 +2,8 @@
 //! 命令行（`d2hr record`）和桌面应用共用。
 //!
 //! 用控制台录（2026-11 起，见 docs/prototype-walkthrough.md）：控制台命令切镜头，`startmovie` 逐帧输出画面，
-//! 边录边用显卡编码；游戏最小化在后台，不点界面，录制期间用户可以用电脑。
+//! 边录边用显卡编码；不点界面。游戏放在最前面录（2026-11-09 定，见 `setup_view`），
+//! 用户发给 Dota 的点击和按键被拦下（`game::input_guard`），怎么操作都不会打乱录制。
 //! 原先点游戏自带剪辑工具的做法见 docs/phase1-plan.md「录制流程」。
 //!
 //! 和外界只通过 `Host` 打交道：进度用事件报告，需要用户拍板的事（例如重启游戏）用确认请求。
@@ -42,7 +43,7 @@ const BLACK_BRIGHTNESS: f32 = 45.0;
 /// 每段开录后在这几帧（开头丢掉的部分之后）查一次亮度，都低于 `BLACK_BRIGHTNESS` 才算黑
 const BLACK_CHECKS: [u32; 3] = [15, 30, 60];
 
-/// 录到的世界画面是黑的（只有 HUD）：要把游戏窗口恢复、正常渲染一下再最小化，重录这一段
+/// 录到的世界画面是黑的（只有 HUD）：重新设好画面、渲染一下，重录这一段
 #[derive(Debug)]
 struct BlackWorld(f32);
 
@@ -64,8 +65,8 @@ pub struct Options {
     pub quit: bool,
     /// 镜头：英雄追踪或玩家视角
     pub camera: Camera,
-    /// 录制期间检测用户在 Dota 里的操作（Dota 在前台时按键、动鼠标）：停止（命令行）或暂停（应用）；None 不检测
-    pub on_input: Option<game::input_guard::OnInput>,
+    /// 录制期间拦下用户发给 Dota 的点击和按键（`game::input_guard`）
+    pub block_input: bool,
     /// 运行日志放在这里（每次录制一个文件，只留最近 20 个）；None 不写。命令行的进度已经打在终端上，不用
     pub log_dir: Option<PathBuf>,
 }
@@ -89,19 +90,19 @@ impl Logged<'_> {
         }
     }
 
-    /// 暂停可能发生在任何一步（包括渲染途中，那时流程不发事件），单开一个线程盯着，把暂停和继续的时间点记下来。
+    /// 用户的操作随时可能被拦下（流程不发事件），单开一个线程盯着，把拦下的时间点记下来，排查"录到的画面被动过"用。
     /// 返回的标记设成 true 时线程退出
-    fn watch_pause(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+    fn watch_blocked(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         if let Some(f) = self.file.clone() {
             let (stop, started) = (stop.clone(), self.started);
             std::thread::spawn(move || {
-                let mut was = false;
+                let mut was = game::input_guard::blocked();
                 while !stop.load(std::sync::atomic::Ordering::SeqCst) {
-                    let now = cancel::paused();
+                    let now = game::input_guard::blocked();
                     if now != was {
                         was = now;
-                        write_line(&f, started, if now { "暂停（检测到在游戏里的操作）" } else { "继续" });
+                        write_line(&f, started, &format!("拦下了发给 Dota 的点击或按键（共 {now} 次）"));
                     }
                     std::thread::sleep(Duration::from_millis(200));
                 }
@@ -160,13 +161,9 @@ pub enum Event {
     LaunchingGame { args: Vec<String> },
     /// 录像加载好了
     ReplayLoaded,
-    /// 镜头设好、游戏已最小化到后台，开始录。`input_guard` 为真时，在 Dota 里操作就会停止或暂停；
+    /// 镜头设好、游戏已放到最前面，开始录。`block_input` 为真时，发给 Dota 的点击和按键会被拦下；
     /// `encoder` 是用的编码器，`total_secs` 是要录的画面总长（秒）
-    Recording { input_guard: bool, encoder: String, total_secs: f32 },
-    /// 暂停了（桌面应用里用户在 Dota 里操作了），等用户点"继续"或"停止"
-    Paused,
-    /// 用户点了"继续"：重设镜头、重新最小化游戏，再录被打断的那一段（不重新加载录像）
-    Resuming,
+    Recording { block_input: bool, encoder: String, total_secs: f32 },
     /// 开始录第 `n` 个（共 `total` 个）选定的片段，它在计划里是第 `index` 个
     ClipStarted { n: usize, total: usize, index: usize, name: String },
     /// 开始录一段：游戏时间范围和要录的帧数
@@ -177,6 +174,8 @@ pub enum Event {
     SegmentDone { from: f32, to: f32, secs: f64, wall_secs: f32 },
     /// 录得不对，重来一次
     Retrying { reason: String },
+    /// 游戏窗口的状态（排查用，界面不显示）：`at` 是在哪一步记的
+    GameWindow { at: String, minimized: bool, foreground: bool },
     /// 一个片段做好了
     ClipDone { index: usize, path: PathBuf, secs: f64 },
     /// 合集做好了
@@ -250,7 +249,9 @@ fn client_size() -> Option<(u32, u32)> {
 
 /// 准备好游戏：GSI 配置、带 netcon 启动（必要时先请用户退出普通模式的游戏）、连上控制台。
 /// 第三个返回值：是不是我们带 `-w -h` 启动的（是的话录完要让游戏退出、把窗口大小改回去）
-fn prepare(host: &dyn Host, o: &Options, diag: &Path) -> Result<(Netcon, gsi::Listener, bool)> {
+/// 准备好游戏：要启动（或重启）的话带上分辨率启动，连上控制台。带 `-w -h` 启动了就把 `sized` 设成 true——
+/// 出错或停下时调用方也要靠它决定让游戏退出、改回窗口大小
+fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Result<(Netcon, gsi::Listener)> {
     gsi::check_port(o.gsi_port)?;
     let changed = gsi::install(o.gsi_port)?;
     let rx = gsi::listen(o.gsi_port)?;
@@ -270,14 +271,13 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path) -> Result<(Netcon, gsi::Li
             restart_needed(host, &format!("游戏窗口现在是 {}×{}，要录 {}×{} 得重新启动游戏。", now.0, now.1, want.0, want.1))?;
         }
     }
-    let mut sized = false;
     if !dota_running() {
         let account = game::steam::me().context("认不出 Steam 账号（Steam 没登录？）")?;
         // 带上用户在 Steam 里设的启动选项（例如国服的 -perfectworld），再加分辨率
         let mut extra = game::steam::launch_options(account).unwrap_or_default();
         if let Some((w, h)) = o.resolution {
             extra.extend(["-w".into(), w.to_string(), "-h".into(), h.to_string()]);
-            sized = true;
+            *sized = true;
         }
         host.event(Event::LaunchingGame { args: extra.clone() });
         game::launch::launch(NETCON_PORT, &extra)?;
@@ -286,14 +286,25 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path) -> Result<(Netcon, gsi::Li
     let mut con = Netcon::connect_logged(NETCON_PORT, &diag.join("console.log"))?;
     con.wait_responsive(Duration::from_secs(120))?;
     con.drain(Duration::from_millis(300), Duration::from_secs(2));
-    Ok((con, rx, sized))
+    Ok((con, rx))
+}
+
+/// 把显示设置里的窗口大小改回 `original`（要等带 `-w -h` 启动的游戏退出后）
+fn restore_window_size(host: &dyn Host, account: Option<u32>, original: Option<(u32, u32)>) {
+    if let (Some(account), Some((width, height))) = (account, original) {
+        host.event(Event::RestoringWindowSize { width, height });
+        match wait_dota_gone(Duration::from_secs(60)).and_then(|()| game::steam::set_video_size(account, width, height)) {
+            Ok(()) => host.event(Event::WindowSizeRestored { width, height }),
+            Err(e) => host.event(Event::WindowSizeNotRestored { width, height, error: format!("{e:#}") }),
+        }
+    }
 }
 
 /// 录制。调用方负责在开始前清掉上一轮的取消标记（`game::cancel::reset`），命令行另外负责接管 Ctrl+C
 pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options) -> Report {
     let started = Instant::now();
     let log = Logged { inner: host, file: o.log_dir.as_deref().and_then(open_log).map(|f| std::sync::Arc::new(std::sync::Mutex::new(f))), started };
-    let pause_watch = log.watch_pause();
+    let blocked_watch = log.watch_blocked();
     let indices: Vec<usize> = selected.iter().map(|s| s.index).collect();
     log.line(&format!(
         "开始：比赛 {}，玩家 #{player}，片段 {indices:?}，输出到 {}，分辨率 {:?}，镜头 {:?}，合集 {}，录完退出 {}",
@@ -307,8 +318,8 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
     // 开始时的前台窗口（终端或应用）：不管怎么结束，最后都切回它，用户回来能直接看到结果
     let origin = game::ui::foreground();
     let mut done = Done::default();
-    let error = run_inner(&log, r, player, selected, ff, o, origin, &mut done).err();
-    pause_watch.store(true, std::sync::atomic::Ordering::SeqCst);
+    let error = run_inner(&log, r, player, selected, ff, o, &mut done).err();
+    blocked_watch.store(true, std::sync::atomic::Ordering::SeqCst);
     game::ui::bring_to_front(origin);
     // 停下的原因要在 hold 之外读（restore 期间读不到）
     let cancelled = cancel::reason();
@@ -342,7 +353,7 @@ struct Done {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options, origin: isize, done: &mut Done) -> Result<()> {
+fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options, done: &mut Done) -> Result<()> {
     if selected.is_empty() {
         bail!("没有选定要录的片段");
     }
@@ -366,11 +377,22 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     // 带 -w -h 启动的游戏退出时会把这个窗口大小写进显示设置，先记下原来的
     let account = game::steam::me();
     let original_size = account.and_then(|a| game::steam::video(a).ok()).and_then(|v| v.width.zip(v.height));
-    let (con, rx, sized) = match prepare(host, o, &diag) {
+    let mut sized = false;
+    let (con, rx) = match prepare(host, o, &diag, &mut sized) {
         Ok(v) => v,
         Err(e) => {
             // 还没开始改设置，只要删掉刚写的 GSI 配置
             let _ = gsi::remove();
+            // 已经带 -w -h 启动了游戏：留着的话，它退出时会把这个大小写进显示设置，要让它退出、再改回原来的大小。
+            // 2026-11-10 实测：启动中点了停止，游戏留着，之后它退出时写进了 1920×1080，下一轮还把它当成了"原来的大小"
+            if sized {
+                let _hold = cancel::hold();
+                let quit = game::launch::wait_netcon(NETCON_PORT, Duration::from_secs(180))
+                    .and_then(|()| Netcon::connect(NETCON_PORT))
+                    .and_then(|mut c| c.send("quit"));
+                done.game_quit = quit.is_ok();
+                restore_window_size(host, account, original_size);
+            }
             return Err(e);
         }
     };
@@ -378,23 +400,19 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     let mut s = Session::new(con);
     s.remove_gsi_on_exit();
 
-    let result = record_all(host, r, player, team, selected, ff, o, &mut s, &rx, &tmp, origin, done);
+    let result = record_all(host, r, player, team, selected, ff, o, &mut s, &rx, &tmp, done);
     let restored = s.restore();
     // 下面这些收尾也不能被取消打断
     let hold = cancel::hold();
-    // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）；保留的话把窗口恢复（录制时最小化了）
+    // 中途停下或出错时保留游戏，方便接着录（重新启动要多等约 40 秒）；保留的话把窗口恢复（万一被最小化了）
     if (o.quit && result.is_ok()) || sized {
         let _ = s.con().send("quit");
         done.game_quit = true;
     } else if let Ok(w) = game::window::dota_window() {
         game::window::restore(w);
     }
-    if sized && let (Some(account), Some((width, height))) = (account, original_size) {
-        host.event(Event::RestoringWindowSize { width, height });
-        match wait_dota_gone(Duration::from_secs(60)).and_then(|()| game::steam::set_video_size(account, width, height)) {
-            Ok(()) => host.event(Event::WindowSizeRestored { width, height }),
-            Err(e) => host.event(Event::WindowSizeNotRestored { width, height, error: format!("{e:#}") }),
-        }
+    if sized {
+        restore_window_size(host, account, original_size);
     }
     match (&result, &restored) {
         (Ok(()), Ok(())) => {
@@ -430,8 +448,6 @@ struct Rec<'a> {
     wall_secs: f32,
     /// 每段录制的编号（`startmovie` 的文件名前缀）
     seq: u32,
-    /// 开始录制时的前台窗口（应用或终端）：游戏最小化后若自己跑到前台，把前台还给它
-    origin: isize,
     /// 游戏窗口应有的大小（带 `-w -h` 启动的）；None = 跟用户的设置一致，只等它稳定
     size: Option<(u32, u32)>,
 }
@@ -448,7 +464,6 @@ fn record_all(
     s: &mut Session,
     rx: &Receiver<Value>,
     tmp: &Path,
-    origin: isize,
     done: &mut Done,
 ) -> Result<()> {
     load_replay(host, r, s, rx)?;
@@ -468,21 +483,17 @@ fn record_all(
         game_secs: 0.0,
         wall_secs: 0.0,
         seq: 0,
-        origin,
         size: o.resolution,
     };
-    // 先跳到第一段附近再设镜头（刚加载完镜头是自由视角），然后把游戏最小化到后台
+    // 先跳到第一段附近再设镜头（刚加载完镜头是自由视角），然后把游戏放到最前面
     let at = (selected[0].clip.start() - 5.0).max(rec.first);
     seek(&rec, s, at)?;
     setup_view(&rec, s)?;
 
-    // 从这里起检测用户在 Dota 里的操作：一动就停止（命令行）或暂停（应用）。离开这个函数时卸掉
-    let _guard = match o.on_input {
-        Some(mode) => Some(game::input_guard::start(mode)?),
-        None => None,
-    };
+    // 从这里起拦下用户发给 Dota 的点击和按键。离开这个函数时卸掉
+    let _guard = if o.block_input { Some(game::input_guard::start()?) } else { None };
     let total_secs = selected.iter().map(|s| s.clip.duration()).sum();
-    host.event(Event::Recording { input_guard: o.on_input.is_some(), encoder: codec.name().into(), total_secs });
+    host.event(Event::Recording { block_input: o.block_input, encoder: codec.name().into(), total_secs });
 
     let mut outputs = Vec::new();
     let result = (|| -> Result<()> {
@@ -534,28 +545,32 @@ fn load_replay(host: &dyn Host, r: &Replay, s: &mut Session, rx: &Receiver<Value
     Ok(())
 }
 
-/// 用控制台命令设镜头、迷雾、收面板、隐藏鼠标指针，然后把游戏最小化（照样出帧，用户也不会误点进去）。
-/// 暂停后继续时再调一次：用户可能在游戏里点过东西、把窗口恢复了
+/// 用控制台命令设镜头、迷雾、收面板、隐藏鼠标指针，把游戏放到最前面。
+/// 录到黑画面、重录这一段前再调一次
 fn setup_view(rec: &Rec, s: &mut Session) -> Result<()> {
-    // 一开始就最小化、一直不让它露面，偶尔会录到黑的世界画面（只有 HUD；2026-11-08 命令行实测 5 次里出现 1 次，原因没查清，
-    // 猜是带 -w -h 启动后窗口大小改得晚，正好赶上最小化）。所以先让窗口露出来（放到其他窗口后面，不抢焦点），
-    // 等大小稳定，在露面的时候设镜头、正常渲染 2 秒，再最小化。万一还是黑的，`capture` 会查出来重录
+    // 游戏放在最前面录（2026-11-09 定）。最小化保持不住；放在其他窗口后面的话，回放每次开始播放它都会自己跳到最前、
+    // 抢走前台，程序再还回去，用户自己切过去看一眼也会被推回后面，体验差（2026-11-08～09 实测）。
+    // 在前面渲染也可能更快：同一段在后面录 28 秒，在前面 18 秒（只碰巧测到一次）。
+    // 等窗口大小稳定，设好镜头、渲染 2 秒再录（万一录到黑的世界画面，`capture` 会查出来重录）
     let dota = game::window::dota_window()?;
     game::window::restore(dota);
-    game::window::send_to_back(dota);
-    if game::ui::foreground() == dota.0 as isize {
-        game::ui::bring_to_front(rec.origin);
-    }
+    game::ui::bring_to_front(dota.0 as isize);
     wait_window_settled(rec.size);
     spectator::console_setup(s, rec.player, rec.camera, rec.team)?;
     std::thread::sleep(Duration::from_secs(2));
-    game::window::minimize(dota);
-    // 最小化后 Dota 有时还是前台窗口（2026-11-07 实测），这时用户的按键会发给它：把前台还回去
-    std::thread::sleep(Duration::from_millis(300));
-    if game::ui::foreground() == dota.0 as isize {
-        game::ui::bring_to_front(rec.origin);
-    }
+    window_state(rec, "设好画面后");
     Ok(())
+}
+
+/// 把游戏窗口现在是否最小化、是否在前台记进日志（2026-11-08：用户问录制时是不是真的最小化了，之前没核实过）
+fn window_state(rec: &Rec, at: &str) {
+    if let Ok(dota) = game::window::dota_window() {
+        rec.host.event(Event::GameWindow {
+            at: at.into(),
+            minimized: game::window::is_minimized(dota),
+            foreground: game::ui::foreground() == dota.0 as isize,
+        });
+    }
 }
 
 /// 等游戏窗口大小稳定（1 秒内不变；给了 `want` 的话还要等于它），最多等 15 秒
@@ -584,33 +599,19 @@ fn seek(rec: &Rec, s: &mut Session, at: f32) -> Result<()> {
     spectator::focus(rec.player, rec.rx)
 }
 
-/// 录一段，核对时长；失败重来一次。
-/// 暂停（桌面应用里用户在 Dota 里操作了）不算失败：这一段丢掉，等用户点"继续"，重设镜头、重新最小化，再录这一段（不重新加载录像）
+/// 录一段，核对时长；失败重来一次（上一次录到的画面是黑的，先重设画面）
 fn record_span(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf> {
     let mut failures = 0;
     let mut black = false;
     loop {
-        if cancel::paused() {
-            rec.host.event(Event::Paused);
-            cancel::wait_while_paused()?;
-            rec.host.event(Event::Resuming);
-        }
-        let mut tried = Ok(());
-        // 暂停过（用户可能在游戏里点过东西、把窗口恢复了），或者上一次录到的画面是黑的：重设镜头、重新最小化
-        if cancel::take_pause_seen() || black {
-            tried = setup_view(rec, s);
-        }
+        let tried = if black { setup_view(rec, s) } else { Ok(()) };
         let err = match tried.and_then(|()| capture(rec, s, from, to)) {
             Ok(part) => return Ok(part),
             Err(e) => e,
         };
         black = err.downcast_ref::<BlackWorld>().is_some();
-        // 停下了就不重来；被暂停打断的不算一次失败（用户可能已经点了"继续"，所以看暂停过没有，不只看现在是不是暂停着；
-        // 2026-11-08 实测：继续后重设镜头期间又被检测到操作，等发现时已经又点了继续，被当成了一次失败）
+        // 停下了就不重来
         cancel::check()?;
-        if cancel::paused() || cancel::pause_seen() {
-            continue;
-        }
         failures += 1;
         if failures >= 2 {
             return Err(err);
@@ -635,10 +636,12 @@ fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf
     let mut movie = Movie::start(s.con(), &prefix, FPS)?;
 
     let result = (|| -> Result<PathBuf> {
-        // 万一我们读帧慢了，回放也停在终点，不会多录
-        s.con().send(&format!("demo_pauseatservertick {t1}"))?;
+        // 原先还发 demo_pauseatservertick 让回放停在终点，但它要的是服务器 tick，和录像 tick 差几百
+        // （2026-11-09 实测：终点算成"已经过了"，立刻暂停，偶尔压过随后的 demo_resume，整段录成静止画面）。
+        // 段长靠数帧控制，到数就 endmovie、暂停，多出的帧丢掉，用不着它
         s.con().send("demo_resume")?;
         rec.host.event(Event::SegmentStarted { from, to: end, frames: expected - skip });
+        window_state(rec, "开录");
         let started = Instant::now();
         // 正常是实时的 0.5–0.8 倍；按 0.1 倍算还没录完就当卡住了
         let timeout = Duration::from_secs_f32((end - start) / 0.1 + 60.0);
@@ -646,8 +649,8 @@ fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf
         let mut enc: Option<Encoder> = None;
         let mut dark = Vec::new();
         while movie.taken() < expected {
-            // 用户在 Dota 里操作了（暂停）或点了停止：这一段不要了
-            cancel::check_not_paused()?;
+            // 点了停止：这一段不要了
+            cancel::check()?;
             let Some(frame) = movie.take()? else {
                 if started.elapsed() > timeout {
                     bail!("等了 {timeout:?} 只录了 {} 帧（共 {expected} 帧），游戏卡住了？", movie.taken());

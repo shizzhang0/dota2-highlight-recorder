@@ -1,11 +1,11 @@
 //! 在应用里录制：把 `pipeline` 的进度事件转成界面事件，确认请求弹给界面等用户回答。
 //!
 //! 事件：`record-event`（`pipeline::Event`）、`record-confirm`（{id, question}）、`record-finished`（`Finished`）、
-//! `record-paused` / `record-resumed` / `record-stopping`。一次只能录一场；录制在单独的线程里跑，命令立刻返回。
+//! `record-stopping`（停下的原因）、`record-blocked`（拦下了几次操作）。一次只能录一场；录制在单独的线程里跑，命令立刻返回。
 //!
-//! 录制在后台进行（游戏最小化），用户可能在用别的程序：进度显示在主窗口和任务栏图标上，录完或出错弹系统通知。
-//! 要用户拍板的事（暂停后继续还是停止、要不要重启游戏）弹一个置顶的小对话框（`prompt` 窗口）；
-//! 主窗口上同样能操作，哪边先回答都行，另一边跟着收起。
+//! 录制时 Dota 在最前面，挡住主窗口：Dota 画面左上角盖一个置顶的小进度窗（`overlay` 窗口），带「停止录制」按钮；
+//! 主窗口照样显示进度，录完或出错弹系统通知。发给 Dota 的点击和按键被拦下（`game::input_guard`），不暂停。
+//! 要用户拍板的事（要不要重启游戏）弹一个置顶的小对话框（`prompt` 窗口）；主窗口上同样能回答，哪边先回答都行，另一边跟着收起。
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -16,7 +16,6 @@ use game::cancel::{self, Reason};
 use media::ffmpeg::Ffmpeg;
 use pipeline::{Camera, Event, Host, Options, Selected};
 use serde::Serialize;
-use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
@@ -31,24 +30,6 @@ static PENDING: Mutex<Option<(u64, Sender<bool>)>> = Mutex::new(None);
 
 struct AppHost {
     app: AppHandle,
-    progress: Mutex<Progress>,
-}
-
-/// 整次录制的进度（秒数都是画面时长），用来更新任务栏图标上的进度条
-#[derive(Default)]
-struct Progress {
-    total: f32,
-    /// 已经录完的段
-    done: f32,
-    /// 正在录的这一段录了多少
-    current: f32,
-}
-
-/// 任务栏图标上的进度条：`progress` 是 0–100；status 为 None 时去掉
-fn taskbar(app: &AppHandle, status: ProgressBarStatus, progress: Option<u64>) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.set_progress_bar(ProgressBarState { status: Some(status), progress });
-    }
 }
 
 #[derive(Serialize, Clone)]
@@ -59,25 +40,6 @@ struct Question {
 
 impl Host for AppHost {
     fn event(&self, e: Event) {
-        {
-            let mut p = self.progress.lock().unwrap();
-            let mut status = ProgressBarStatus::Normal;
-            match &e {
-                Event::Recording { total_secs, .. } => p.total = *total_secs,
-                Event::SegmentStarted { .. } => p.current = 0.0,
-                Event::SegmentProgress { frames, .. } => p.current = *frames as f32 / 60.0,
-                Event::SegmentDone { secs, .. } => {
-                    p.done += *secs as f32;
-                    p.current = 0.0;
-                }
-                Event::Paused => status = ProgressBarStatus::Paused,
-                _ => {}
-            }
-            if p.total > 0.0 {
-                let pct = ((p.done + p.current) / p.total * 100.0).clamp(0.0, 100.0) as u64;
-                taskbar(&self.app, status, Some(pct));
-            }
-        }
         let _ = self.app.emit("record-event", e);
     }
 
@@ -96,8 +58,6 @@ impl Host for AppHost {
 #[derive(Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Prompt {
-    /// 暂停了：继续还是停止
-    Pause,
     /// 录制流程要用户回答是/否
     Confirm(Question),
 }
@@ -113,6 +73,43 @@ fn show_prompt(app: &AppHandle, p: Prompt) {
 fn hide_prompt(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("prompt") {
         let _ = w.hide();
+    }
+}
+
+/// 进度窗离 Dota 画面左上角多远（物理像素）
+const OVERLAY_MARGIN: i32 = 16;
+
+/// 把进度窗放到 Dota 画面左上角；只在 Dota（或进度窗自己，比如点了停止）在前台时显示，用户切到别的程序就收起——
+/// 它是置顶窗口，不收的话会一直浮在用户正在用的程序上面（2026-11-10 用户反馈）。
+/// `at` 是现在显示的位置（None = 收着），没变就不动。显示时不激活（SW_SHOWNOACTIVATE）：Dota 在前台渲染快一倍，别把前台抢过来。
+/// 显示、隐藏都直接调系统接口：Tauri 记着窗口"没显示"（显示不是它做的），再让它 hide 它就什么都不做（2026-11-10 实测收不起来）
+fn place_overlay(app: &AppHandle, at: &mut Option<(i32, i32)>) {
+    let Some(w) = app.get_webview_window("overlay") else { return };
+    let Ok(me) = w.hwnd() else { return };
+    let fg = game::ui::foreground();
+    let wanted = game::window::dota_window()
+        .ok()
+        .filter(|d| fg == d.0 as isize || fg == me.0 as isize)
+        .and_then(game::window::client_rect)
+        .map(|(x, y, _, _)| (x + OVERLAY_MARGIN, y + OVERLAY_MARGIN));
+    if *at == wanted {
+        return;
+    }
+    match wanted {
+        Some(pos) => {
+            let _ = w.set_position(tauri::PhysicalPosition::new(pos.0, pos.1));
+            if at.is_none() {
+                game::window::restore(windows::Win32::Foundation::HWND(me.0));
+            }
+        }
+        None => game::window::hide(windows::Win32::Foundation::HWND(me.0)),
+    }
+    *at = wanted;
+}
+
+fn hide_overlay(app: &AppHandle) {
+    if let Some(Ok(h)) = app.get_webview_window("overlay").map(|w| w.hwnd()) {
+        game::window::hide(windows::Win32::Foundation::HWND(h.0));
     }
 }
 
@@ -185,7 +182,7 @@ fn options(s: &Settings) -> Options {
         gsi_port: game::gsi::DEFAULT_PORT,
         quit: s.quit_when_done,
         camera: if s.camera == "player_view" { Camera::PlayerView } else { Camera::HeroChase },
-        on_input: Some(game::input_guard::OnInput::Pause),
+        block_input: true,
         log_dir: crate::settings::logs_dir(),
     }
 }
@@ -229,35 +226,29 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
 
     cancel::reset();
     let estimated_secs: f32 = selected.iter().map(|s| s.clip.estimated_seconds(&p)).sum();
-    taskbar(&app, ProgressBarStatus::Normal, Some(0));
     let _ = app.emit("record-started", Started { clips: selected.len(), estimated_secs });
-    // 盯着暂停和停止：用户在游戏里一动就马上告诉界面"已暂停"、弹置顶对话框（流程要停掉手上这一段才真正停住）；
-    // 点了停止就告诉界面"正在停下"（恢复设置要几秒）
+    // 录制期间：进度窗跟着 Dota 窗口走（游戏一启动就出现）；点了停止就告诉界面"正在停下"（恢复设置要几秒）；
+    // 拦下了用户的操作就告诉进度窗，让用户知道"点了没用、也不影响录制"
     let watcher = app.clone();
     std::thread::spawn(move || {
-        let mut was_paused = false;
+        let (mut stopping, mut blocked, mut overlay_at) = (false, 0, None);
         while RUNNING.load(Ordering::SeqCst) {
-            if let Some(reason) = cancel::pending() {
+            if !stopping && let Some(reason) = cancel::pending() {
+                stopping = true;
                 let _ = watcher.emit("record-stopping", reason.describe());
                 hide_prompt(&watcher);
-                break;
             }
-            let paused = cancel::paused();
-            if paused != was_paused {
-                was_paused = paused;
-                let _ = watcher.emit(if paused { "record-paused" } else { "record-resumed" }, ());
-                // 用户刚在游戏里操作过：在最上面弹置顶对话框问继续还是停止，不把用户切回主窗口
-                if paused {
-                    show_prompt(&watcher, Prompt::Pause);
-                } else {
-                    hide_prompt(&watcher);
-                }
+            let now = game::input_guard::blocked();
+            if now != blocked {
+                blocked = now;
+                let _ = watcher.emit("record-blocked", now);
             }
+            place_overlay(&watcher, &mut overlay_at);
             std::thread::sleep(std::time::Duration::from_millis(150));
         }
     });
     std::thread::spawn(move || {
-        let host = AppHost { app: app.clone(), progress: Mutex::new(Progress::default()) };
+        let host = AppHost { app: app.clone() };
         let time = crate::matches::now();
         let report = pipeline::run(&host, &r, player, &selected, &ff, &o);
         // 记下这台机器的录制速度，下次估耗时用（明显不合理的不要）
@@ -310,7 +301,8 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
             speed: report.speed,
         };
         RUNNING.store(false, Ordering::SeqCst);
-        taskbar(&app, ProgressBarStatus::None, None);
+        // 进度窗录完立刻收起：结果在主窗口和系统通知里（留几秒的话会浮在用户正在用的程序上，2026-11-10 用户定）
+        hide_overlay(&app);
         notify(&app, &finished, &lang);
         // 主窗口显示这场比赛的录制详情；不抢前台（用户可能在用别的程序），点通知或任务栏图标就能看到
         let _ = app.emit("record-finished", finished);
@@ -335,14 +327,7 @@ pub fn game_open() -> bool {
     GAME_OPEN.load(Ordering::SeqCst)
 }
 
-/// 暂停后点了"继续"
-#[tauri::command]
-pub fn resume_recording(app: AppHandle) {
-    cancel::resume();
-    hide_prompt(&app);
-}
-
-/// 点了停止（暂停中、或者"等用户退出 Dota"这类没开检测的阶段）
+/// 点了停止（进度窗或主窗口上）
 #[tauri::command]
 pub fn stop_recording(app: AppHandle) {
     cancel::request(Reason::Stop);

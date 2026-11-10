@@ -26,19 +26,34 @@ export async function showMatch(view, matchId, { home, record, player: wanted, p
   const clipsBox = el("div");
   const summary = el("span", { class: "muted" });
   const recordBtn = el("button", { type: "button", class: "primary" }, t("match.record"));
-  // 镜头：对这次录的所有片段生效，记住上次选的（开始录制时存进设置）
-  const camera = el("select", { title: t("match.camera.hint") },
-    ["hero_chase", "player_view"].map((v) => el("option", { value: v }, t(`match.camera.${v}`))));
-  camera.value = settings.camera === "player_view" ? "player_view" : "hero_chase";
+  // 镜头：对这次录的所有片段生效，记住上次选的（开始录制时存进设置）。
+  // 只有两种，用两段切换按钮：点一下就换，不用先展开下拉框（原生下拉菜单的样式也和界面不搭，2026-11-10 用户提的）
+  const cameras = ["hero_chase", "player_view"];
+  let cameraValue = settings.camera === "player_view" ? "player_view" : "hero_chase";
+  const cameraButtons = cameras.map((v) => el("button", {
+    type: "button",
+    role: "radio",
+    title: t(`match.camera.${v}.hint`),
+    onclick: () => setCamera(v),
+  }, t(`match.camera.${v}`)));
+  const setCamera = (v) => {
+    cameraValue = v;
+    cameraButtons.forEach((b, i) => {
+      b.classList.toggle("on", cameras[i] === v);
+      b.setAttribute("aria-checked", String(cameras[i] === v));
+    });
+  };
+  setCamera(cameraValue);
+  const camera = el("div", { class: "segmented", role: "radiogroup", "aria-label": t("match.camera") }, cameraButtons);
   recordBtn.addEventListener("click", () => {
     const sel = clips.filter((c) => picked.has(c.index));
     if (!sel.length) return;
-    settings.camera = camera.value;
+    settings.camera = cameraValue;
     record({
       matchId,
       player,
       clips: sel,
-      camera: camera.value,
+      camera: cameraValue,
       overwrite: sel.filter((c) => c.recorded).length,
       secs: sel.reduce((a, c) => a + c.duration, 0),
       minutes: (sel.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1),
@@ -187,7 +202,7 @@ export async function showMatch(view, matchId, { home, record, player: wanted, p
     el("div", { class: "card" }, el("h2", {}, t("match.clips")), preselectNote, clipsBox,
       el("details", { class: "rules", style: "margin-top:14px" }, el("summary", {}, t("rules.title")), rulesBox)),
     el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }),
-      el("label", { class: "row", style: "gap:6px" }, t("match.camera"), camera), recordBtn),
+      el("div", { class: "row", style: "gap:8px" }, el("span", { class: "muted" }, t("match.camera")), camera), recordBtn),
   );
   renderPlayers();
   renderRules();
