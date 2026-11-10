@@ -1,64 +1,138 @@
-// 设置对话框
+// 设置页（导航第三项）。原先是对话框，2026-11-10 改成页面，和"比赛""已录视频"一样点了换页；
+// 保留「保存」按钮（用户定的），改了没保存就切走时先问（`leaveSettings`）
 import { LANGS, t } from "./i18n.js";
 import { el } from "./format.js";
 import { reveal } from "./api.js";
 import { replaceSettings, settings } from "./state.js";
 
-export function openSettings(dialog, { onSaved }) {
-  const out = el("input", { type: "text", value: settings.out_dir });
-  // 录制画面大小：1080p（较快）或跟游戏窗口一致
-  const capture = el("select", {},
-    el("option", { value: "1080p" }, t("settings.capture.1080p")),
-    el("option", { value: "native" }, t("settings.capture.native")));
-  capture.value = settings.capture === "native" ? "native" : "1080p";
-  const compile = el("input", { type: "checkbox" });
-  compile.checked = settings.compile;
-  const quit = el("input", { type: "checkbox" });
-  quit.checked = settings.quit_when_done;
-  // 1080p 录完一定退出游戏（要把显示设置改回去），"录完退出游戏"只在保持原尺寸时有用
-  const quitLabel = el("label", {}, t("settings.quitAfter"));
-  const quitRow = el("label", {}, quit, " ", t("settings.quitAfter.hint"));
-  const syncQuit = () => { quitLabel.hidden = quitRow.hidden = capture.value !== "native"; };
-  capture.addEventListener("change", syncQuit);
-  syncQuit();
-  const lang = el("select", {},
-    el("option", { value: "auto" }, t("settings.language.auto")),
-    LANGS.map(([v, name]) => el("option", { value: v }, name)));
-  lang.value = settings.language;
-  const ffmpeg = el("input", { type: "text", value: settings.ffmpeg, placeholder: t("settings.ffmpeg.auto") });
+/** 当前设置页表单上的值；不在设置页时为 null */
+let form = null;
 
-  const save = async () => {
-    await replaceSettings({
-      ...settings,
-      out_dir: out.value.trim() || settings.out_dir,
-      capture: capture.value,
-      compile: compile.checked,
-      quit_when_done: quit.checked,
-      language: lang.value,
-      ffmpeg: ffmpeg.value.trim(),
-    });
-    dialog.close();
-    onSaved();
+/** 表单上的值和已保存的不一样 */
+export function settingsDirty() {
+  if (!form) return false;
+  const v = form();
+  return Object.keys(v).some((k) => v[k] !== settings[k]);
+}
+
+/** 保存表单上的值 */
+async function saveForm() {
+  const v = form();
+  await replaceSettings({ ...settings, ...v, out_dir: v.out_dir || settings.out_dir });
+}
+
+/** 要离开设置页时调：没改过直接返回 true；改了没保存就问保存、不保存还是留下，返回能不能离开 */
+export function leaveSettings(dialog) {
+  if (!settingsDirty()) {
+    form = null;
+    return Promise.resolve(true);
+  }
+  return new Promise((done) => {
+    const close = async (choice) => {
+      dialog.close();
+      if (choice === "save") await saveForm();
+      if (choice !== "stay") form = null;
+      done(choice !== "stay");
+    };
+    dialog.replaceChildren(
+      el("h2", {}, t("settings.unsaved.title")),
+      el("p", {}, t("settings.unsaved.what")),
+      el("div", { class: "dialog-actions" },
+        el("button", { type: "button", onclick: () => close("stay") }, t("settings.unsaved.stay")),
+        el("button", { type: "button", onclick: () => close("discard") }, t("settings.unsaved.discard")),
+        el("button", { type: "button", class: "primary", onclick: () => close("save") }, t("settings.save")),
+      ),
+    );
+    // 按 Esc 当作留下
+    dialog.addEventListener("cancel", () => done(false), { once: true });
+    dialog.showModal();
+  });
+}
+
+/** 设置页：按用途分组（录制、输出、界面、高级），每项左边是名称和说明，右边是控件；底部固定一条保存栏。
+ * 保存后调 `onSaved()`（语言可能改了，调用方重新加载词条、重画） */
+export function showSettings(view, { onSaved }) {
+  // 一项设置：名称 + 一句说明 + 控件。stack = 控件放到下面占满一行（路径之类长的输入框）
+  const row = (label, desc, control, stack = false) => el("div", { class: stack ? "setting stack" : "setting" },
+    el("div", {}, el("div", { class: "setting-name" }, label), desc ? el("div", { class: "setting-desc" }, desc) : ""),
+    el("div", { class: "setting-control" }, control));
+  const group = (title, ...rows) => el("section", { class: "settings-group" }, el("h3", {}, title), rows);
+  const toggle = (checked, label) => {
+    const box = el("input", { type: "checkbox", class: "switch", "aria-label": label });
+    box.checked = checked;
+    return box;
   };
 
-  dialog.replaceChildren(
+  // 录制画面：1080p（较快）或跟游戏窗口一致，两段切换（和比赛页的镜头一样）
+  const captures = ["1080p", "native"];
+  let captureValue = settings.capture === "native" ? "native" : "1080p";
+  const captureButtons = captures.map((v) => el("button", { type: "button", role: "radio", onclick: () => setCapture(v) }, t(`settings.capture.${v}`)));
+  const compile = toggle(settings.compile, t("settings.compile"));
+  const quit = toggle(settings.quit_when_done, t("settings.quitAfter"));
+  // 1080p 录完一定退出游戏（要把显示设置改回去），"录完退出游戏"只在跟游戏窗口一致时有用
+  const quitRow = row(t("settings.quitAfter"), t("settings.quitAfter.hint"), quit);
+  const out = el("input", { type: "text", value: settings.out_dir, "aria-label": t("settings.outDir") });
+  const lang = el("select", { "aria-label": t("settings.language") },
+    el("option", { value: "auto" }, t("settings.language.auto")),
+    LANGS.map(([v, n]) => el("option", { value: v }, n)));
+  lang.value = settings.language;
+  const ffmpeg = el("input", { type: "text", value: settings.ffmpeg, placeholder: t("settings.ffmpeg.auto"), "aria-label": "ffmpeg" });
+
+  form = () => ({
+    out_dir: out.value.trim(),
+    capture: captureValue,
+    compile: compile.checked,
+    quit_when_done: quit.checked,
+    language: lang.value,
+    ffmpeg: ffmpeg.value.trim(),
+  });
+
+  // 底部保存栏：有没保存的修改时按钮亮起、显示提示；保存后显示"已保存"
+  const status = el("span", { class: "muted" });
+  const saveBtn = el("button", { type: "button", class: "primary" }, t("settings.save"));
+  const revertBtn = el("button", { type: "button" }, t("settings.revert"));
+  const sync = () => {
+    const dirty = settingsDirty();
+    saveBtn.disabled = revertBtn.disabled = !dirty;
+    if (dirty) status.textContent = t("settings.unsaved.hint");
+    else if (status.textContent === t("settings.unsaved.hint")) status.textContent = "";
+  };
+  const setCapture = (v) => {
+    captureValue = v;
+    captureButtons.forEach((b, i) => {
+      b.classList.toggle("on", captures[i] === v);
+      b.setAttribute("aria-checked", String(captures[i] === v));
+    });
+    quitRow.hidden = v !== "native";
+    sync();
+  };
+  saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = true;
+    await saveForm();
+    await onSaved();
+  });
+  revertBtn.addEventListener("click", () => showSettings(view, { onSaved }));
+
+  const card = el("div", { class: "card settings" },
     el("h2", {}, t("settings.title")),
-    el("div", { class: "form" },
-      el("label", {}, t("settings.outDir")),
-      el("div", { class: "row", style: "flex-wrap:nowrap" }, out,
-        el("button", { type: "button", onclick: () => reveal(out.value.trim() || settings.out_dir) }, t("settings.outDir.open"))),
-      el("label", {}, t("settings.capture")), capture,
-      el("div", { class: "hint" }, t("settings.capture.hint")),
-      el("label", {}, t("settings.compile")), el("label", {}, compile, " ", t("settings.compile.hint")),
-      quitLabel, quitRow,
-      el("label", {}, t("settings.language")), lang,
-      el("label", {}, "ffmpeg"), ffmpeg,
-      el("div", { class: "hint" }, t("settings.ffmpeg.hint")),
-    ),
-    el("div", { class: "dialog-actions" },
-      el("button", { type: "button", onclick: () => dialog.close() }, t("settings.cancel")),
-      el("button", { type: "button", class: "primary", onclick: save }, t("settings.save")),
-    ),
+    group(t("settings.group.record"),
+      row(t("settings.capture"), t("settings.capture.hint"),
+        el("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.capture") }, captureButtons)),
+      row(t("settings.compile"), t("settings.compile.hint"), compile),
+      quitRow),
+    group(t("settings.group.output"),
+      row(t("settings.outDir"), t("settings.outDir.hint"), [out,
+        el("button", { type: "button", onclick: () => reveal(out.value.trim() || settings.out_dir) }, t("settings.outDir.open"))], true)),
+    group(t("settings.group.ui"),
+      row(t("settings.language"), "", lang)),
+    group(t("settings.group.advanced"),
+      row("ffmpeg", t("settings.ffmpeg.hint"), ffmpeg, true)),
   );
-  dialog.showModal();
+  card.addEventListener("input", sync);
+  card.addEventListener("change", sync);
+
+  view.replaceChildren(card,
+    el("div", { class: "footer-bar settings-bar" }, status, el("div", { class: "spacer" }), revertBtn, saveBtn));
+  setCapture(captureValue);
+  return { saved: () => { status.textContent = t("settings.saved"); } };
 }

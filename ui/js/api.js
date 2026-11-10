@@ -4,6 +4,7 @@ const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args).catch((e) 
 export const listReplays = () => invoke("list_replays");
 // 失败时抛的是 Rust 侧的 DownloadError（{kind, message?}），不包成 Error，界面按 kind 提示
 export const downloadReplay = (matchId) => window.__TAURI__.core.invoke("download_replay", { matchId });
+export const cancelDownload = (matchId) => invoke("cancel_download", { matchId });
 export const deleteReplays = (matchIds) => invoke("delete_replays", { matchIds });
 export const openMatch = (matchId) => invoke("open_match", { matchId });
 export const plan = (matchId, player, rules) => invoke("plan", { matchId, player, rules });
