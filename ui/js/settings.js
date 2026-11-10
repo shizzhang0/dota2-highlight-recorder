@@ -4,6 +4,61 @@ import { LANGS, t } from "./i18n.js";
 import { el } from "./format.js";
 import { reveal } from "./api.js";
 import { replaceSettings, settings } from "./state.js";
+import { appVersion, checkUpdate, installUpdate, isInstalled, lastUpdate, onUpdate, openReleasePage } from "./update.js";
+import { recordingMatch } from "./record.js";
+
+/** 「关于」：版本号、检查更新、一键更新。不属于表单，不参与"有没有改过" */
+function aboutRow(row) {
+  const version = el("span", { class: "muted" });
+  const status = el("span", { class: "muted" });
+  const checkBtn = el("button", { type: "button" }, t("upd.check"));
+  const actionBtn = el("button", { type: "button", class: "primary", hidden: true });
+  const control = [status, actionBtn, checkBtn];
+  const mb = (n) => (n / 1e6).toFixed(1);
+
+  const show = (r) => {
+    if (!checkBtn.isConnected && r) return false;
+    actionBtn.hidden = true;
+    checkBtn.disabled = r?.state === "checking";
+    status.className = "muted";
+    if (!r) status.textContent = "";
+    else if (r.state === "checking") status.textContent = t("upd.checking");
+    else if (r.state === "latest") status.textContent = t("upd.latest");
+    else if (r.state === "fail") status.textContent = t("upd.fail");
+    else if (r.state === "new") {
+      status.className = "upd-new";
+      status.textContent = t("upd.new", { version: r.version });
+      isInstalled().then((installed) => {
+        actionBtn.hidden = false;
+        actionBtn.textContent = t(installed ? "upd.install" : "upd.download");
+        // 录制中不装：装新版会结束程序，游戏设置来不及恢复
+        const busy = installed && recordingMatch() !== null;
+        actionBtn.disabled = busy;
+        actionBtn.title = busy ? t("upd.recording") : "";
+        actionBtn.onclick = installed ? install : openReleasePage;
+      });
+    }
+    return true;
+  };
+  const install = async () => {
+    actionBtn.disabled = checkBtn.disabled = true;
+    status.className = "muted";
+    status.textContent = t("upd.starting");
+    const err = await installUpdate((done, total) => {
+      status.textContent = total ? t("upd.downloading", { done: mb(done), total: mb(total) }) : t("upd.downloadingNoTotal", { done: mb(done) });
+    });
+    // 走到这里就是没装上
+    checkBtn.disabled = false;
+    actionBtn.disabled = false;
+    status.className = "error";
+    status.textContent = err === "recording" ? t("upd.recording") : err === "portable" ? t("upd.portable") : t("upd.err", { error: err });
+  };
+  checkBtn.addEventListener("click", () => checkUpdate());
+  appVersion().then((v) => { version.textContent = `v${v}`; }).catch(() => {});
+  const off = onUpdate((r) => { if (!show(r)) off(); });
+  show(lastUpdate());
+  return row(t("upd.version"), version, control);
+}
 
 /** 当前设置页表单上的值；不在设置页时为 null */
 let form = null;
@@ -127,6 +182,7 @@ export function showSettings(view, { onSaved }) {
       row(t("settings.language"), "", lang)),
     group(t("settings.group.advanced"),
       row("ffmpeg", t("settings.ffmpeg.hint"), ffmpeg, true)),
+    group(t("settings.group.about"), aboutRow(row)),
   );
   card.addEventListener("input", sync);
   card.addEventListener("change", sync);

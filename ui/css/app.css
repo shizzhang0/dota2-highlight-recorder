@@ -150,7 +150,21 @@ input.switch:focus-visible, .segmented button:focus-visible { outline: 2px solid
 .nav { display: flex; gap: 4px; }
 .nav button { border-color: transparent; background: transparent; }
 .nav button.active { background: var(--hover); font-weight: 600; }
-.recording-badge { color: var(--accent); font-weight: 600; }
+/* 录制中：可以点，回到进度页 */
+.recording-badge { color: var(--accent); font-weight: 600; border-color: transparent; background: transparent; }
+/* 有新版本：导航的"设置"后面一个小红点 */
+.nav button.has-update::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 2px;
+}
+.upd-new { color: var(--accent); font-weight: 600; }
+.recording-badge.active { background: var(--hover); }
 .recording-badge::before { content: "● "; }
 .game-status { color: var(--muted); }
 

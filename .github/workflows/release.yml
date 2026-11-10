@@ -1,0 +1,86 @@
+name: Release
+
+# 推一个 vX.Y.Z 的 tag 就自动发版：下载并核对 ffmpeg、打包（安装包 + 签名、latest.json）、
+# 建**草稿** Release 传文件、下载回来核对，全对才转正。步骤全在 tools/release.py 里，本地发版用同一个脚本。
+# 做法同 dota2-game-helper2。
+#
+# Release 正文取自 **tag 的注释**——打 tag 时写好更新说明：
+#   git tag -a v0.1.0 --cleanup=verbatim -F notes.md && git push origin v0.1.0
+# （--cleanup=verbatim 不能省：默认会把 `#` 开头的行当注释删掉，小标题就没了）
+#
+# 签名私钥在仓库 Secrets 的 TAURI_SIGNING_PRIVATE_KEY（没设密码）。没有它，安装包没有签名，一键更新会拒收。
+#
+# 手动运行（Actions 页面的 Run workflow）= 只打包不发布：验证密钥和打包流程，产物挂在这次运行的 Artifacts 里。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write     # 建 Release、上传文件
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # checkout 拿到的 tag 可能是轻量的，取不到注释；强制再取一遍。
+      # 轻量 tag（打的时候忘了 -a）的 %(contents) 是提交信息而不是空，所以先看 tag 对象的类型
+      - name: 取 tag 注释当 Release 正文
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          if [ "$(git tag -l --format='%(objecttype)' "${GITHUB_REF_NAME}")" != tag ]; then
+            echo "tag ${GITHUB_REF_NAME} 是轻量 tag——用 git tag -a 打 tag，注释写更新说明"; exit 1
+          fi
+          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/notes.md"
+          if [ ! -s "${RUNNER_TEMP}/notes.md" ]; then
+            echo "tag ${GITHUB_REF_NAME} 没有注释——用 git tag -a 打 tag，注释写更新说明"; exit 1
+          fi
+          cat "${RUNNER_TEMP}/notes.md"
+
+      # tag 和代码里的版本号必须一致，否则装好的程序版本号和 Release 对不上，检查更新会一直报有新版
+      - name: 核对版本号
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          v=$(python -c "import json;print(json.load(open('src-tauri/tauri.conf.json',encoding='utf-8'))['version'])")
+          [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "tag 是 ${GITHUB_REF_NAME}，代码里是 v$v"; exit 1; }
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 打包
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        shell: bash
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "仓库 Secrets 里没有 TAURI_SIGNING_PRIVATE_KEY"; exit 1; }
+          python tools/release.py build
+
+      - name: 只打包时把产物挂到 Artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: dist/release/
+
+      # 建的是草稿：对外不可见、不算 latest，一键更新和下载链接都还指着上一版
+      - name: 建草稿 Release、传文件
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: python tools/release.py publish "${RUNNER_TEMP}/notes.md"
+
+      # 文件都在、SHA256 全对才转正；不对就停在草稿，修好后重跑会接着用这份草稿
+      - name: 下载回来核对，通过后转正
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: python tools/release.py verify "${GITHUB_REF_NAME#v}"

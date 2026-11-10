@@ -22,5 +22,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 # 同时只跑一个：第二次打开时把已有的窗口提到前面
 tauri-plugin-single-instance = "2"
+# 一键更新（只对安装版生效，见 updater.rs）。走系统代理，和前端检查更新一样
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "system-proxy"] }
 # 删除视频时移到回收站（SHFileOperationW）
 windows.workspace = true
