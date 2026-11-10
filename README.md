@@ -2,126 +2,69 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-A Windows tool that reads a Dota 2 match replay, finds a player's highlights automatically,
-then drives the game to play them back from that player's view and records them to video with the game's built-in clip builder.
+A Windows desktop app that reads a Dota 2 match replay, finds a player's kills and multi-kills automatically, has the game play those moments back and records them to video.
 
-Reference: https://github.com/DrEAmSs59/CS2-insight-agent (a similar tool for CS2; used for ideas only, no code copied)
+## Download
 
-## Features
+**[Download the installer](https://github.com/shizzhang0/dota2-highlight-recorder/releases/latest/download/dota2-highlight-recorder-setup.exe)** (Windows 10/11, 64-bit)
 
-1. **Import a replay**: enter a match ID or pick a local replay file
-2. **Pick a player**: list the 10 players and heroes in the match and choose who to record; defaults to you, but anyone can be picked
-3. **Find highlights**: find the player's kills, kill streaks and multi-kills, and merge kills that are close together into one clip
-4. **Preview the plan**: list every clip before recording and untick the ones you don't want
-5. **Record automatically**: control the replay and the clip builder to record each clip from the player's view; idle time between kills inside a clip is cut out
-6. **Output videos**: one video per clip by default, with file names that explain themselves; optionally joined into a single compilation
+- Installs for the current user, no admin rights needed; the ffmpeg it records with is included.
+- When a new version is out, update in one click from "About" on the settings page.
+- The installer isn't code-signed, so Windows may show "Windows protected your PC": click "More info → Run anyway".
 
-## Principles
+## How to use it
 
-- No injection into the game process; no changes to game files, except a GSI config file written for the recording session and deleted afterwards
-- Any game settings changed for recording are restored afterwards
-- Validate first: prove that replay control and recording work before writing the real code
+1. **Pick a match**: the home page lists the replays already downloaded in the game. If yours isn't there, enter the match ID and the app downloads it, getting the address from [OpenDota](https://www.opendota.com/) (only the match ID is sent).
+2. **Pick a player and clips**: on the match page, choose whose highlights to record (you by default). The app lists that player's highlight clips: each kill starts from when the fight actually began, kills close together are merged, and multi-kills are marked. Untick what you don't want and choose a camera:
+   - **Hero chase**: the hero stays in the middle of the screen;
+   - **Player view**: the player's own camera at the time.
+3. **Record**: click "Start recording". The app starts Dota, plays the clips back in the game and encodes them with the graphics card while recording.
+4. **See the results**: recorded videos are under "Recorded videos", where you can play them, show them in the folder, or carry on with clips not yet recorded. You get one video per clip, plus an optional compilation.
 
-## Usage
+File names look like `9052676196_7_phantom_assassin_31-57_32-13_三杀.mp4`: match ID, player slot, hero, start and end time, and the multi-kill if there is one.
 
-This is the command-line version (phase 1); the desktop UI comes in phase 2.
+## What happens while recording
 
-### Before you start
+- The app starts Dota with `-netconport -insecure` (plus the launch options you set in Steam), in a 1920×1080 window by default. A game started with `-insecure` can't join matchmaking: the app quits the game when it's done; start it again from Steam as usual. If Dota is already running normally, the app asks you to quit it first.
+- **Dota stays in front while recording**, with a small progress box at its top-left corner where you can stop the recording. Clicks and keys aimed at Dota are blocked, so they can't disturb the recording; you can Alt+Tab to other programs, but Dota comes back to the front at the start of each part.
+- A few game settings are changed for the session (camera, fog of war, replay panel, mouse cursor, edge-pan) and a GSI config file is written; all of it is restored or removed at the end, including after errors and stopping. Recording at 1080p changes the window size in your display settings, which is put back afterwards.
+- Nothing is injected into the game and no game files are modified.
+- Speed: at 1080p roughly 0.7–0.8× real time, so a 10-second clip takes a bit over ten seconds; starting the game and loading the replay takes about 40 seconds up front, and each clip needs a few seconds to seek. Hardware encoding is used when available (NVIDIA, AMD, Intel), otherwise the CPU.
 
-- Windows, Dota 2 installed, Steam logged in
-- Download the replay in the game first: find the match under Watch → Match History and click Download
-- [ffmpeg](https://ffmpeg.org/download.html) (for Windows, the builds by BtbN or gyan.dev work): pass `ffmpeg.exe` or its folder with `--ffmpeg`, or set the `D2HR_FFMPEG` environment variable, or put it on PATH
-- Building from source needs [Rust](https://rustup.rs/):
+## Known limitations
+
+- Tested mainly on the Perfect World (China) client with an NVIDIA graphics card; the AMD and Intel encoder settings are written but untested.
+- The spectator hotkeys "follow player N" must be single keys (number keys 1–0 by default); combinations with Shift or Alt aren't supported.
+- Valve keeps replays for a limited time, so old matches may no longer be downloadable.
+
+## Command line
+
+The same recording pipeline is also available as a command-line tool, `d2hr`, handy for batches and debugging. Building from source needs [Rust](https://rustup.rs/):
 
 ```bash
 cargo build --release -p d2hr
 ```
 
-The program is `target\release\d2hr.exe`. Its messages are in Chinese for now.
-
-### Commands
-
 ```bash
-d2hr list
+d2hr list                                   # list replays downloaded in the game
+d2hr plan 9052676196                        # print your highlight clips in this match and the estimated time (--player for someone else)
+d2hr record 9052676196 --resolution 1920x1080 --compile
 ```
 
-Lists the replays the game has downloaded: match ID, when it was downloaded, length, and the hero you played with the result.
+Common `record` options: `--player` (slot 0–9 or account ID), `--clips 1,3` (only these clips), `--camera hero|player`, `--compile`, `--out <dir>`, `--quit`.
+Point to ffmpeg with `--ffmpeg` (`ffmpeg.exe` or its folder), the `D2HR_FFMPEG` environment variable, or PATH. Press Ctrl+C once to stop. Clip rule options: see `d2hr plan --help`.
 
-```bash
-d2hr plan 9052676196
-```
+## Development
 
-Prints your highlight clips in that match (you = the account logged in to Steam): time range, heroes killed, number of exports, output file name, and the estimated recording time. Use `--player` to pick someone else (slot 0–9 or account ID).
+- Stack: Tauri 2 + Rust, plain HTML/CSS/JS front end (`ui/`, no build step); replays parsed with [source2-demo](https://github.com/Rupas1k/source2-demo); playback controlled through the game console (netcon) and Game State Integration; recording uses the game's `startmovie` frame output, encoded by ffmpeg as it comes.
+- Build the desktop app: `cargo build --release -p d2hr-app`.
+- Releases: `tools/release.py` (bump version, build, publish, verify); pushing a `vX.Y.Z` tag lets GitHub Actions release automatically. See the notes at the top of the script.
+- Design and test notes are in [docs/](docs/) (in Chinese): [phase 2 plan](docs/phase2-plan.md), [recording decisions](docs/prototype-walkthrough.md), [recording test log](docs/recording-review.md).
 
-```bash
-d2hr record 9052676196 --compile --ffmpeg C:\tools\ffmpeg\bin
-```
+## Third-party software
 
-Records the clips, one video per clip; `--compile` also joins them into a compilation. Common options:
-
-| Option | What it does |
-|---|---|
-| `--player <slot or account>` | Who to record; defaults to you |
-| `--clips 1,3` | Only record these clips (numbers from `plan`); defaults to all |
-| `--compile` | Also join all clips into one compilation |
-| `--resolution 1920x1080` | Recording resolution; defaults to the game window size |
-| `--out <folder>` | Output folder; defaults to `Videos\d2hr` |
-| `--quit` | Quit the game when done |
-| `--anchor` `--max-lead` `--post` `--merge-gap` `--keep-gap` … | Tune the clip rules (also work with `plan`; see `d2hr plan --help`) |
-
-File names look like `9052676196_7_phantom_assassin_31-57_32-13_三杀.mp4`: match ID, player slot, hero, start and end time, and the multi-kill tag (in Chinese, e.g. 三杀 = triple kill).
-
-### What happens while recording
-
-- **Don't touch the mouse or keyboard once recording starts**, until the command finishes. The program switches to the game to click its UI (spectator menu, clip builder), then waits for rendering; each clip takes roughly half a minute to a minute, and `plan` tells you the estimate up front.
-- Dota is started with `-netconport -insecure` (plus the launch options you set in Steam). A game started with `-insecure` can't join matchmaking, so quit it after recording and start Dota from Steam as usual. If Dota is already running normally, the program asks you to quit it first.
-- A few game settings are changed for the session (the clip builder's output folder and timeline length, spectator edge-pan camera) and a GSI config file is written; all of it is restored or removed at the end, including after errors and Ctrl+C. With `--resolution`, the game is quit after recording and the window size in your display settings is put back.
-- To stop early, press Ctrl+C once: the program finishes the current step, stops and restores the settings as usual. Pressing it again exits immediately, without restoring.
-
-### Known limitations
-
-- Click positions have been tested in 2560×1600, 1920×1080 and 1600×900 windows and in 2560×1600 exclusive fullscreen; other resolutions may miss.
-- The spectator hotkeys for "focus player N" must be single keys (the default is the number keys 1–0); combinations with Shift or Alt are not supported.
-- Continuous action longer than 53 s is exported in parts and joined; the joins may repeat or skip up to about 1 s.
-
-## Tech stack
-
-| Part | Choice |
-|---|---|
-| Desktop app | Tauri 2 + Rust, plain HTML/CSS/JS front end |
-| Replay parsing | [source2-demo](https://github.com/Rupas1k/source2-demo) (fallback: [haste](https://github.com/blukai/haste) (Rust) or [manta](https://github.com/dotabuff/manta) (Go)) |
-| Playback control | Game console over netcon (`-netconport`, requires `-insecure`); spectator UI via window messages (keys/clicks) |
-| Playback state | Game State Integration (GSI) |
-| Recording | Dota 2's built-in replay clip builder (≤ 60 s per export; longer clips exported in parts and joined) — [notes (zh-CN)](docs/spikes/06-clip-builder.md) |
-| Recording (fallback) | OBS (obs-websocket v5), game capture (only in `-insecure` sessions; capture source removed after recording) |
-| Cutting / joining | ffmpeg |
-
-## Roadmap
-
-### Phase 0: Technical validation
-
-Each item is a small standalone experiment; formal development starts only after they all work.
-
-- [x] **Get the replay**: obtain the `.dem` file from a match ID (replay URL, expiry, local replay folder) — [notes (zh-CN)](docs/spikes/01-replay.md)
-- [x] **Parse the replay**: read the 10 players and heroes, plus kill events and their game time, from the `.dem` file — [notes (zh-CN)](docs/spikes/01-replay.md)
-- [x] **Control playback**: without injecting into the process, make the game load a replay, jump to a given time and lock the camera to a given player; also check whether a command can make the client download a replay (it can't) — [notes (zh-CN)](docs/spikes/02-playback.md)
-- [x] **Read playback state**: confirm the actual game time after a jump, to line up recording start and end — [notes (zh-CN)](docs/spikes/03-state.md)
-- [x] **Control OBS**: start, stop and pause recording via obs-websocket, and get the output file — [notes (zh-CN)](docs/spikes/04-obs.md)
-- [x] **End to end**: given a time range by hand, automatically record that stretch from the player's view — [notes (zh-CN)](docs/spikes/05-e2e.md)
-
-### Phase 1: Command-line MVP
-
-Plan: [docs/phase1-plan.md](docs/phase1-plan.md) (zh-CN).
-
-- [x] Highlight detection and clip-merging rules (each clip starts when the fight actually started; defaults chosen from statistics over 17 local replays)
-- [x] Recording plan generation and execution (`d2hr plan` / `d2hr record`)
-- [x] Back up and restore game settings (including after errors and Ctrl+C)
-- [x] Output file naming, optional compilation
-
-### Phase 2: Desktop UI
-
-- [ ] Import, player selection, plan preview, recording progress, output management
+The installer includes [FFmpeg](https://ffmpeg.org/) (n9.0.2 GPL build by BtbN), run as a separate program from the `ffmpeg\` folder in the install directory, under the GPLv3; its version, source and build script addresses are in the `README.txt` there.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE): personal, study, research and nonprofit use is allowed; commercial use is not.
+[PolyForm Noncommercial 1.0.0](LICENSE): personal, study, research and non-profit use allowed; commercial use not allowed. The bundled FFmpeg isn't covered by this; it keeps its own GPL license.

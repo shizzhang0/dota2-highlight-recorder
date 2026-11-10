@@ -23,3 +23,6 @@ Desktop.ini
 # Rust
 /target/
 /src-tauri/gen/
+
+# 打包产物、下载的 ffmpeg（tools/release.py）
+/dist/

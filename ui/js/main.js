@@ -5,9 +5,10 @@ import { setHeroNames } from "./format.js";
 import * as api from "./api.js";
 import { showHome } from "./list.js";
 import { showMatch } from "./match.js";
-import { confirmStart, showRecording } from "./record.js";
+import { confirmBusy, confirmStart, recordingMatch, showRecording, showRecordingFailed, startRecording } from "./record.js";
 import { showVideos, showVideoMatch } from "./videos.js";
 import { leaveSettings, showSettings } from "./settings.js";
+import { checkUpdate, onUpdate } from "./update.js";
 
 const view = document.getElementById("view");
 const confirmDialog = document.getElementById("confirm");
@@ -34,7 +35,9 @@ function render() {
     const on = { home: ["home", "match"], videos: ["videos", "video"], settings: ["settings"] }[page] ?? [];
     b.classList.toggle("active", on.includes(current.name));
   }
+  badge.classList.toggle("active", current.name === "recording");
   switch (current.name) {
+    case "recording": return showRecording(view);
     case "settings": return showSettings(view, { onSaved: settingsSaved });
     case "match": return showMatch(view, current.id, { ...nav, player: current.player, preselect: current.preselect });
     case "videos": return showVideos(view, nav);
@@ -44,8 +47,7 @@ function render() {
 }
 
 async function go(page) {
-  // 录制中只看进度，不能换页（录完自动跳到结果）
-  if (current.name === "recording") return;
+  // 录制中也能换页（录制不再暂停，点主窗口不影响录制）；点导航上的"录制中"回到进度页
   // 设置改了没保存：先问保存、不保存还是留下
   if (current.name === "settings" && !(await leaveSettings(confirmDialog))) return;
   current = page;
@@ -58,40 +60,52 @@ async function settingsSaved() {
   if (current.name === "settings") render()?.saved();
 }
 
-/** 录制中导航变灰，显示"录制中" */
+/** 录制中导航上显示"录制中"（点它回到进度页） */
 function setRecording(on) {
-  for (const b of navButtons) b.disabled = on;
   badge.hidden = !on;
   if (on) gameStatus.hidden = true;
 }
 
-/** 比赛页点了开始录制（`clips` 是 plan 返回的片段行）：确认后进入进度页；录完跳到这场比赛的录制详情 */
+/** 比赛页点了开始录制（`clips` 是 plan 返回的片段行）：确认后进入进度页。
+ * 录完时还在进度页就跳到这场比赛的录制详情；在别的页面就不打扰（系统通知会提示），正看着"已录视频"就刷新一下 */
 async function record({ matchId, player, clips, camera, secs, minutes, overwrite }) {
+  const busy = recordingMatch();
+  if (busy !== null) {
+    if (await confirmBusy(confirmDialog, busy)) go({ name: "recording" });
+    return;
+  }
   if (!(await confirmStart(confirmDialog, { count: clips.length, secs, minutes, overwrite }))) return;
-  current = { name: "recording", id: matchId };
   setRecording(true);
-  showRecording(view, confirmDialog, {
+  const started = startRecording(confirmDialog, {
     matchId,
     player,
     clips,
     camera,
     onFinished: (f) => {
       setRecording(false);
-      current = { name: "video", id: matchId, latest: f };
-      render();
+      if (current.name === "recording") {
+        current = { name: "video", id: matchId, latest: f };
+        render();
+      } else if (["videos", "video"].includes(current.name)) {
+        render();
+      }
       pollGame();
     },
-    onFailed: () => {
+    onFailed: (message) => {
       setRecording(false);
+      if (current.name !== "recording") return;
       current = { name: "match", id: matchId, player };
+      showRecordingFailed(view, message, render);
     },
-    back: render,
   });
+  current = { name: "recording", id: matchId };
+  render();
+  await started;
 }
 
 /** 录制用的游戏还开着时，导航栏右侧显示"游戏运行中 · 退出" */
 async function pollGame() {
-  if (current.name === "recording") return;
+  if (recordingMatch() !== null) return;
   gameStatus.hidden = !(await api.gameOpen().catch(() => false));
 }
 
@@ -118,6 +132,7 @@ async function applyLanguage() {
 async function start() {
   await loadSettings();
   await applyLanguage();
+  badge.addEventListener("click", () => go({ name: "recording" }));
   for (const b of navButtons) {
     b.addEventListener("click", () => {
       if (b.dataset.nav === "settings") nav.settings();
@@ -128,6 +143,10 @@ async function start() {
   render();
   pollGame();
   setInterval(pollGame, 3000);
+  // 启动时查一次更新：有新版在导航的"设置"上亮一个点，更新按钮在设置页的「关于」里
+  const settingsNav = navButtons.find((b) => b.dataset.nav === "settings");
+  onUpdate((r) => settingsNav.classList.toggle("has-update", r.state === "new"));
+  setTimeout(checkUpdate, 3000);
 }
 
 start();

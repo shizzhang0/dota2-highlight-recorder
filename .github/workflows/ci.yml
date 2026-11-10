@@ -1,0 +1,53 @@
+name: CI
+
+# 前端在编译期嵌进程序，ui/ 下写错一个字符只有真正编译、运行时才暴露；这条流水线检查 JS 语法、lint、编译整个工作区。
+# 只在 Windows 上跑：录制、窗口、钩子全是 Win32 的东西。做法同 dota2-game-helper2。
+#
+# 纯文档改动跳过。两份清单是照抄的（GitHub Actions 不支持 YAML 锚点），改一份记得改另一份。
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ui/js 下是原生 ES 模块但扩展名是 .js，node --check 只把 .mjs 当模块，复制一份再查
+      - name: 前端语法检查
+        shell: bash
+        run: |
+          mkdir -p .syntax-check
+          for f in ui/js/*.js; do cp "$f" ".syntax-check/$(basename "${f%.js}").mjs"; done
+          fail=0
+          for f in .syntax-check/*.mjs; do node --check "$f" || fail=1; done
+          for f in ui/lang/*.json; do node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" || fail=1; done
+          exit $fail
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # --locked：Cargo.lock 和 Cargo.toml 对不上就失败，不在 CI 里悄悄解析出一套新版本
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # release 才是实际发出去的那个（windows_subsystem 只在 release 生效）
+      - name: 构建
+        run: cargo build --workspace --release --locked

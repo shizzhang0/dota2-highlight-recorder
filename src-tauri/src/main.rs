@@ -7,6 +7,7 @@ mod history;
 mod matches;
 mod record;
 mod settings;
+mod updater;
 
 use tauri::Manager;
 
@@ -21,6 +22,8 @@ fn main() {
         }))
         // 录完或出错时弹系统通知
         .plugin(tauri_plugin_notification::init())
+        // 一键更新（只对安装版生效，见 updater.rs）
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             matches::list_replays,
             matches::download_replay,
@@ -43,6 +46,10 @@ fn main() {
             settings::get_settings,
             settings::save_settings,
             settings::default_settings,
+            updater::app_installed,
+            updater::app_version,
+            updater::open_release_page,
+            updater::update_install,
         ])
         // 关主窗口就退出：隐藏的置顶对话框也算窗口，不然进程会一直留着。
         // 录制中先不关，当作点了停止：等流程停下、恢复完游戏设置，用户再关
