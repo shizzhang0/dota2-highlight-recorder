@@ -74,6 +74,53 @@ input[type="number"] { width: 90px; }
 .segmented button.on,
 .segmented button.on:hover:not(:disabled) { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
 
+/* 设置页：一张卡片按用途分组（组之间一条分隔线），每项左边名称和说明、右边控件；路径这类长输入框单独占一行 */
+.settings, .settings-bar { max-width: 760px; }
+.settings { padding: 18px 24px 6px; }
+.settings h2 { margin: 0; font-size: 16px; }
+.settings-group + .settings-group { border-top: 1px solid var(--line); }
+.settings-group h3 { margin: 18px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 32px; padding: 12px 0; }
+.setting[hidden] { display: none; }
+.setting-name { font-weight: 500; }
+.setting-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 52ch; }
+.setting-control { display: flex; align-items: center; gap: 8px; }
+.setting-control button { white-space: nowrap; }
+.setting-control select { min-width: 200px; }
+.setting.stack { grid-template-columns: 1fr; }
+.setting.stack input[type="text"] { flex: 1; min-width: 0; }
+
+/* 开关：代替复选框，用在"是/否"的设置上 */
+input.switch {
+  appearance: none;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  border-radius: 99px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background .15s;
+}
+input.switch::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  transition: transform .15s;
+}
+input.switch:checked { background: var(--accent); }
+input.switch:checked::before { transform: translateX(16px); }
+input.switch:focus-visible, .segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  input.switch, input.switch::before { transition: none; }
+}
+
 .topbar {
   position: sticky;
   top: 0;

@@ -3,7 +3,10 @@
 //! cargo run --release -p replay --example fetch -- <比赛ID> <保存目录>
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
+
+use replay::download::Progress;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -13,12 +16,18 @@ fn main() -> anyhow::Result<()> {
     };
     let match_id: u64 = id.parse()?;
 
-    let url = replay::download::request_replay_url(match_id, Duration::from_secs(120))?;
+    let cancel = AtomicBool::new(false);
+    let mut show = |p: Progress| match p {
+        Progress::Downloading { done, total } => eprint!("\r下载 {:.1} / {} MB   ", done as f64 / 1e6, total.map_or("?".into(), |t| format!("{:.1}", t as f64 / 1e6))),
+        other => eprintln!("{other:?}"),
+    };
+    let url = replay::download::request_replay_url(match_id, Duration::from_secs(120), &mut show, &cancel)?;
     println!("录像地址 {url}");
 
     let dest = PathBuf::from(dir).join(format!("{match_id}.dem"));
     let started = Instant::now();
-    replay::download::download(&url, &dest)?;
+    replay::download::download(&url, &dest, &mut show, &cancel)?;
+    eprintln!();
     println!("已保存 {}（{} 字节，用时 {:.1?}）", dest.display(), std::fs::metadata(&dest)?.len(), started.elapsed());
 
     let r = replay::parse(&dest)?;

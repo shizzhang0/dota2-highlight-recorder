@@ -7,23 +7,23 @@ import { showHome } from "./list.js";
 import { showMatch } from "./match.js";
 import { confirmStart, showRecording } from "./record.js";
 import { showVideos, showVideoMatch } from "./videos.js";
-import { openSettings } from "./settings.js";
+import { leaveSettings, showSettings } from "./settings.js";
 
 const view = document.getElementById("view");
-const dialog = document.getElementById("settings");
 const confirmDialog = document.getElementById("confirm");
 const navButtons = [...document.querySelectorAll("[data-nav]")];
 const badge = document.getElementById("recording-badge");
 const gameStatus = document.getElementById("game-status");
 const quitBtn = document.getElementById("quit-game");
 
-/** 当前页：home / match {id, player?, preselect?} / videos / video {id, latest?} / recording */
+/** 当前页：home / match {id, player?, preselect?} / videos / video {id, latest?} / settings / recording */
 let current = { name: "home" };
 
 const nav = {
   home: () => go({ name: "home" }),
   openMatch: (id, extra = {}) => go({ name: "match", id, ...extra }),
   videos: () => go({ name: "videos" }),
+  settings: () => go({ name: "settings" }),
   openVideo: (id, extra = {}) => go({ name: "video", id, ...extra }),
   record,
 };
@@ -31,9 +31,11 @@ const nav = {
 function render() {
   for (const b of navButtons) {
     const page = b.dataset.nav;
-    b.classList.toggle("active", page === "home" ? ["home", "match"].includes(current.name) : page === "videos" && ["videos", "video"].includes(current.name));
+    const on = { home: ["home", "match"], videos: ["videos", "video"], settings: ["settings"] }[page] ?? [];
+    b.classList.toggle("active", on.includes(current.name));
   }
   switch (current.name) {
+    case "settings": return showSettings(view, { onSaved: settingsSaved });
     case "match": return showMatch(view, current.id, { ...nav, player: current.player, preselect: current.preselect });
     case "videos": return showVideos(view, nav);
     case "video": return showVideoMatch(view, current.id, confirmDialog, { ...nav, latest: current.latest });
@@ -41,11 +43,19 @@ function render() {
   }
 }
 
-function go(page) {
+async function go(page) {
   // 录制中只看进度，不能换页（录完自动跳到结果）
   if (current.name === "recording") return;
+  // 设置改了没保存：先问保存、不保存还是留下
+  if (current.name === "settings" && !(await leaveSettings(confirmDialog))) return;
   current = page;
   render();
+}
+
+/** 设置保存后：语言可能改了，重新加载词条和英雄名，重画设置页并显示"已保存" */
+async function settingsSaved() {
+  await applyLanguage();
+  if (current.name === "settings") render()?.saved();
 }
 
 /** 录制中导航变灰，显示"录制中" */
@@ -110,15 +120,8 @@ async function start() {
   await applyLanguage();
   for (const b of navButtons) {
     b.addEventListener("click", () => {
-      if (b.dataset.nav === "settings") {
-        openSettings(dialog, {
-          onSaved: async () => {
-            // 语言可能改了：重新加载词条和英雄名，当前页面重画
-            await applyLanguage();
-            if (current.name !== "recording") render();
-          },
-        });
-      } else if (b.dataset.nav === "videos") nav.videos();
+      if (b.dataset.nav === "settings") nav.settings();
+      else if (b.dataset.nav === "videos") nav.videos();
       else nav.home();
     });
   }

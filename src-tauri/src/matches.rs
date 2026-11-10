@@ -1,9 +1,14 @@
 //! 本地录像列表、按比赛 ID 下载、比赛详情、录制计划。解析结果缓存在内存里，改规则参数重算计划时不用重新解析。
+//!
+//! 下载时发 `download-progress` 事件（`DownloadProgress`）给界面，可以取消（`cancel_download`）。
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use tauri::{AppHandle, Emitter};
 
 use clips::{Anchor, Params};
 use replay::Replay;
@@ -73,8 +78,34 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
         .collect())
 }
 
-/// 正在下载的比赛，同一场不同时下两次
-static DOWNLOADING: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+/// 正在下载的比赛和它们的取消标记，同一场不同时下两次
+static DOWNLOADING: Mutex<Vec<(u64, Arc<AtomicBool>)>> = Mutex::new(Vec::new());
+
+/// 下载进度，发给界面（`download-progress` 事件）
+#[derive(Serialize, Clone)]
+#[serde(tag = "stage", rename_all = "snake_case")]
+enum DownloadProgress {
+    /// 向 OpenDota 要录像地址
+    FindingUrl { match_id: u64 },
+    /// OpenDota 还没有地址，已经请它去取
+    WaitingForUrl { match_id: u64, waited_secs: u64, max_secs: u64 },
+    /// 下载中（字节，压缩包）；total 为 null 表示服务器没报大小
+    Downloading { match_id: u64, done: u64, total: Option<u64> },
+    /// 下完了，正在保存
+    Saving { match_id: u64 },
+}
+
+impl DownloadProgress {
+    fn new(match_id: u64, p: replay::download::Progress) -> Self {
+        use replay::download::Progress as P;
+        match p {
+            P::FindingUrl => Self::FindingUrl { match_id },
+            P::WaitingForUrl { waited_secs, max_secs } => Self::WaitingForUrl { match_id, waited_secs, max_secs },
+            P::Downloading { done, total } => Self::Downloading { match_id, done, total },
+            P::Saving => Self::Saving { match_id },
+        }
+    }
+}
 
 /// 下载失败的原因：确定下不到的分三种，界面按种类提示；其余（网络等）带原文
 #[derive(Serialize)]
@@ -84,12 +115,17 @@ pub enum DownloadError {
     NoUrl,
     Expired,
     Busy,
+    /// 用户点了取消
+    Cancelled,
     Other { message: String },
 }
 
 impl From<anyhow::Error> for DownloadError {
     fn from(e: anyhow::Error) -> Self {
-        use replay::download::Unavailable;
+        use replay::download::{Cancelled, Unavailable};
+        if e.downcast_ref::<Cancelled>().is_some() {
+            return DownloadError::Cancelled;
+        }
         match e.downcast_ref::<Unavailable>() {
             Some(Unavailable::NoMatch) => DownloadError::NoMatch,
             Some(Unavailable::NoUrl) => DownloadError::NoUrl,
@@ -103,26 +139,41 @@ fn other(message: impl ToString) -> DownloadError {
     DownloadError::Other { message: message.to_string() }
 }
 
-/// 按比赛 ID 下载录像到游戏的 replays 目录（和游戏里点"下载"存的是同一个地方）。已经有了就直接返回
+/// 按比赛 ID 下载录像到游戏的 replays 目录（和游戏里点"下载"存的是同一个地方）。已经有了就直接返回。
+/// 进度用 `download-progress` 事件发给界面
 #[tauri::command]
-pub async fn download_replay(match_id: u64) -> Result<(), DownloadError> {
+pub async fn download_replay(app: AppHandle, match_id: u64) -> Result<(), DownloadError> {
     let dest = replays_dir().map_err(other)?.join(format!("{match_id}.dem"));
     if dest.is_file() {
         return Ok(());
     }
+    let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut d = DOWNLOADING.lock().unwrap();
-        if d.contains(&match_id) {
+        if d.iter().any(|(id, _)| *id == match_id) {
             return Err(DownloadError::Busy);
         }
-        d.push(match_id);
+        d.push((match_id, cancel.clone()));
     }
-    let result = tauri::async_runtime::spawn_blocking(move || replay::download::download_match(match_id, &dest))
-        .await
-        .map_err(other)
-        .and_then(|r| r.map_err(DownloadError::from));
-    DOWNLOADING.lock().unwrap().retain(|&id| id != match_id);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut report = |p| {
+            let _ = app.emit("download-progress", DownloadProgress::new(match_id, p));
+        };
+        replay::download::download_match(match_id, &dest, &mut report, &cancel)
+    })
+    .await
+    .map_err(other)
+    .and_then(|r| r.map_err(DownloadError::from));
+    DOWNLOADING.lock().unwrap().retain(|(id, _)| *id != match_id);
     result
+}
+
+/// 取消正在下载的这一场（没在下就什么都不做）。下载线程看到标记就停下、删掉没下完的文件，`download_replay` 返回 Cancelled
+#[tauri::command]
+pub fn cancel_download(match_id: u64) {
+    if let Some((_, c)) = DOWNLOADING.lock().unwrap().iter().find(|(id, _)| *id == match_id) {
+        c.store(true, Ordering::SeqCst);
+    }
 }
 
 /// 解析一场录像（有缓存）。解析器递归较深，放到大栈线程里跑
