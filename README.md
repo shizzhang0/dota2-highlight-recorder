@@ -1,8 +1,25 @@
-# dota2-highlight-recorder
+<p align="center">
+  <img src="src-tauri/icons/icon.svg" width="96" alt="">
+</p>
 
-**English** · [简体中文](README.zh-CN.md)
+<h1 align="center">Dota 2 Highlight Recorder</h1>
 
-A Windows desktop app that reads a Dota 2 match replay, finds a player's kills and multi-kills automatically, has the game play those moments back and records them to video.
+<p align="center">
+  Pick a match, find the kills and multi-kills automatically, and have the game play them back while it records them to video.<br>
+  Windows desktop app · nothing injected into the game, no game files modified
+</p>
+
+<p align="center">
+  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases/latest/download/dota2-highlight-recorder-setup.exe"><b>Download the installer</b></a>
+  ·
+  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases">All releases</a>
+  ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+![Match page: pick a player, see the timeline, tick the clips to record](docs/images/match.jpg)
+
+<sub>Screenshots show the Chinese interface; English can be chosen in the settings.</sub>
 
 ## Download
 
@@ -20,6 +37,10 @@ A Windows desktop app that reads a Dota 2 match replay, finds a player's kills a
    - **Player view**: the player's own camera at the time.
 3. **Record**: click "Start recording". The app starts Dota, plays the clips back in the game and encodes them with the graphics card while recording.
 4. **See the results**: recorded videos are under "Recorded videos", where you can play them, show them in the folder, or carry on with clips not yet recorded. You get one video per clip, plus an optional compilation.
+
+| Match list | Recorded videos |
+| --- | --- |
+| ![Match list](docs/images/matches.jpg) | ![Recorded videos](docs/images/videos.jpg) |
 
 File names look like `9052676196_7_phantom_assassin_31-57_32-13_三杀.mp4`: match ID, player slot, hero, start and end time, and the multi-kill if there is one.
 
