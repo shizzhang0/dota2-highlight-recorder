@@ -1,8 +1,23 @@
-# dota2-highlight-recorder
+<p align="center">
+  <img src="src-tauri/icons/icon.svg" width="96" alt="">
+</p>
 
-[English](README.md) · **简体中文**
+<h1 align="center">Dota 2 高光录制</h1>
 
-一个 Windows 桌面应用：读取 Dota 2 比赛录像，自动找出某个玩家的击杀、多杀，让游戏回放这些时刻，录成视频。
+<p align="center">
+  选一场比赛，自动找出击杀和多杀，让游戏回放这些时刻并录成视频。<br>
+  Windows 桌面应用 · 不注入游戏、不改游戏文件
+</p>
+
+<p align="center">
+  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases/latest/download/dota2-highlight-recorder-setup.exe"><b>下载安装包</b></a>
+  ·
+  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases">所有版本</a>
+  ·
+  <a href="README.md">English</a>
+</p>
+
+![比赛页：选人、看时间线、勾选要录的片段](docs/images/match.jpg)
 
 ## 下载
 
@@ -20,6 +35,10 @@
    - **玩家视角**：还原这名玩家当时自己的镜头。
 3. **录制**：点「开始录制」。程序会启动 Dota，在游戏里回放这些片段，一边录一边用显卡编码成视频。
 4. **看结果**：录好的视频在「已录视频」里，可以播放、在文件夹中显示，也能接着录没录完的片段。每个片段一个视频，可以选择再拼一个合集。
+
+| 比赛列表 | 已录视频 |
+| --- | --- |
+| ![比赛列表](docs/images/matches.jpg) | ![已录视频](docs/images/videos.jpg) |
 
 文件名形如 `9052676196_7_phantom_assassin_31-57_32-13_三杀.mp4`：比赛 ID、玩家序号、英雄、起止时间，多杀会标出来。
 
