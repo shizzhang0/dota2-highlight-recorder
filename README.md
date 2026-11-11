@@ -10,10 +10,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases/latest/download/dota2-highlight-recorder-setup.exe"><b>Download the installer</b></a>
-  ·
-  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases">All releases</a>
-  ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -21,9 +17,9 @@
 
 <sub>Screenshots show the Chinese interface; English can be chosen in the settings.</sub>
 
-## Download
+## Installing
 
-**[Download the installer](https://github.com/shizzhang0/dota2-highlight-recorder/releases/latest/download/dota2-highlight-recorder-setup.exe)** (Windows 10/11, 64-bit)
+Runs on Windows 10/11 (64-bit).
 
 - Installs for the current user, no admin rights needed; the ffmpeg it records with is included.
 - When a new version is out, update in one click from "About" on the settings page.
