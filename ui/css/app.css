@@ -73,8 +73,9 @@ input[type="number"] { width: 90px; }
 .settings { padding: 18px 24px 6px; }
 .settings h2 { margin: 0; font-size: 16px; }
 .settings-group + .settings-group { border-top: 1px solid var(--line); }
-.settings-group h3 { margin: 18px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 32px; padding: 12px 0; }
+.settings-group h3 { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
+/* 间距收紧一点：默认窗口（1100×760）下设置页一屏放得下，不出滚动条（原来多出 10px，2026-11-11 用户提的） */
+.setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 32px; padding: 10px 0; }
 .setting[hidden] { display: none; }
 .setting-name { font-weight: 500; }
 .setting-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 72ch; }
@@ -396,3 +397,7 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .rec-step.cur .st { color: var(--accent); }
 details.rec-log summary { cursor: pointer; color: var(--muted); }
 details.rec-log .log { margin-top: 10px; }
+
+/* 危险操作但不是这一页的主角（每场比赛都有一个"删除记录"）：红字红框，悬停才变实心，免得满屏红块 */
+button.danger-outline { color: var(--danger); border-color: var(--danger); background: transparent; }
+button.danger-outline:hover:not(:disabled) { background: var(--danger); color: #fff; }

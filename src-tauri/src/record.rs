@@ -204,8 +204,11 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
             crate::settings::save_settings(settings.clone())?;
         }
         let o = options(&settings);
+        // ffmpeg 随安装包附带，设置页不再让用户填（2026-11-11 用户定：普通用户不会关心）。
+        // settings.json 里的 ffmpeg 字段和环境变量 D2HR_FFMPEG 还认，只给开发用
         let ffmpeg = settings.ffmpeg.trim();
-        let ff = Ffmpeg::locate((!ffmpeg.is_empty()).then(|| std::path::Path::new(ffmpeg))).map_err(|e| format!("{e:#}"))?;
+        let ff = Ffmpeg::locate((!ffmpeg.is_empty()).then(|| std::path::Path::new(ffmpeg)))
+            .map_err(|_| "找不到录制要用的 ffmpeg：安装可能不完整，请重新安装。".to_string())?;
         let r = crate::matches::parsed(match_id).await?;
         let p = settings.params();
         let plan = clips::plan(&r, player, &p);
