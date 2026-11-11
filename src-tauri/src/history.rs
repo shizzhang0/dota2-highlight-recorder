@@ -274,6 +274,52 @@ pub(crate) fn recycle(files: &[PathBuf]) -> Result<(), String> {
     Ok(())
 }
 
+/// 缩略图缓存目录：`%LOCALAPPDATA%\dota2-highlight-recorder\thumbs`
+fn thumbs_dir() -> Option<PathBuf> {
+    std::env::var("LOCALAPPDATA").ok().map(|d| PathBuf::from(d).join(r"dota2-highlight-recorder\thumbs"))
+}
+
+/// 视频的缩略图（"已录视频"页用）：从第 4 秒（短视频取一半处）取一帧，400 像素宽。
+/// 按路径、大小、修改时间缓存，视频重录了就重新取。返回 `data:image/jpeg;base64,…`，页面直接当图片地址用
+#[tauri::command]
+pub async fn video_thumb(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::hash::{Hash, Hasher};
+        let video = PathBuf::from(&path);
+        let meta = std::fs::metadata(&video).map_err(|e| format!("读不了 {path}：{e}"))?;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (&path, meta.len(), meta.modified().ok()).hash(&mut h);
+        let dir = thumbs_dir().ok_or("找不到缓存目录")?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let jpg = dir.join(format!("{:016x}.jpg", h.finish()));
+        if !jpg.is_file() {
+            let settings = crate::settings::get_settings();
+            let given = settings.ffmpeg.trim();
+            let ff = media::ffmpeg::Ffmpeg::locate((!given.is_empty()).then(|| Path::new(given))).map_err(|e| format!("{e:#}"))?;
+            let secs = media::mp4_duration(&video).unwrap_or(8.0) as f32;
+            ff.thumbnail(&video, 4f32.min(secs / 2.0), 400, &jpg).map_err(|e| format!("{e:#}"))?;
+        }
+        let bytes = std::fs::read(&jpg).map_err(|e| e.to_string())?;
+        Ok(format!("data:image/jpeg;base64,{}", base64(&bytes)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 标准 base64（缩略图几十 KB，不值得为它加一个依赖）
+fn base64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for c in data.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if c.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if c.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
 /// 用系统默认的程序打开文件（播放视频）
 #[tauri::command]
 pub fn open_file(path: String) -> Result<(), String> {

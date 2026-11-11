@@ -1,53 +1,75 @@
-// 已录视频：按比赛汇总的录制记录（Rust 侧 history.rs）。列表一行一场比赛，点进去看每个玩家录了哪些片段
+// 已录视频：按比赛汇总的录制记录（Rust 侧 history.rs）。2026-11-11 改版：每个视频一张缩略图，点缩略图播放；
+// 没录完的片段显示成虚线框"接着录"。只有一层（2026-11-11 用户试用后去掉了详情页）：每场比赛一块，
+// 右上角「再录几段」「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { baseName, clock, date, el, heroName } from "./format.js";
+import { clock, date, el, heroIcon, heroName } from "./format.js";
 
 const playerLabel = (p) => `${heroName(p.hero)}${p.is_me ? t("match.me") : ""}`;
 const unfinished = (p) => p.clips.filter((c) => !c.file);
-const recorded = (p) => p.clips.filter((c) => c.file);
 
-export async function showVideos(view, { openVideo }) {
-  view.replaceChildren(el("div", { class: "loading" }, "…"));
-  const list = await api.recordedMatches().catch((e) => {
-    view.replaceChildren(el("div", { class: "card error" }, e.message));
-    return null;
-  });
-  if (!list) return;
-  if (!list.length) {
-    view.replaceChildren(el("div", { class: "card" }, el("h2", {}, t("nav.videos")), el("p", { class: "muted" }, t("videos.empty"))));
-    return;
+// 缩略图一张一张取：第一次要 ffmpeg 现取一帧，同时开十几个 ffmpeg 会卡；取过的有缓存，很快
+const thumbQueue = [];
+let thumbBusy = false;
+function loadThumb(img, path) {
+  thumbQueue.push([img, path]);
+  // 等这一轮把元素放进页面再开始，切走了的页面就不取了
+  setTimeout(pumpThumbs, 0);
+}
+async function pumpThumbs() {
+  if (thumbBusy) return;
+  thumbBusy = true;
+  while (thumbQueue.length) {
+    const [img, path] = thumbQueue.shift();
+    if (!img.isConnected) continue;
+    try {
+      img.src = await api.videoThumb(path);
+    } catch {
+      img.hidden = true;
+    }
   }
-  view.replaceChildren(el("div", { class: "card" }, el("h2", {}, t("nav.videos")), el("table", {},
-    el("thead", {}, el("tr", {},
-      el("th", {}, t("videos.col.time")), el("th", {}, t("list.match")), el("th", {}, t("videos.col.players")),
-      el("th", {}, t("match.col.status")), el("th", {}),
-    )),
-    el("tbody", {}, list.map((m) => {
-      const done = m.players.reduce((a, p) => a + recorded(p).length, 0);
-      const left = m.players.reduce((a, p) => a + unfinished(p).length, 0);
-      const parts = [t("videos.done", { n: done })];
-      if (m.players.some((p) => p.compilation?.exists)) parts.push(t("videos.compilation"));
-      if (left) parts.push(t("videos.left", { n: left }));
-      return el("tr", { class: "clickable", onclick: () => openVideo(m.match_id) },
-        el("td", {}, date(m.last_time)),
-        el("td", {}, String(m.match_id)),
-        el("td", { class: "wrap" }, m.players.map(playerLabel).join("、")),
-        el("td", { class: left ? "" : "muted" }, parts.join(" · ")),
-        el("td", { class: "muted" }, "›"),
-      );
-    })),
-  )));
+  thumbBusy = false;
 }
 
-/** 文件能做的两件事：播放、在文件夹中显示。文件不在了就没有操作（状态列已经写了） */
-function fileActions(file) {
-  if (!file.exists) return null;
-  return el("span", { title: file.path },
-    el("button", { type: "button", class: "link", onclick: () => api.openFile(file.path).catch((e) => alert(e.message)) }, t("videos.play")),
-    "·",
-    el("button", { type: "button", class: "link", onclick: () => api.reveal(file.path) }, t("videos.reveal")),
+/** 一个视频：缩略图（点了用系统播放器打开）、时长、多杀，下面是时间和被杀英雄 */
+function videoCard(file, { range, secs, victims = [], multi = 0, label }) {
+  const img = el("img", { alt: "" });
+  const th = el("div", { class: "th", title: file.path },
+    img,
+    file.exists ? el("div", { class: "play" }, el("span", {}, "▶")) : el("div", { class: "gone" }, t("videos.missingShort")),
+    secs ? el("span", { class: "len" }, `${Math.round(secs)}s`) : null,
+    multi >= 2 ? el("span", { class: "multi" }, t(`tag.multi.${Math.min(multi, 5)}`)) : null,
   );
+  if (file.exists) {
+    loadThumb(img, file.path);
+    th.addEventListener("click", () => api.openFile(file.path).catch((e) => alert(e.message)));
+  }
+  return el("div", { class: "vid" }, th,
+    el("div", { class: "meta" },
+      el("span", { class: "tr" }, label ?? range),
+      el("span", { class: "hero-icons" }, victims.map((v) => heroIcon(v, true))),
+      file.exists ? el("button", { type: "button", class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(file.path) }, t("videos.folder")) : null,
+    ));
+}
+
+/** 一场比赛的所有视频（每个玩家的片段、合集），加上没录完的"接着录" */
+function videoGrid(m, { openMatch }) {
+  const cards = [];
+  for (const p of m.players) {
+    for (const c of p.clips) {
+      if (c.file) cards.push(videoCard(c.file, { range: `${clock(c.start)}–${clock(c.end)}`, secs: c.end - c.start, victims: c.victims, multi: c.multi_kill }));
+    }
+    if (p.compilation) cards.push(videoCard(p.compilation, { label: t("videos.compilationOf", { hero: heroName(p.hero) }) }));
+    const left = unfinished(p);
+    if (left.length) {
+      cards.push(el("div", { class: "vid left" }, el("div", {},
+        t("videos.leftN", { n: left.length, hero: heroName(p.hero) }), el("br"),
+        // 走正常的录制流程：到比赛页、选好这名玩家、勾上没录完的片段，用户确认后开始
+        el("button", { type: "button", style: "margin-top:10px", onclick: () => openMatch(m.match_id, { from: "videos", player: p.player, preselect: left.map((c) => c.file_name) }) }, t("videos.resumeShort")),
+      )));
+    }
+  }
+  return el("div", { class: "vid-grid" }, cards);
 }
 
 /** 刚录完时页面顶上的结果：录完 / 停止 / 出错，游戏还开着没有 */
@@ -97,89 +119,57 @@ function confirmDelete(dialog, matchId) {
   });
 }
 
-/** 一场比赛的录制详情。`latest` 是刚录完的结果（从录制页跳过来时有） */
-export async function showVideoMatch(view, matchId, dialog, { openMatch, videos, latest }) {
-  view.replaceChildren(el("div", { class: "loading" }, "…"));
-  let m;
-  try {
-    m = (await api.recordedMatches()).find((x) => x.match_id === matchId);
-  } catch (e) {
-    view.replaceChildren(el("div", { class: "card error" }, e.message));
-    return;
-  }
-  const banner = latest ? latestBanner(latest) : null;
-  if (!m) {
-    // 记录写失败、或者已经删了
-    view.replaceChildren(banner ?? "", el("div", { class: "card" }, el("p", { class: "muted" }, t("videos.noRecord"))));
-    return;
-  }
-
+/** 一场比赛一块：标题（英雄图标、比赛 ID、谁、最近什么时候录的）、「再录几段」「删除记录」、视频、折叠的录制记录 */
+function matchSection(m, nav) {
+  const lead = m.players.find((p) => p.is_me) ?? m.players[0];
   const msg = el("span", { class: "muted" });
   const del = async () => {
-    const answer = await confirmDelete(dialog, matchId);
+    const answer = await confirmDelete(nav.dialog, m.match_id);
     if (!answer) return;
     try {
-      await api.deleteMatchRecord(matchId, answer.deleteFiles);
-      videos();
+      await api.deleteMatchRecord(m.match_id, answer.deleteFiles);
+      nav.videos();
     } catch (e) {
       msg.className = "error";
       msg.textContent = e.message;
     }
   };
-
-  const sections = m.players.map((p) => {
-    const left = unfinished(p);
-    const rows = p.clips.map((c) => el("tr", { title: c.file_name },
-      el("td", { class: "num" }, String(c.index)),
-      el("td", {}, `${clock(c.start)} – ${clock(c.end)}`),
-      el("td", { class: "wrap" }, c.victims.map(heroName).join("、"),
-        c.multi_kill >= 2 ? el("span", { class: "tag", style: "margin-left:6px" }, t(`tag.multi.${Math.min(c.multi_kill, 5)}`)) : null),
-      el("td", {}, c.file
-        ? (c.file.exists ? el("span", { class: "ok" }, t("match.recorded")) : el("span", { class: "muted" }, t("videos.missingShort")))
-        : el("span", { class: "muted" }, t("videos.unfinished"))),
-      el("td", {}, c.file ? fileActions(c.file) : ""),
-    ));
-    if (p.compilation) {
-      rows.push(el("tr", { title: p.compilation.path },
-        el("td", {}), el("td", {}, t("videos.compilation")), el("td", { class: "muted" }, baseName(p.compilation.path)),
-        el("td", {}, p.compilation.exists ? el("span", { class: "ok" }, t("match.recorded")) : el("span", { class: "muted" }, t("videos.missingShort"))),
-        el("td", {}, fileActions(p.compilation)),
-      ));
-    }
-    return el("div", { class: "card" },
-      el("h2", {}, playerLabel(p), el("span", { class: "muted", style: "font-weight:400;margin-left:8px" }, p.player_name)),
-      el("table", {},
-        el("thead", {}, el("tr", {},
-          el("th", { class: "num" }, "#"), el("th", {}, t("match.col.time")), el("th", {}, t("match.col.kills")),
-          el("th", {}, t("match.col.status")), el("th", {}),
-        )),
-        el("tbody", {}, rows),
+  return el("section", { class: "rec-match" },
+    el("div", { class: "head" },
+      heroIcon(lead.hero),
+      el("div", {},
+        el("div", { class: "t" }, String(m.match_id)),
+        el("div", { class: "who" }, m.players.map(playerLabel).join("、"), " · ", t("videos.lastTime", { time: date(m.last_time) })),
       ),
-      left.length
-        ? el("div", { class: "row", style: "margin-top:12px" }, el("button", {
-          type: "button",
-          class: "primary",
-          // 走正常的录制流程：到比赛页、选好这名玩家、勾上没录完的片段，用户确认后开始
-          onclick: () => openMatch(matchId, { player: p.player, preselect: left.map((c) => c.file_name) }),
-        }, t("videos.resume", { n: left.length })))
-        : null,
-    );
-  });
-
-  view.replaceChildren(
-    banner ?? "",
-    el("div", { class: "row", style: "margin-bottom:12px" },
-      el("h2", { style: "margin:0" }, t("match.title", { id: matchId })),
-      el("span", { class: "muted" }, t("videos.lastTime", { time: date(m.last_time) })),
-      el("div", { class: "spacer" }),
-      msg,
-      el("button", { type: "button", onclick: () => openMatch(matchId) }, t("videos.toMatch")),
-      el("button", { type: "button", onclick: del }, t("videos.delete.button")),
+      el("div", { class: "act" },
+        msg,
+        el("button", { type: "button", title: t("videos.moreHint"), onclick: () => nav.openMatch(m.match_id, { from: "videos" }) }, t("videos.more")),
+        el("button", { type: "button", onclick: del }, t("videos.delete.button")),
+      ),
     ),
-    ...sections,
-    el("details", { class: "card runs" },
+    videoGrid(m, nav),
+    el("details", { class: "runs" },
       el("summary", {}, t("videos.runs", { n: m.runs.length })),
       el("ol", { class: "log" }, m.runs.map(runLine)),
     ),
   );
+}
+
+/** `nav.latest`：刚录完的结果（从录制页回来时有），显示在顶上，刚录的那场排第一 */
+export async function showVideos(view, nav) {
+  view.replaceChildren(el("div", { class: "loading" }, "…"));
+  let list = await api.recordedMatches().catch((e) => {
+    view.replaceChildren(el("div", { class: "card error" }, e.message));
+    return null;
+  });
+  if (!list) return;
+  const banner = nav.latest ? latestBanner(nav.latest) : "";
+  const head = (meta) => el("div", { class: "page-head" }, el("h1", {}, t("nav.videos")), el("span", { class: "meta" }, meta));
+  if (!list.length) {
+    view.replaceChildren(banner, head(""), el("div", { class: "card" }, el("p", { class: "muted", style: "margin:0" }, t("videos.empty"))));
+    return;
+  }
+  if (nav.latest) list = [...list.filter((m) => m.match_id === nav.latest.match_id), ...list.filter((m) => m.match_id !== nav.latest.match_id)];
+  const videos = list.reduce((a, m) => a + m.players.reduce((b, p) => b + p.clips.filter((c) => c.file).length + (p.compilation ? 1 : 0), 0), 0);
+  view.replaceChildren(banner, head(t("videos.count", { matches: list.length, videos })), ...list.map((m) => matchSection(m, nav)));
 }

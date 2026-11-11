@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1024" height="1024">
+  <!--
+    应用图标的源文件（2026-11-11 和用户定：G3「高光峰值」）。改了它就重新生成各尺寸：
+      npx -y @tauri-apps/cli@2.12.4 icon src-tauri/icons/icon.svg -o src-tauri/icons
+    粗边锈红方块带一点 Dota 的感觉，但不用 Dota 2 标志的构图（那是 Valve 的商标）；
+    挖空的是一条比赛时间线，中间猛地冲起一个尖——程序做的就是在整场里找出这些尖。
+    挖空处透明，任务栏、桌面从里面透出来（同 dota2-game-helper2 的图标）。
+    毛边顶点是定死的，不要每次随机：图标要稳定。
+  -->
+  <defs>
+    <mask id="cut">
+      <rect width="24" height="24" fill="#fff"/>
+      <!-- 尖顶的尖角不能太尖：斜接角会顺着线一直往上戳，穿透方块上沿（第一版 128px 就把方块劈开了），所以限制斜接长度 -->
+      <path d="M4.6 15.3H7.6L9 13.6L10.4 15.3L12.3 7.2L14.2 15.3H19.4" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="square" stroke-linejoin="miter" stroke-miterlimit="2.6"/>
+      <rect x="4.6" y="17.9" width="14.8" height="1.7" fill="#000"/>
+    </mask>
+  </defs>
+  <polygon mask="url(#cut)" fill="#B23A2C" points="2.2,2.6 6,1.8 10.4,2.3 14,1.7 18.2,2.4 22,1.9 22.4,6 21.8,10.2 22.5,14 21.9,18.3 22.2,22 18,22.4 13.8,21.7 10,22.5 5.8,21.9 1.9,22.2 2.4,18 1.7,13.8 2.3,9.9 1.8,6"/>
+</svg>

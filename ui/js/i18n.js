@@ -29,6 +29,8 @@ export function t(key, vars = {}) {
 /** 给带 data-t 的静态元素填字 */
 export function applyStatic(root = document) {
   for (const el of root.querySelectorAll("[data-t]")) el.textContent = t(el.dataset.t);
+  // 只有图标的按钮：鼠标停上去的提示
+  for (const el of root.querySelectorAll("[data-t-title]")) el.title = t(el.dataset.tTitle);
   document.title = t("app.title");
 }
 
