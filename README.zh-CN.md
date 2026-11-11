@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a>
+  <a href="README.md">English</a> · <b>简体中文</b>
 </p>
 
 ![比赛页：选人、看时间线、勾选要录的片段](docs/images/match.jpg)

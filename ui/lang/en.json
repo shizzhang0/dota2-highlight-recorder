@@ -18,7 +18,7 @@
   "match.radiant": "Radiant",
   "match.dire": "Dire",
   "match.won": "Won",
-  "match.me": "(you)",
+  "match.me": " (you)",
   "match.pickPlayer": "Pick the player to record",
   "match.clips": "Highlights",
   "match.noClips": "This player has no kills in the match, so there is nothing to record.",
