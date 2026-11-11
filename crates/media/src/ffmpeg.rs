@@ -67,6 +67,13 @@ impl Ffmpeg {
         Ok(())
     }
 
+    /// 从视频第 `at` 秒取一帧，缩到 `width` 像素宽，存成 JPEG（"已录视频"的缩略图）
+    pub fn thumbnail(&self, video: &Path, at: f32, width: u32, out: &Path) -> Result<()> {
+        let (at, scale) = (format!("{at:.2}"), format!("scale={width}:-2"));
+        let (video, out) = (video.to_string_lossy(), out.to_string_lossy());
+        self.run(&["-ss", &at, "-i", &video, "-frames:v", "1", "-vf", &scale, "-q:v", "4", &out])
+    }
+
     /// 从 `input` 的第 `start` 秒起取 `len` 秒写到 `out`。起点会落在 `start` 之前最近的关键帧上
     pub fn cut(&self, input: &Path, start: f64, len: f64, out: &Path) -> Result<()> {
         let (start, len) = (format!("{start:.3}"), format!("{len:.3}"));

@@ -2,7 +2,16 @@
 // 不查 OpenDota 的玩家比赛列表：它会落后几个月（2026-10-27 实测），按比赛查才可靠
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, date, el, heroName } from "./format.js";
+import { clock, date, el, heroIcon, heroName, heroPic } from "./format.js";
+
+// 卡片还是列表：记在本机浏览器存储里（只是个人习惯，丢了就回到卡片）
+const VIEW_KEY = "d2hr.homeView";
+function savedView() {
+  try { return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "cards"; } catch { return "cards"; }
+}
+function saveView(v) {
+  try { localStorage.setItem(VIEW_KEY, v); } catch { /* 存不了就算了 */ }
+}
 
 /** 下载失败（Rust 侧 DownloadError）→ 一句话 */
 function downloadError(e, id) {
@@ -143,24 +152,47 @@ export async function showHome(view, dialog, { openMatch }) {
   idBtn.addEventListener("click", openTyped);
   idInput.addEventListener("keydown", (e) => e.key === "Enter" && openTyped());
 
-  view.replaceChildren(el("div", { class: "card" },
-    el("div", { class: "row", style: "margin-bottom:6px" },
-      el("h2", { style: "margin:0" }, t("list.title")),
+  // 录像变成卡片（2026-11-11 改版）：大图是你玩的英雄，角上标胜负、已录几段
+  const countLine = el("span", { class: "meta" });
+  const batchBtn = el("button", { type: "button", class: "danger", hidden: true });
+  let viewMode = savedView();
+  const views = ["cards", "list"];
+  const viewButtons = views.map((v) => el("button", { type: "button", role: "radio", onclick: () => setView(v) }, t(`home.view.${v}`)));
+  const setView = (v) => {
+    viewMode = v;
+    saveView(v);
+    viewButtons.forEach((b, i) => { b.classList.toggle("on", views[i] === v); b.setAttribute("aria-checked", String(views[i] === v)); });
+    if (rows.length) renderTable();
+  };
+  viewButtons.forEach((b, i) => b.classList.toggle("on", views[i] === viewMode));
+  view.replaceChildren(
+    el("div", { class: "page-head" }, el("h1", {}, t("list.title")), countLine),
+    el("div", { class: "row", style: "margin-bottom:6px" }, idInput, idBtn, cancelBtn, idMsg, openDone),
+    bar,
+    el("div", { class: "row", style: "margin:16px 0 12px" },
+      el("span", { class: "muted", style: "font-size:13px" }, t("home.hint")),
       el("div", { class: "spacer" }),
+      batchBtn,
+      el("div", { class: "segmented", role: "radiogroup", "aria-label": t("home.view") }, viewButtons),
       el("button", { type: "button", onclick: () => showHome(view, dialog, { openMatch }) }, t("list.refresh")),
     ),
-    el("div", { class: "row" }, idInput, idBtn, cancelBtn, idMsg, openDone),
-    bar,
-    el("p", { class: "muted" }, t("home.where")),
     tableBox,
-  ));
+    el("p", { class: "muted", style: "font-size:12.5px;margin-top:18px" }, t("home.where")),
+  );
   if (job) {
     idInput.value = job.id;
     render(false);
   }
 
+  // 已录几段：从"已录视频"的记录里数（文件还在的才算）
+  let recorded = new Map();
   try {
-    rows = await api.listReplays();
+    const [list, history] = await Promise.all([api.listReplays(), api.recordedMatches().catch(() => [])]);
+    rows = list;
+    for (const m of history) {
+      const n = m.players.reduce((a, p) => a + p.clips.filter((c) => c.file?.exists).length, 0);
+      if (n) recorded.set(m.match_id, n);
+    }
   } catch (e) {
     tableBox.replaceChildren(el("p", { class: "error" }, e.message));
     return;
@@ -169,7 +201,7 @@ export async function showHome(view, dialog, { openMatch }) {
   rows.sort((a, b) => (b.start_time ?? b.modified) - (a.start_time ?? a.modified));
   let picked = new Set();
 
-  /** 删掉这些录像（移到回收站），成功后从表里去掉 */
+  /** 删掉这些录像（移到回收站），成功后从列表里去掉 */
   const remove = async (ids) => {
     if (!ids.length || !(await confirmDelete(dialog, ids))) return;
     try {
@@ -182,55 +214,63 @@ export async function showHome(view, dialog, { openMatch }) {
       say("error", err.message);
     }
   };
+  batchBtn.addEventListener("click", () => remove([...picked]));
 
   function renderTable() {
+    countLine.textContent = t("home.count", { n: rows.length });
     if (!rows.length) {
       tableBox.replaceChildren(el("p", { class: "muted" }, t("list.empty")));
       return;
     }
-    const batchBtn = el("button", { type: "button", class: "danger", onclick: () => remove([...picked]) });
-    const all = el("input", { type: "checkbox", title: t("match.selectAll") });
+    const grid = el("div", { class: viewMode === "list" ? "match-rows" : "match-grid" });
     const sync = () => {
-      batchBtn.disabled = picked.size === 0;
+      batchBtn.hidden = picked.size === 0;
       batchBtn.textContent = t("home.delete.picked", { n: picked.size });
-      all.checked = picked.size === rows.length;
-      all.indeterminate = picked.size > 0 && picked.size < rows.length;
+      grid.classList.toggle("picking", picked.size > 0);
     };
-    all.addEventListener("change", () => {
-      picked = all.checked ? new Set(rows.map((r) => r.match_id)) : new Set();
-      for (const b of boxes) b.checked = all.checked;
-      sync();
-    });
-    const boxes = [];
-    const body = rows.map((r) => {
+    for (const r of rows) {
       const mine = !r.error && r.my_hero;
-      // 勾选框那一格点了不打开比赛
-      const box = el("input", { type: "checkbox" });
+      // 勾选框悬停才出现，点它不打开比赛；勾了任意一个之后全都显示，方便连着勾
+      const box = el("input", { type: "checkbox", class: "pick", title: t("home.pick") });
       box.checked = picked.has(r.match_id);
-      box.addEventListener("change", () => { box.checked ? picked.add(r.match_id) : picked.delete(r.match_id); sync(); });
-      boxes.push(box);
-      return el("tr", { class: "clickable", onclick: () => openMatch(r.match_id) },
-        el("td", { onclick: (e) => e.stopPropagation() }, box),
-        el("td", {}, String(r.match_id)),
-        el("td", {}, r.start_time ? date(r.start_time) : "—"),
-        el("td", {}, r.error
-          ? el("span", { class: "error", title: r.error }, t("list.unreadable"))
-          : mine ? heroName(r.my_hero) : el("span", { class: "muted" }, t("home.notMe"))),
-        el("td", {}, mine ? el("span", { class: r.my_won ? "win" : "lose" }, t(r.my_won ? "list.win" : "list.lose")) : ""),
-        el("td", { class: "num" }, r.duration == null ? "—" : clock(r.duration)),
-        el("td", { class: "muted" }, "›"),
+      const result = mine ? el("span", { class: `res ${r.my_won ? "win" : "lose"}` }, t(r.my_won ? "list.win" : "list.lose")) : null;
+      const heroLine = mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe");
+      // 列表：一行一场，小图标
+      const card = viewMode === "list"
+        ? el("div", { class: `match-row${box.checked ? " picked" : ""}`, onclick: () => openMatch(r.match_id) },
+          box,
+          mine ? heroIcon(r.my_hero) : el("span", { class: "hero-icon hero-fallback" }, "?"),
+          el("span", { class: "id" }, String(r.match_id)),
+          el("span", { class: "hero" }, heroLine),
+          el("span", {}, result),
+          el("span", { class: "num muted" }, r.duration == null ? "—" : clock(r.duration)),
+          el("span", { class: "num muted" }, r.start_time ? date(r.start_time) : ""),
+          el("span", {}, recorded.has(r.match_id) ? el("span", { class: "rec" }, t("home.recorded", { n: recorded.get(r.match_id) })) : ""))
+        : el("div", { class: `match-card${box.checked ? " picked" : ""}`, onclick: () => openMatch(r.match_id) },
+        el("div", { class: "pic" },
+          mine ? heroPic(r.my_hero) : el("div", { class: "hero-pic hero-fallback" }, r.error ? t("list.unreadable") : t("home.notMe")),
+          mine ? el("span", { class: `res ${r.my_won ? "win" : "lose"}` }, t(r.my_won ? "list.win" : "list.lose")) : null,
+          recorded.has(r.match_id) ? el("span", { class: "rec" }, t("home.recorded", { n: recorded.get(r.match_id) })) : null,
+        ),
+        el("div", { class: "info" },
+          el("div", {},
+            el("div", { class: "id" }, String(r.match_id)),
+            el("div", { class: "hero" }, mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe")),
+          ),
+          el("div", { class: "stats" }, r.duration == null ? "—" : clock(r.duration), el("br"), r.start_time ? date(r.start_time) : ""),
+        ),
+        box,
       );
-    });
-    tableBox.replaceChildren(
-      el("div", { class: "row", style: "margin-bottom:8px" }, batchBtn),
-      el("table", {},
-        el("thead", {}, el("tr", {},
-          el("th", {}, all), el("th", {}, t("list.match")), el("th", {}, t("home.col.time")), el("th", {}, t("list.myHero")),
-          el("th", {}, t("home.col.result")), el("th", { class: "num" }, t("list.duration")), el("th", {}),
-        )),
-        el("tbody", {}, body),
-      ),
-    );
+      if (viewMode === "list") card.prepend(box);
+      box.addEventListener("click", (e) => e.stopPropagation());
+      box.addEventListener("change", () => {
+        box.checked ? picked.add(r.match_id) : picked.delete(r.match_id);
+        card.classList.toggle("picked", box.checked);
+        sync();
+      });
+      grid.append(card);
+    }
+    tableBox.replaceChildren(grid);
     sync();
   }
   renderTable();

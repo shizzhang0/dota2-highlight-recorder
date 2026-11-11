@@ -1,12 +1,12 @@
 // 入口：读设置和语言，顶部固定导航（比赛 · 已录视频 · 设置），在各页之间切换。交互见 docs/app-interaction.md
-import { applyStatic, loadLang, resolve } from "./i18n.js";
+import { applyStatic, loadLang, resolve, t } from "./i18n.js";
 import { loadSettings, settings } from "./state.js";
 import { setHeroNames } from "./format.js";
 import * as api from "./api.js";
 import { showHome } from "./list.js";
 import { showMatch } from "./match.js";
 import { confirmBusy, confirmStart, recordingMatch, showRecording, showRecordingFailed, startRecording } from "./record.js";
-import { showVideos, showVideoMatch } from "./videos.js";
+import { showVideos } from "./videos.js";
 import { leaveSettings, showSettings } from "./settings.js";
 import { checkUpdate, onUpdate } from "./update.js";
 
@@ -17,7 +17,7 @@ const badge = document.getElementById("recording-badge");
 const gameStatus = document.getElementById("game-status");
 const quitBtn = document.getElementById("quit-game");
 
-/** 当前页：home / match {id, player?, preselect?} / videos / video {id, latest?} / settings / recording */
+/** 当前页：home / match {id, from?（"videos" = 从已录视频进来）, player?, preselect?} / videos {latest?} / settings / recording */
 let current = { name: "home" };
 
 const nav = {
@@ -25,23 +25,33 @@ const nav = {
   openMatch: (id, extra = {}) => go({ name: "match", id, ...extra }),
   videos: () => go({ name: "videos" }),
   settings: () => go({ name: "settings" }),
-  openVideo: (id, extra = {}) => go({ name: "video", id, ...extra }),
   record,
 };
 
 function render() {
   for (const b of navButtons) {
     const page = b.dataset.nav;
-    const on = { home: ["home", "match"], videos: ["videos", "video"], settings: ["settings"] }[page] ?? [];
-    b.classList.toggle("active", on.includes(current.name));
+    // 比赛页算在它是从哪进来的那一项下面
+    const at = current.name === "match" ? (current.from === "videos" ? "videos" : "home") : current.name;
+    b.classList.toggle("active", page === at);
   }
   badge.classList.toggle("active", current.name === "recording");
+  // 内容区自己滚（导航栏不动），换页时回到顶上
+  view.scrollTop = 0;
   switch (current.name) {
     case "recording": return showRecording(view);
     case "settings": return showSettings(view, { onSaved: settingsSaved });
-    case "match": return showMatch(view, current.id, { ...nav, player: current.player, preselect: current.preselect });
-    case "videos": return showVideos(view, nav);
-    case "video": return showVideoMatch(view, current.id, confirmDialog, { ...nav, latest: current.latest });
+    case "match": {
+      const fromVideos = current.from === "videos";
+      return showMatch(view, current.id, {
+        ...nav,
+        player: current.player,
+        preselect: current.preselect,
+        back: fromVideos ? nav.videos : nav.home,
+        backLabel: t(fromVideos ? "nav.backVideos" : "nav.backMatches"),
+      });
+    }
+    case "videos": return showVideos(view, { ...nav, dialog: confirmDialog, latest: current.latest });
     default: return showHome(view, confirmDialog, nav);
   }
 }
@@ -67,8 +77,8 @@ function setRecording(on) {
 }
 
 /** 比赛页点了开始录制（`clips` 是 plan 返回的片段行）：确认后进入进度页。
- * 录完时还在进度页就跳到这场比赛的录制详情；在别的页面就不打扰（系统通知会提示），正看着"已录视频"就刷新一下 */
-async function record({ matchId, player, clips, camera, secs, minutes, overwrite }) {
+ * 录完时还在进度页就回到"已录视频"（顶上显示结果）；在别的页面就不打扰（系统通知会提示），正看着"已录视频"就刷新一下 */
+async function record({ matchId, player, hero, clips, camera, secs, minutes, overwrite }) {
   const busy = recordingMatch();
   if (busy !== null) {
     if (await confirmBusy(confirmDialog, busy)) go({ name: "recording" });
@@ -79,14 +89,15 @@ async function record({ matchId, player, clips, camera, secs, minutes, overwrite
   const started = startRecording(confirmDialog, {
     matchId,
     player,
+    hero,
     clips,
     camera,
     onFinished: (f) => {
       setRecording(false);
       if (current.name === "recording") {
-        current = { name: "video", id: matchId, latest: f };
+        current = { name: "videos", latest: f };
         render();
-      } else if (["videos", "video"].includes(current.name)) {
+      } else if (current.name === "videos") {
         render();
       }
       pollGame();
@@ -133,6 +144,14 @@ async function start() {
   await loadSettings();
   await applyLanguage();
   badge.addEventListener("click", () => go({ name: "recording" }));
+  // 没有系统标题栏，最小化、最大化、关闭自己做；关闭走的还是系统的关闭流程（录制中会先当作点了停止，见 src-tauri/src/main.rs）
+  const win = window.__TAURI__.window.getCurrentWindow();
+  document.getElementById("win-min").addEventListener("click", () => win.minimize());
+  document.getElementById("win-max").addEventListener("click", () => win.toggleMaximize());
+  document.getElementById("win-close").addEventListener("click", () => win.close());
+  const syncMax = async () => document.body.classList.toggle("maximized", await win.isMaximized());
+  win.onResized(syncMax);
+  syncMax();
   for (const b of navButtons) {
     b.addEventListener("click", () => {
       if (b.dataset.nav === "settings") nav.settings();

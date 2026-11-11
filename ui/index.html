@@ -4,19 +4,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dota 2 高光录制</title>
 <link rel="stylesheet" href="css/app.css">
-<header class="topbar">
-  <span class="brand"><span class="logo">D2</span><span data-t="app.title"></span></span>
+<!-- 主窗口没有系统标题栏（2026-11-11 用户定）：这条导航栏兼当标题栏，空白处拖动窗口、双击最大化，最右边是最小化、最大化、关闭 -->
+<header class="topbar" data-tauri-drag-region>
+  <span class="brand" data-tauri-drag-region><img class="logo" src="logo.svg" alt="" data-tauri-drag-region><span data-t="app.title" data-tauri-drag-region></span></span>
   <nav class="nav">
     <button type="button" data-nav="home" data-t="nav.matches"></button>
     <button type="button" data-nav="videos" data-t="nav.videos"></button>
     <button type="button" data-nav="settings" data-t="nav.settings"></button>
   </nav>
-  <div class="spacer"></div>
+  <div class="spacer" data-tauri-drag-region></div>
   <button type="button" class="recording-badge" id="recording-badge" hidden data-t="nav.recording"></button>
   <span class="game-status" id="game-status" hidden>
     <span data-t="nav.gameOpen"></span>
     <button type="button" class="link" id="quit-game" data-t="nav.quitGame"></button>
   </span>
+  <div class="winctl">
+    <button type="button" id="win-min" data-t-title="win.min"><svg viewBox="0 0 10 10"><path d="M0 5h10"/></svg></button>
+    <button type="button" id="win-max" data-t-title="win.max"><svg viewBox="0 0 10 10"><path class="max" d="M.5.5h9v9h-9z"/><path class="restore" d="M2.5 2.5h7v7h-7zM2.5 2.5V.5h7v7h-2"/></svg></button>
+    <button type="button" id="win-close" class="close" data-t-title="win.close"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg></button>
+  </div>
 </header>
 <main id="view"></main>
 <dialog id="confirm"></dialog>

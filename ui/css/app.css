@@ -1,42 +1,36 @@
+/* 只有深色一套（2026-11-11 改版，见 docs/app-interaction.md 第 6 节）：强调色是图标的锈红，
+   数字（时间、比分、比赛 ID）用 Windows 自带的 Bahnschrift，有点游戏界面的硬朗 */
 :root {
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --text: #1d2129;
-  --muted: #6b7280;
-  --line: #e3e6ea;
-  --hover: #f0f2f5;
-  --accent: #b22222;
+  --bg: #111316;
+  --panel: #191c20;
+  --panel-2: #20242a;
+  --chrome: #0d0f11;
+  --text: #e9e6e1;
+  --muted: #959ba3;
+  --line: #2b3037;
+  --line-hover: #3c424b;
+  --hover: #252a31;
+  --accent: #c8432f;
   --accent-text: #ffffff;
-  --radiant: #2e8b57;
-  --dire: #b23a3a;
-  --tag: #fff1e6;
-  --tag-text: #9a3412;
-  --danger: #c0392b;
-  --radius: 10px;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15171b;
-    --panel: #1d2026;
-    --text: #e6e8eb;
-    --muted: #9aa1ab;
-    --line: #2c3038;
-    --hover: #252931;
-    --accent: #d24545;
-    --radiant: #4fb07a;
-    --dire: #d46a6a;
-    --tag: #3a2618;
-    --tag-text: #f2b37f;
-    color-scheme: dark;
-  }
+  --radiant: #5bb07f;
+  --dire: #d4675c;
+  --tag: #3a1d17;
+  --tag-text: #f0a08f;
+  --danger: #e0614f;
+  --radius: 8px;
+  --num: "Bahnschrift", "DIN Alternate", "Segoe UI", sans-serif;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
+/* 页面本身不滚：导航栏（兼标题栏）固定在上面，只有下面的内容区滚，滚动条从导航栏下面开始（2026-11-11 用户提的） */
+html, body { height: 100%; }
 body {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font: 14px/1.5 "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
@@ -75,7 +69,7 @@ input[type="number"] { width: 90px; }
 .segmented button.on:hover:not(:disabled) { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
 
 /* 设置页：一张卡片按用途分组（组之间一条分隔线），每项左边名称和说明、右边控件；路径这类长输入框单独占一行 */
-.settings, .settings-bar { max-width: 760px; }
+/* 和别的页面一样宽（原来限制在 760px，用户嫌窄，2026-11-11）；说明文字自己限制行长 */
 .settings { padding: 18px 24px 6px; }
 .settings h2 { margin: 0; font-size: 16px; }
 .settings-group + .settings-group { border-top: 1px solid var(--line); }
@@ -83,7 +77,7 @@ input[type="number"] { width: 90px; }
 .setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 32px; padding: 12px 0; }
 .setting[hidden] { display: none; }
 .setting-name { font-weight: 500; }
-.setting-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 52ch; }
+.setting-desc { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--muted); max-width: 72ch; }
 .setting-control { display: flex; align-items: center; gap: 8px; }
 .setting-control button { white-space: nowrap; }
 .setting-control select { min-width: 200px; }
@@ -122,34 +116,35 @@ input.switch:focus-visible, .segmented button:focus-visible { outline: 2px solid
 }
 
 .topbar {
-  position: sticky;
-  top: 0;
+  flex: none;
   z-index: 5;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
-  background: var(--panel);
+  height: 52px;
+  padding: 0 0 0 20px;
+  background: var(--chrome);
   border-bottom: 1px solid var(--line);
+  user-select: none;
 }
+/* 窗口按钮：最小化、最大化（最大化后换成"还原"的图标）、关闭，贴着窗口右上角，和系统的一样大 */
+.winctl { display: flex; align-self: stretch; margin-left: 8px; }
+.winctl button { width: 46px; height: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); display: grid; place-items: center; }
+.winctl button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.winctl button.close:hover:not(:disabled) { background: #c42b1c; color: #fff; }
+.winctl svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+.winctl .restore, .maximized .winctl .max { display: none; }
+.maximized .winctl .restore { display: inline; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; padding: 4px; margin-right: 12px; }
-.logo {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-}
+/* 应用图标（ui/logo.svg 是 src-tauri/icons/icon.svg 的副本） */
+.logo { width: 28px; height: 28px; display: block; }
 .spacer { flex: 1; }
 
 /* 顶部导航：比赛 · 已录视频 · 设置；录制中变灰 */
 .nav { display: flex; gap: 4px; }
-.nav button { border-color: transparent; background: transparent; }
-.nav button.active { background: var(--hover); font-weight: 600; }
+.nav button { border-color: transparent; background: transparent; color: var(--muted); }
+.nav button:hover:not(:disabled) { color: var(--text); }
+.nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
 /* 录制中：可以点，回到进度页 */
 .recording-badge { color: var(--accent); font-weight: 600; border-color: transparent; background: transparent; }
 /* 有新版本：导航的"设置"后面一个小红点 */
@@ -168,7 +163,8 @@ input.switch:focus-visible, .segmented button:focus-visible { outline: 2px solid
 .recording-badge::before { content: "● "; }
 .game-status { color: var(--muted); }
 
-main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+/* 内容区占满导航栏下面的空间、自己滚；内容最宽 1156px 居中，靠左右留白实现，滚动条才能贴着窗口右边 */
+main { flex: 1; min-height: 0; overflow-y: auto; padding: 22px max(22px, calc((100% - 1156px) / 2)); }
 
 .card {
   background: var(--panel);
@@ -177,7 +173,9 @@ main { padding: 20px; max-width: 1200px; margin: 0 auto; }
   padding: 16px 18px;
   margin-bottom: 16px;
 }
-.card h2 { margin: 0 0 12px; font-size: 15px; }
+.card h2 { margin: 0 0 12px; font-size: 16px; font-weight: 600; }
+.card .sub { color: var(--muted); font-size: 13px; margin: -8px 0 16px; }
+.num, .mono { font-family: var(--num); }
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .muted { color: var(--muted); }
 .error { color: var(--danger); }
@@ -204,26 +202,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   margin-right: 4px;
 }
 
-/* 比赛页：两队玩家 */
-.teams { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.team h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
-.team.radiant h3 { color: var(--radiant); }
-.team.dire h3 { color: var(--dire); }
-.player {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  margin-bottom: 6px;
-  padding: 8px 10px;
-}
-.player.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.player .hero { font-weight: 600; min-width: 140px; }
-.player .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
-.player .kd { font-variant-numeric: tabular-nums; color: var(--muted); }
-.me { font-size: 12px; color: var(--accent); margin-left: 4px; }
-
 /* 规则参数 */
 details.rules summary { cursor: pointer; color: var(--muted); }
 .rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 20px; margin-top: 12px; }
@@ -237,10 +215,10 @@ details.rules summary { cursor: pointer; color: var(--muted); }
   align-items: center;
   gap: 16px;
   padding: 12px 18px;
-  background: var(--panel);
+  background: var(--chrome);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, .06);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .35);
 }
 
 /* 设置对话框 */
@@ -252,7 +230,7 @@ dialog {
   padding: 20px 22px;
   width: min(560px, 92vw);
 }
-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+dialog::backdrop { background: rgba(0, 0, 0, .6); }
 dialog h2 { margin: 0 0 14px; font-size: 16px; }
 .form { display: grid; grid-template-columns: 140px 1fr; gap: 12px 14px; align-items: center; }
 .form input[type="text"] { width: 100%; }
@@ -286,3 +264,135 @@ details.runs .log { margin-top: 10px; }
 .result.error h2 { color: var(--danger); }
 button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; }
 button.link:hover:not(:disabled) { background: none; text-decoration: underline; }
+
+/* ── 2026-11-11 改版：图像化的组件 ── */
+
+/* 页面标题：大号数字字体 */
+.page-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head h1 { margin: 0; font: 600 26px var(--num); letter-spacing: .5px; }
+.page-head .meta { color: var(--muted); font-family: var(--num); }
+
+/* 英雄图片：大图（16:9 立绘）和小图标；连不上图片服务器时显示文字 */
+.hero-pic { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: var(--panel-2); }
+.hero-icon { width: 28px; height: 28px; border-radius: 4px; background: var(--bg); flex: none; }
+.hero-icon.sm { width: 22px; height: 22px; border-radius: 3px; }
+.hero-fallback { display: inline-grid; place-items: center; background: var(--panel-2); color: var(--muted); font-size: 12px; text-align: center; overflow: hidden; }
+.hero-icons { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.multi { display: inline-block; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 3px; white-space: nowrap; }
+
+/* 首页：录像卡片 */
+.match-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.match-card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
+.match-card:hover { border-color: var(--line-hover); }
+.match-card .pic { position: relative; }
+.match-card .pic .hero-pic { aspect-ratio: 16 / 7; object-position: center 25%; }
+.match-card .res { position: absolute; top: 8px; left: 8px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 3px; background: rgba(0, 0, 0, .65); }
+.match-card .rec { position: absolute; top: 8px; right: 38px; font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--accent); color: #fff; }
+.match-card .info { padding: 10px 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
+.match-card .id { font: 600 16px var(--num); letter-spacing: .3px; }
+.match-card .hero { color: var(--muted); font-size: 13px; }
+.match-card .stats { color: var(--muted); font: 13px var(--num); text-align: right; white-space: nowrap; }
+.match-card .pick { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; margin: 0; opacity: 0; accent-color: var(--accent); cursor: pointer; }
+.match-card:hover .pick, .match-card .pick:checked, .match-grid.picking .pick { opacity: 1; }
+.match-card.picked { border-color: var(--accent); }
+
+/* 首页的列表看法：一行一场 */
+.match-rows { display: grid; gap: 4px; }
+.match-row { display: grid; grid-template-columns: 20px 28px 130px minmax(0, 1fr) 40px 64px 110px 96px; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+.match-row:hover { border-color: var(--line-hover); }
+.match-row.picked { border-color: var(--accent); }
+.match-row .pick { position: static; opacity: 1; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.match-row .id { font: 600 15px var(--num); }
+.match-row .hero { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.match-row .res { font-size: 13px; font-weight: 600; }
+.match-row .rec { font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--accent); color: #fff; white-space: nowrap; }
+
+/* 子页面左上角的返回：从哪进来回哪 */
+button.back { border: 0; background: none; color: var(--muted); padding: 0; margin-bottom: 10px; }
+button.back:hover:not(:disabled) { background: none; color: var(--text); }
+
+/* 比赛页：十个英雄 */
+.teams { display: grid; grid-template-columns: 54px repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.teams .side { align-self: center; font-size: 13px; }
+.teams .side.radiant { color: var(--radiant); }
+.teams .side.dire { color: var(--dire); }
+.hero-card { position: relative; padding: 0; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.hero-card:hover:not(:disabled) { background: var(--panel); border-color: var(--line-hover); }
+.hero-card .hero-pic { filter: saturate(.85) brightness(.85); }
+.hero-card .who { display: flex; justify-content: space-between; gap: 6px; padding: 6px 9px 7px; font-size: 12.5px; }
+.hero-card .who span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-card .kd { font-family: var(--num); color: var(--muted); white-space: nowrap; }
+.hero-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.hero-card.selected .hero-pic { filter: none; }
+.hero-card .me-tag { position: absolute; top: 6px; left: 6px; background: var(--accent); color: #fff; font-size: 11.5px; padding: 1px 7px; border-radius: 3px; }
+
+/* 比赛页：高光时间线。红块是片段，上面挂被杀英雄的小图标（相邻的上下两排交替放） */
+.timeline { position: relative; height: 118px; margin: 4px 6px 0; }
+.timeline .track { position: absolute; left: 0; right: 0; top: 60px; height: 4px; background: var(--line); border-radius: 2px; }
+.timeline .seg { position: absolute; top: 52px; height: 20px; min-width: 18px; display: grid; place-items: center; background: var(--accent); border: 1px solid var(--bg); border-radius: 3px; font: 600 11px var(--num); color: #fff; cursor: pointer; }
+.timeline .seg.off { background: var(--panel-2); color: var(--muted); }
+.timeline .seg.low { top: 74px; }
+.timeline .kills { position: absolute; display: flex; gap: 2px; transform: translateX(-50%); }
+.timeline .kills.a { top: 2px; } .timeline .kills.b { top: 26px; }
+.timeline .kills .hero-icon { border: 1.5px solid var(--accent); }
+.timeline .kills.off .hero-icon { border-color: var(--line); opacity: .5; }
+.timeline .ticks { position: absolute; left: 0; right: 0; top: 98px; font: 12px var(--num); color: var(--muted); }
+.timeline .ticks span { position: absolute; transform: translateX(-50%); }
+
+/* 比赛页：片段列表（两列，一行一个片段） */
+.clip-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+.clip-row { display: grid; grid-template-columns: 20px 26px 132px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid transparent; cursor: pointer; }
+.clip-row:hover { border-color: var(--line); }
+.clip-row.off { opacity: .5; }
+.clip-row input { margin: 0; width: 16px; height: 16px; accent-color: var(--accent); }
+.clip-row .no { font: 600 13px var(--num); color: var(--muted); text-align: right; }
+.clip-row .t { font: 600 15px var(--num); white-space: nowrap; }
+.clip-row .t small { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 6px; }
+.clip-row .end { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 12.5px; }
+.clips-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.clips-head h2 { margin: 0; }
+
+/* 已录视频：按比赛分组的缩略图 */
+.rec-match { margin-bottom: 26px; }
+.rec-match .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.rec-match .head .hero-icon { width: 40px; height: 40px; border-radius: 6px; }
+.rec-match .head .t { font: 600 17px var(--num); cursor: pointer; }
+.rec-match .head .t:hover { text-decoration: underline; }
+.rec-match .head .who { color: var(--muted); font-size: 13px; }
+.rec-match .head .act { margin-left: auto; display: flex; gap: 8px; }
+.vid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.vid { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.vid:hover { border-color: var(--line-hover); }
+.vid .th { position: relative; aspect-ratio: 16 / 9; background: var(--panel-2); cursor: pointer; }
+.vid .th img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.vid .th .play { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; background: rgba(0, 0, 0, .35); transition: opacity .15s; }
+.vid:hover .th .play { opacity: 1; }
+.vid .th .play span { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 16px; }
+.vid .th .len { position: absolute; bottom: 6px; right: 6px; background: rgba(0, 0, 0, .7); font: 12px var(--num); padding: 0 6px; border-radius: 3px; }
+.vid .th .multi { position: absolute; top: 6px; left: 6px; }
+.vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+.vid .meta { padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.vid .meta .tr { font: 600 14px var(--num); white-space: nowrap; }
+.vid .meta .reveal { border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 12.5px; }
+.vid .meta .reveal:hover { color: var(--text); background: none; }
+.rec-match details.runs { margin-top: 10px; }
+.rec-match details.runs summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.vid.left { border-style: dashed; display: grid; place-items: center; text-align: center; color: var(--muted); font-size: 13px; padding: 14px; min-height: 140px; }
+
+/* 录制中 */
+.rec-now { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 22px; align-items: center; }
+.rec-now .hero-pic { border-radius: 6px; }
+.rec-now .what { display: grid; gap: 8px; }
+.rec-now .lbl { color: var(--muted); font-size: 13px; }
+.rec-now .big { font: 600 28px var(--num); letter-spacing: .5px; }
+.rec-now .bar { margin-top: 2px; }
+.rec-now .pct { display: flex; justify-content: space-between; color: var(--muted); font: 13px var(--num); }
+.rec-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.rec-step { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; }
+.rec-step .tr { font: 600 14px var(--num); }
+.rec-step .st { font-size: 12px; color: var(--muted); }
+.rec-step.done .st { color: var(--radiant); }
+.rec-step.cur { border-color: var(--accent); }
+.rec-step.cur .st { color: var(--accent); }
+details.rec-log summary { cursor: pointer; color: var(--muted); }
+details.rec-log .log { margin-top: 10px; }

@@ -11,6 +11,7 @@ export const plan = (matchId, player, rules) => invoke("plan", { matchId, player
 export const defaultRules = () => invoke("default_rules");
 export const heroNames = (language) => invoke("hero_names", { language });
 export const reveal = (path) => invoke("reveal", { path });
+export const videoThumb = (path) => invoke("video_thumb", { path });
 export const openFile = (path) => invoke("open_file", { path });
 export const recordedMatches = () => invoke("recorded_matches");
 export const deleteMatchRecord = (matchId, deleteFiles) => invoke("delete_match_record", { matchId, deleteFiles });

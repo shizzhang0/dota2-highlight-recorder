@@ -22,6 +22,27 @@ export function heroName(id) {
   return heroes[id] ?? id.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
+// 英雄图片取自 Valve 自己的图片服务器，只用英雄名请求（docs/app-interaction.md 第 6 节）
+const HERO_CDN = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/";
+
+/** 图片加载不了（没联网、被墙）就换成写着英雄名的方块，大小和图片一样 */
+function heroImg(src, id, cls, short) {
+  const name = heroName(id);
+  const img = el("img", { class: cls, src, alt: name, title: name, loading: "lazy" });
+  img.addEventListener("error", () => img.replaceWith(el("span", { class: `${cls} hero-fallback`, title: name }, short ? name.slice(0, 1) : name)), { once: true });
+  return img;
+}
+
+/** 英雄立绘（16:9 大图） */
+export function heroPic(id) {
+  return heroImg(`${HERO_CDN}${id}.png`, id, "hero-pic", false);
+}
+
+/** 英雄小图标；`small` 用在时间线、缩略图下面这种挤的地方 */
+export function heroIcon(id, small = false) {
+  return heroImg(`${HERO_CDN}icons/${id}.png`, id, small ? "hero-icon sm" : "hero-icon", true);
+}
+
 /** Unix 秒 → 本地时间 "10-26 21:10" */
 export function date(secs) {
   const d = new Date(secs * 1000);

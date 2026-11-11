@@ -12,6 +12,8 @@
       {
         "label": "main",
         "title": "Dota 2 高光录制",
+        "decorations": false,
+        "shadow": true,
         "url": "index.html",
         "width": 1100,
         "height": 760,
@@ -51,7 +53,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://api.github.com"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdn.cloudflare.steamstatic.com; connect-src 'self' ipc: http://ipc.localhost https://api.github.com"
     }
   },
   "bundle": {
