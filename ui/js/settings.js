@@ -131,7 +131,6 @@ export function showSettings(view, { onSaved }) {
     el("option", { value: "auto" }, t("settings.language.auto")),
     LANGS.map(([v, n]) => el("option", { value: v }, n)));
   lang.value = settings.language;
-  const ffmpeg = el("input", { type: "text", value: settings.ffmpeg, placeholder: t("settings.ffmpeg.auto"), "aria-label": "ffmpeg" });
 
   form = () => ({
     out_dir: out.value.trim(),
@@ -139,7 +138,6 @@ export function showSettings(view, { onSaved }) {
     compile: compile.checked,
     quit_when_done: quit.checked,
     language: lang.value,
-    ffmpeg: ffmpeg.value.trim(),
   });
 
   // 底部保存栏：有没保存的修改时按钮亮起、显示提示；保存后显示"已保存"
@@ -180,8 +178,6 @@ export function showSettings(view, { onSaved }) {
         el("button", { type: "button", onclick: () => reveal(out.value.trim() || settings.out_dir) }, t("settings.outDir.open"))], true)),
     group(t("settings.group.ui"),
       row(t("settings.language"), "", lang)),
-    group(t("settings.group.advanced"),
-      row("ffmpeg", t("settings.ffmpeg.hint"), ffmpeg, true)),
     group(t("settings.group.about"), aboutRow(row)),
   );
   card.addEventListener("input", sync);

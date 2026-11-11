@@ -78,6 +78,8 @@
   SHA256 写死在 `tools/release.py` 里，下载后核对。只带 `ffmpeg.exe` 和它要的 DLL（不带 ffplay、ffprobe），
   装到安装目录的 `ffmpeg\` 下，另附 `LICENSE.txt`（GPLv3）和一份说明（版本、源码提交、构建脚本地址）。
 - 程序找 ffmpeg 的顺序：设置里指定的路径 → 安装目录自带的 → `D2HR_FFMPEG` → PATH。
+  2026-11-11 设置页去掉了 ffmpeg 这一项（用户定：普通用户不会关心，装好的版本总用自带的）；`settings.json` 的 `ffmpeg` 字段和 `D2HR_FFMPEG` 还认，只给开发用，
+  开发时指向 `distfmpeg`（打包时下好的 9.0.2），和发出去的版本一致。找不到时提示"安装可能不完整，请重新安装"。命令行的 `--ffmpeg` 保留。
 - 版本固定，升级时和解析库一样走回归检查：裁剪、拼接、时长读取。
 - 录制方式改造后，ffmpeg 还要**边录边编码**（显卡编码器优先，见 `media::encode`）。
   BtbN 的 LGPL 版不带 x264（x264 是 GPL），没有显卡编码器的机器就没有退路；GPL 版作为独立程序附带、附上许可证和源码也可以（luckcaty-cut-dota2 就是这么做的）。**定：用 GPL 版**（2026-11-10 用户定），保证每台电脑都能录。

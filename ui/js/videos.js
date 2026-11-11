@@ -144,7 +144,7 @@ function matchSection(m, nav) {
       el("div", { class: "act" },
         msg,
         el("button", { type: "button", title: t("videos.moreHint"), onclick: () => nav.openMatch(m.match_id, { from: "videos" }) }, t("videos.more")),
-        el("button", { type: "button", onclick: del }, t("videos.delete.button")),
+        el("button", { type: "button", class: "danger-outline", onclick: del }, t("videos.delete.button")),
       ),
     ),
     videoGrid(m, nav),
