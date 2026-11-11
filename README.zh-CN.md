@@ -10,18 +10,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases/latest/download/dota2-highlight-recorder-setup.exe"><b>下载安装包</b></a>
-  ·
-  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/releases">所有版本</a>
-  ·
   <a href="README.md">English</a>
 </p>
 
 ![比赛页：选人、看时间线、勾选要录的片段](docs/images/match.jpg)
 
-## 下载
+## 安装
 
-**[下载安装包](https://github.com/shizzhang0/dota2-highlight-recorder/releases/latest/download/dota2-highlight-recorder-setup.exe)**（Windows 10/11，64 位）
+支持 Windows 10/11（64 位）。
 
 - 装到当前用户，不用管理员权限；录制要用的 ffmpeg 已经带在安装包里。
 - 有新版本时，设置页的「关于」里可以一键更新。
