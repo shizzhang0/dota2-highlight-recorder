@@ -10,12 +10,19 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/shizzhang0/dota2-highlight-recorder/actions/workflows/ci.yml"><img src="https://github.com/shizzhang0/dota2-highlight-recorder/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/github/v/release/shizzhang0/dota2-highlight-recorder?label=release&color=c8432f" alt="Release">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License: PolyForm Noncommercial"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey.svg" alt="Platform: Windows 10/11">
+</p>
+
+<p align="center">
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 ![Match page: pick a player, see the timeline, tick the clips to record](docs/images/match.jpg)
 
-<sub>Screenshots show the Chinese interface; English can be chosen in the settings.</sub>
+<sub>Screenshots show the Chinese interface; English can be chosen in the settings. Game imagery and hero art © Valve.</sub>
 
 ## Installing
 
