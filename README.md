@@ -17,12 +17,12 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">简体中文</a>
+  <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-![Match page: pick a player, see the timeline, tick the clips to record](docs/images/match.jpg)
+![Match page: pick a player, see the timeline, tick the clips to record](docs/images/match-en.jpg)
 
-<sub>Screenshots show the Chinese interface; English can be chosen in the settings. Game imagery and hero art © Valve.</sub>
+<sub>Game imagery and hero art in the screenshots © Valve.</sub>
 
 ## Installing
 
@@ -43,7 +43,7 @@ Runs on Windows 10/11 (64-bit).
 
 | Match list | Recorded videos |
 | --- | --- |
-| ![Match list](docs/images/matches.jpg) | ![Recorded videos](docs/images/videos.jpg) |
+| ![Match list](docs/images/matches-en.jpg) | ![Recorded videos](docs/images/videos-en.jpg) |
 
 File names look like `9052676196_7_phantom_assassin_31-57_32-13_三杀.mp4`: match ID, player slot, hero, start and end time, and the multi-kill if there is one.
 
