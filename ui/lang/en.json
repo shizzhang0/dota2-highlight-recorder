@@ -144,6 +144,7 @@
   "settings.outDir.hint": "Where recorded videos are saved",
   "home.openId": "Open / download",
   "home.where": "Replays live in Dota 2's replays folder, the same place the game's Download button saves to. For a match you don't have, enter its ID and the app gets the replay address from OpenDota and downloads it.",
+  "home.kda": "Kills / deaths / assists",
   "home.notMe": "You're not in it",
   "home.err.noMatch": "Match {id} not found: OpenDota doesn't know this match. Is the ID right?",
   "home.err.noUrl": "OpenDota still couldn't get the replay address after 2 minutes. You can download it in game under Watch → Match History.",

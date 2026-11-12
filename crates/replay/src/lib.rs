@@ -3,7 +3,7 @@
 pub mod download;
 mod local;
 
-pub use local::{LocalReplay, Summary, list, peek};
+pub use local::{LocalReplay, Score as FinalScore, Summary, list, peek, scoreboard};
 
 use std::collections::HashMap;
 use std::fs::File;

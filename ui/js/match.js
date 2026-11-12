@@ -77,7 +77,7 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
         el("button", { type: "button", class: `hero-card${p.id === player ? " selected" : ""}`, title: `${heroName(p.hero)} · ${p.name}`, onclick: () => pick(p.id) },
           p.is_me ? el("span", { class: "me-tag" }, t("match.you")) : null,
           heroPic(p.hero),
-          el("div", { class: "who" }, el("span", {}, p.name), el("span", { class: "kd" }, `${p.kills} / ${p.deaths}`)),
+          el("div", { class: "who" }, el("span", {}, p.name), el("span", { class: "kd", title: t("home.kda") }, `${p.kills} / ${p.deaths} / ${p.assists}`)),
         )),
     ];
     playersBox.replaceChildren(...team(2, "radiant", t("match.radiant")), ...team(3, "dire", t("match.dire")));
