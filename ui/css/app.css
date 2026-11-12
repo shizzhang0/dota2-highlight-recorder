@@ -252,10 +252,6 @@ button.busy:disabled { opacity: 1; cursor: progress; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .stale { opacity: .45; transition: opacity .15s; pointer-events: none; }
 
-/* 已录视频：录制记录（折叠） */
-details.runs summary { cursor: pointer; color: var(--muted); }
-details.runs .log { margin-top: 10px; }
-
 /* 录制 */
 .warn {
   padding: 10px 12px;
@@ -393,8 +389,6 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .meta .tr { font: 600 14px var(--num); white-space: nowrap; }
 .vid .meta .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .meta .reveal:hover { color: var(--text); background: none; }
-.rec-match details.runs { margin-top: 10px; }
-.rec-match details.runs summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .vid.left { border-style: dashed; display: grid; place-items: center; text-align: center; color: var(--muted); font-size: 13px; padding: 14px; min-height: 140px; }
 
 /* 录制中 */
