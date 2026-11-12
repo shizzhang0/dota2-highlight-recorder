@@ -144,6 +144,7 @@
   "settings.outDir.hint": "录好的视频都存到这里",
   "home.openId": "打开 / 下载",
   "home.where": "录像在 Dota 2 的 replays 目录里，和游戏里点「下载」存的是同一个地方。本地没有的比赛，输入比赛 ID 会经 OpenDota 查到录像地址再下载。",
+  "home.kda": "击杀 / 死亡 / 助攻",
   "home.notMe": "你不在这场",
   "home.err.noMatch": "找不到比赛 {id}：OpenDota 没有这场比赛，比赛 ID 对吗？",
   "home.err.noUrl": "OpenDota 等了 2 分钟还是取不到这场的录像地址。可以在游戏的「观战 → 比赛记录」里下载。",

@@ -72,3 +72,47 @@ pub fn peek(path: impl AsRef<Path>) -> Result<Summary> {
         winner: dota.game_winner(),
     })
 }
+
+#[derive(Default)]
+struct NeedEntities;
+
+impl Observer for NeedEntities {
+    fn interests(&self) -> Interests {
+        Interests::ENTITY_STATE
+    }
+}
+
+/// 一名玩家终场的计分板：击杀 / 死亡 / 助攻
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct Score {
+    pub kills: u32,
+    pub deaths: u32,
+    pub assists: u32,
+}
+
+/// 终场计分板，按玩家序号 0-9 排。直接跳到录像最后读计分板，不逐 tick 跑整场，
+/// 比 [`crate::parse`] 快得多（首页列表要给每场显示 K/D/A）
+pub fn scoreboard(path: impl AsRef<Path>) -> Result<Vec<Score>> {
+    let path = path.as_ref();
+    let file = File::open(path).with_context(|| format!("打不开录像 {}", path.display()))?;
+    let mut parser = Parser::from_reader(BufReader::new(file)).with_context(|| format!("读不了录像 {}", path.display()))?;
+    let players = parser
+        .replay_info()
+        .game_info
+        .as_ref()
+        .and_then(|g| g.dota.as_ref())
+        .map_or(0, |d| d.player_info.len());
+    // 没有观察者要实体的话，解析器根本不建实体
+    parser.register_observer::<NeedEntities>();
+    parser.jump_to_tick(u32::MAX).with_context(|| format!("读不了录像 {}", path.display()))?;
+    let entities = parser.context().entities();
+    let pr = entities
+        .get_by_class_name("CDOTA_PlayerResource")
+        .map_err(|_| anyhow::anyhow!("录像里没有计分板：{}", path.display()))?;
+    let get = |i: usize, field: &str| -> u32 {
+        try_property!(pr, i32, "m_vecPlayerTeamData.{i:04}.{field}").unwrap_or(0).max(0) as u32
+    };
+    Ok((0..players)
+        .map(|i| Score { kills: get(i, "m_iKills"), deaths: get(i, "m_iDeaths"), assists: get(i, "m_iAssists") })
+        .collect())
+}

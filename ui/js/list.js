@@ -91,6 +91,8 @@ export async function showHome(view, dialog, { openMatch }) {
   const fill = el("div", { class: "bar-fill" });
   const bar = el("div", { class: "bar", hidden: true, style: "max-width:520px" }, fill);
   const tableBox = el("div", {}, el("div", { class: "loading" }, "…"));
+  // 刷新：列表留在原地变淡，按钮上转圈，读完再换
+  const refreshBtn = el("button", { type: "button" }, el("span", { class: "spin", "aria-hidden": "true" }), t("list.refresh"));
   let rows = [];
 
   const say = (cls, text) => { idMsg.className = cls; idMsg.textContent = text; };
@@ -174,7 +176,7 @@ export async function showHome(view, dialog, { openMatch }) {
       el("div", { class: "spacer" }),
       batchBtn,
       el("div", { class: "segmented", role: "radiogroup", "aria-label": t("home.view") }, viewButtons),
-      el("button", { type: "button", onclick: () => showHome(view, dialog, { openMatch }) }, t("list.refresh")),
+      refreshBtn,
     ),
     tableBox,
     el("p", { class: "muted", style: "font-size:12.5px;margin-top:18px" }, t("home.where")),
@@ -184,22 +186,43 @@ export async function showHome(view, dialog, { openMatch }) {
     render(false);
   }
 
-  // 已录几段：从"已录视频"的记录里数（文件还在的才算）
   let recorded = new Map();
-  try {
-    const [list, history] = await Promise.all([api.listReplays(), api.recordedMatches().catch(() => [])]);
-    rows = list;
-    for (const m of history) {
-      const n = m.players.reduce((a, p) => a + p.clips.filter((c) => c.file?.exists).length, 0);
-      if (n) recorded.set(m.match_id, n);
-    }
-  } catch (e) {
-    tableBox.replaceChildren(el("p", { class: "error" }, e.message));
-    return;
-  }
-  // 比赛开始时间新的在前；读不了的录像按下载时间排
-  rows.sort((a, b) => (b.start_time ?? b.modified) - (a.start_time ?? a.modified));
   let picked = new Set();
+
+  /** 读录像列表和已录段数，读不了就在列表位置显示错误、返回 false。打开页面和点「刷新」都走这里 */
+  async function load() {
+    try {
+      const [list, history] = await Promise.all([api.listReplays(), api.recordedMatches().catch(() => [])]);
+      rows = list;
+      // 已录几段：从"已录视频"的记录里数（文件还在的才算）
+      recorded = new Map();
+      for (const m of history) {
+        const n = m.players.reduce((a, p) => a + p.clips.filter((c) => c.file?.exists).length, 0);
+        if (n) recorded.set(m.match_id, n);
+      }
+    } catch (e) {
+      rows = [];
+      tableBox.replaceChildren(el("p", { class: "error" }, e.message));
+      return false;
+    }
+    // 比赛开始时间新的在前；读不了的录像按下载时间排
+    rows.sort((a, b) => (b.start_time ?? b.modified) - (a.start_time ?? a.modified));
+    // 勾着的录像要是已经不在了（在游戏里删了），去掉
+    for (const id of picked) if (!rows.some((r) => r.match_id === id)) picked.delete(id);
+    return true;
+  }
+
+  refreshBtn.addEventListener("click", async () => {
+    refreshBtn.disabled = true;
+    refreshBtn.classList.add("busy");
+    tableBox.classList.add("stale");
+    // 读过的录像有缓存，刷新很快；至少转 0.4 秒，看得出刷新过
+    const [ok] = await Promise.all([load(), new Promise((r) => setTimeout(r, 400))]);
+    refreshBtn.disabled = false;
+    refreshBtn.classList.remove("busy");
+    tableBox.classList.remove("stale");
+    if (ok && tableBox.isConnected) renderTable();
+  });
 
   /** 删掉这些录像（移到回收站），成功后从列表里去掉 */
   const remove = async (ids) => {
@@ -235,6 +258,8 @@ export async function showHome(view, dialog, { openMatch }) {
       box.checked = picked.has(r.match_id);
       const result = mine ? el("span", { class: `res ${r.my_won ? "win" : "lose"}` }, t(r.my_won ? "list.win" : "list.lose")) : null;
       const heroLine = mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe");
+      // 我的击杀 / 死亡 / 助攻（终场计分板）；不在这场就空着
+      const kda = mine && r.my_score ? `${r.my_score.kills} / ${r.my_score.deaths} / ${r.my_score.assists}` : "";
       // 列表：一行一场，小图标
       const card = viewMode === "list"
         ? el("div", { class: `match-row${box.checked ? " picked" : ""}`, onclick: () => openMatch(r.match_id) },
@@ -242,20 +267,22 @@ export async function showHome(view, dialog, { openMatch }) {
           mine ? heroIcon(r.my_hero) : el("span", { class: "hero-icon hero-fallback" }, "?"),
           el("span", { class: "id" }, String(r.match_id)),
           el("span", { class: "hero" }, heroLine),
+          el("span", { class: "num kda", title: kda && t("home.kda") }, kda),
           el("span", {}, result),
           el("span", { class: "num muted" }, r.duration == null ? "—" : clock(r.duration)),
           el("span", { class: "num muted" }, r.start_time ? date(r.start_time) : ""),
           el("span", {}, recorded.has(r.match_id) ? el("span", { class: "rec" }, t("home.recorded", { n: recorded.get(r.match_id) })) : ""))
         : el("div", { class: `match-card${box.checked ? " picked" : ""}`, onclick: () => openMatch(r.match_id) },
         el("div", { class: "pic" },
-          mine ? heroPic(r.my_hero) : el("div", { class: "hero-pic hero-fallback" }, r.error ? t("list.unreadable") : t("home.notMe")),
+          mine ? heroPic(r.my_hero) : r.error ? el("div", { class: "hero-pic hero-fallback" }, t("list.unreadable")) : el("div", { class: "hero-pic hero-fallback unknown" }, "?"),
           mine ? el("span", { class: `res ${r.my_won ? "win" : "lose"}` }, t(r.my_won ? "list.win" : "list.lose")) : null,
           recorded.has(r.match_id) ? el("span", { class: "rec" }, t("home.recorded", { n: recorded.get(r.match_id) })) : null,
         ),
         el("div", { class: "info" },
           el("div", {},
             el("div", { class: "id" }, String(r.match_id)),
-            el("div", { class: "hero" }, mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe")),
+            el("div", { class: "hero" }, mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe"),
+              kda ? el("span", { class: "kda", title: t("home.kda") }, kda) : null),
           ),
           el("div", { class: "stats" }, r.duration == null ? "—" : clock(r.duration), el("br"), r.start_time ? date(r.start_time) : ""),
         ),
@@ -273,5 +300,5 @@ export async function showHome(view, dialog, { openMatch }) {
     tableBox.replaceChildren(grid);
     sync();
   }
-  renderTable();
+  if (await load()) renderTable();
 }

@@ -39,10 +39,29 @@ pub struct ReplayRow {
     /// 我（Steam 当前账号）在这场玩的英雄，不在这场为 null
     my_hero: Option<String>,
     my_won: Option<bool>,
+    /// 我在这场的终场击杀 / 死亡 / 助攻；不在这场或读不到计分板时为 null
+    my_score: Option<replay::FinalScore>,
     error: Option<String>,
 }
 
-#[tauri::command]
+/// 终场计分板按（比赛 ID, 录像修改时间）缓存：一场约 50ms，首页每次刷新不用重读
+type Board = Vec<replay::FinalScore>;
+static SCORES: Mutex<Vec<((u64, u64), Board)>> = Mutex::new(Vec::new());
+
+fn scoreboard(path: &std::path::Path, match_id: u64, modified: u64) -> Option<Board> {
+    let key = (match_id, modified);
+    if let Some((_, s)) = SCORES.lock().unwrap().iter().find(|(k, _)| *k == key) {
+        return Some(s.clone());
+    }
+    let s = replay::scoreboard(path).ok()?;
+    let mut cache = SCORES.lock().unwrap();
+    cache.retain(|((id, _), _)| *id != match_id);
+    cache.push((key, s.clone()));
+    Some(s)
+}
+
+// 要读每场的计分板，放到后台线程跑，别卡住界面
+#[tauri::command(async)]
 pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
     let dir = replays_dir()?;
     let me = game::steam::me();
@@ -60,6 +79,7 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
                 duration: None,
                 my_hero: None,
                 my_won: None,
+                my_score: None,
                 error: None,
             };
             match replay::peek(&f.path) {
@@ -69,6 +89,7 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
                     if let Some(p) = me.and_then(|id| s.players.iter().find(|p| p.account_id == id)) {
                         row.my_hero = Some(hero(&p.hero));
                         row.my_won = Some(p.team == s.winner);
+                        row.my_score = scoreboard(&f.path, f.match_id, modified).and_then(|b| b.get(p.player_id).copied());
                     }
                 }
                 Err(e) => row.error = Some(format!("{e:#}")),
@@ -225,6 +246,7 @@ pub struct PlayerRow {
     team: i32,
     kills: usize,
     deaths: usize,
+    assists: usize,
     is_me: bool,
 }
 
@@ -244,17 +266,30 @@ pub struct MatchInfo {
 pub async fn open_match(match_id: u64) -> Result<MatchInfo, String> {
     let r = parsed(match_id).await?;
     let me = game::steam::me();
+    let board = replay::scoreboard(replays_dir()?.join(format!("{match_id}.dem"))).ok();
     let players: Vec<PlayerRow> = r
         .players
         .iter()
-        .map(|p| PlayerRow {
-            id: p.player_id,
-            name: p.name.clone(),
-            hero: hero(&p.hero),
-            team: p.team,
-            kills: r.kills.iter().filter(|k| k.killer == Some(p.player_id)).count(),
-            deaths: r.kills.iter().filter(|k| k.victim == p.player_id).count(),
-            is_me: Some(p.account_id) == me,
+        .map(|p| {
+            // 终场计分板为准；读不到就从击杀事件里数（死亡里含被小兵、塔杀，和计分板一致）
+            let (kills, deaths, assists) = match board.as_ref().and_then(|b| b.get(p.player_id)) {
+                Some(s) => (s.kills as usize, s.deaths as usize, s.assists as usize),
+                None => (
+                    r.kills.iter().filter(|k| k.killer == Some(p.player_id)).count(),
+                    r.kills.iter().filter(|k| k.victim == p.player_id).count(),
+                    r.kills.iter().filter(|k| k.assists.contains(&p.player_id)).count(),
+                ),
+            };
+            PlayerRow {
+                id: p.player_id,
+                name: p.name.clone(),
+                hero: hero(&p.hero),
+                team: p.team,
+                kills,
+                deaths,
+                assists,
+                is_me: Some(p.account_id) == me,
+            }
         })
         .collect();
     let winner = replay::peek(replays_dir()?.join(format!("{match_id}.dem"))).ok().map(|s| s.winner);

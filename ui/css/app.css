@@ -238,6 +238,12 @@ dialog h2 { margin: 0 0 14px; font-size: 16px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 .loading { padding: 40px; text-align: center; color: var(--muted); }
+/* 按钮上的转圈（加 .busy 时显示），比如本地录像的「刷新」 */
+button .spin { display: none; width: 11px; height: 11px; margin-right: 7px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -1px; animation: spin .7s linear infinite; }
+button.busy .spin { display: inline-block; }
+button.busy:disabled { opacity: 1; cursor: progress; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.stale { opacity: .45; transition: opacity .15s; pointer-events: none; }
 
 /* 已录视频：录制记录（折叠） */
 details.runs summary { cursor: pointer; color: var(--muted); }
@@ -298,13 +304,16 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 
 /* 首页的列表看法：一行一场 */
 .match-rows { display: grid; gap: 4px; }
-.match-row { display: grid; grid-template-columns: 20px 28px 130px minmax(0, 1fr) 40px 64px 110px 96px; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+.match-row { display: grid; grid-template-columns: 20px 28px 130px minmax(0, 1fr) 90px 40px 64px 110px 96px; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
 .match-row:hover { border-color: var(--line-hover); }
 .match-row.picked { border-color: var(--accent); }
 .match-row .pick { position: static; opacity: 1; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .match-row .id { font: 600 15px var(--num); }
 .match-row .hero { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .match-row .res { font-size: 13px; font-weight: 600; }
+.match-row .kda { color: var(--text); }
+.match-card .hero-fallback.unknown { font: 600 44px var(--num); }
+.match-card .hero .kda { margin-left: 10px; font-family: var(--num); color: var(--text); }
 .match-row .rec { font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--accent); color: #fff; white-space: nowrap; }
 
 /* 子页面左上角的返回：从哪进来回哪 */
