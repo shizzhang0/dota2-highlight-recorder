@@ -70,10 +70,9 @@ input[type="number"] { width: 90px; }
 
 /* 设置页：一张卡片按用途分组（组之间一条分隔线），每项左边名称和说明、右边控件；路径这类长输入框单独占一行 */
 /* 和别的页面一样宽（原来限制在 760px，用户嫌窄，2026-11-11）；说明文字自己限制行长 */
-.settings { padding: 18px 24px 6px; }
-.settings h2 { margin: 0; font-size: 16px; }
+.settings { padding: 2px 24px 6px; }
 .settings-group + .settings-group { border-top: 1px solid var(--line); }
-.settings-group h3 { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.settings-group h3 { margin: 11px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
 /* 间距收紧一点：默认窗口（1100×760）下设置页一屏放得下，不出滚动条（原来多出 10px，2026-11-11 用户提的） */
 .setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 32px; padding: 10px 0; }
 .setting[hidden] { display: none; }

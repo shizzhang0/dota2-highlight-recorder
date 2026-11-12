@@ -167,7 +167,6 @@ export function showSettings(view, { onSaved }) {
   revertBtn.addEventListener("click", () => showSettings(view, { onSaved }));
 
   const card = el("div", { class: "card settings" },
-    el("h2", {}, t("settings.title")),
     group(t("settings.group.record"),
       row(t("settings.capture"), t("settings.capture.hint"),
         el("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.capture") }, captureButtons)),
@@ -183,7 +182,7 @@ export function showSettings(view, { onSaved }) {
   card.addEventListener("input", sync);
   card.addEventListener("change", sync);
 
-  view.replaceChildren(card,
+  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, t("settings.title"))), card,
     el("div", { class: "footer-bar settings-bar" }, status, el("div", { class: "spacer" }), revertBtn, saveBtn));
   setCapture(captureValue);
   return { saved: () => { status.textContent = t("settings.saved"); } };

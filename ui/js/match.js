@@ -6,7 +6,7 @@ import { clock, el, heroIcon, heroName, heroPic, length } from "./format.js";
 import { settings, persist } from "./state.js";
 
 /** `player` / `preselect`（片段文件名）从"已录视频"的"继续录未完成的"带过来：选好玩家、勾上这些片段 */
-/** `back` / `backLabel`：左上角的返回，从哪进来回哪（比赛列表或已录视频） */
+/** `back` / `backLabel`：左上角的返回，从哪进来回哪（本地录像或已录视频） */
 export async function showMatch(view, matchId, { back, backLabel, record, player: wanted, preselect }) {
   view.replaceChildren(el("div", { class: "loading" }, t("match.parsing")));
   let info;

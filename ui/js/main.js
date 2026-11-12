@@ -1,4 +1,4 @@
-// 入口：读设置和语言，顶部固定导航（比赛 · 已录视频 · 设置），在各页之间切换。交互见 docs/app-interaction.md
+// 入口：读设置和语言，顶部固定导航（本地录像 · 已录视频 · 设置），在各页之间切换。交互见 docs/app-interaction.md
 import { applyStatic, loadLang, resolve, t } from "./i18n.js";
 import { loadSettings, settings } from "./state.js";
 import { setHeroNames } from "./format.js";
