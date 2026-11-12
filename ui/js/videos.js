@@ -156,16 +156,7 @@ function latestBanner(f) {
   );
 }
 
-function runLine(r) {
-  const clips = r.selected.map((i) => `#${i}`).join("、");
-  let result;
-  if (r.error) result = t("videos.run.error", { error: r.error });
-  else if (r.cancelled) result = t("videos.run.stopped", { done: r.completed.length, total: r.selected.length, reason: r.cancelled });
-  else result = t("videos.run.done", { minutes: (r.elapsed_secs / 60).toFixed(1) });
-  return el("li", {}, `${date(r.time)}  ${heroName(r.hero)}  ${t("videos.run.clips", { clips })}  ${result}`);
-}
-
-/** 删除这场的记录：确认框里可以勾"同时删除视频文件"（移到回收站），默认不勾 */
+/** 从已录视频中移除这场：确认框里可以勾"同时删除视频文件"（移到回收站），默认不勾 */
 function confirmDelete(dialog, matchId) {
   return new Promise((resolve) => {
     const files = el("input", { type: "checkbox" });
@@ -184,7 +175,8 @@ function confirmDelete(dialog, matchId) {
   });
 }
 
-/** 一场比赛一块：标题（英雄图标、比赛 ID、谁、最近什么时候录的）（点比赛 ID 去比赛页）、「删除记录」、视频、折叠的录制记录 */
+/** 一场比赛一块：标题（英雄图标、比赛 ID、谁、最近什么时候录的）（点比赛 ID 去比赛页）、「删除记录」、视频。
+ *  每次录制的明细（2026-11-12 前在下面折叠显示）用户用不上，去掉了；后台照样记 */
 function matchSection(m, nav) {
   const lead = m.players.find((p) => p.is_me) ?? m.players[0];
   const msg = el("span", { class: "muted" });
@@ -214,10 +206,6 @@ function matchSection(m, nav) {
       ),
     ),
     videoGrid(m, nav),
-    el("details", { class: "runs" },
-      el("summary", {}, t("videos.runs", { n: m.runs.length })),
-      el("ol", { class: "log" }, m.runs.map(runLine)),
-    ),
   );
 }
 

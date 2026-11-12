@@ -175,7 +175,6 @@ export async function showHome(view, dialog, { openMatch }) {
     bar,
     el("div", { class: "row", style: "margin:16px 0 12px" },
       allBtn,
-      el("span", { class: "muted", style: "font-size:13px" }, t("home.hint")),
       el("div", { class: "spacer" }),
       batchBtn,
       el("div", { class: "segmented", role: "radiogroup", "aria-label": t("home.view") }, viewButtons),
