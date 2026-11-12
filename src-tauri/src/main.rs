@@ -43,6 +43,7 @@ fn main() {
             history::recorded_matches,
             history::delete_match_record,
             history::open_file,
+            history::allow_video,
             history::video_thumb,
             settings::get_settings,
             settings::save_settings,

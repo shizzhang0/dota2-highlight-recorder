@@ -157,6 +157,8 @@ export async function showHome(view, dialog, { openMatch }) {
   // 录像变成卡片（2026-11-11 改版）：大图是你玩的英雄，角上标胜负、已录几段
   const countLine = el("span", { class: "meta" });
   const batchBtn = el("button", { type: "button", class: "danger", hidden: true });
+  // 全选 / 全不选（2026-11-12 用户要的，批量删除用），放在工具栏最左边：全勾上了就变成「全不选」，和比赛页的片段一样
+  const allBtn = el("button", { type: "button", hidden: true });
   let viewMode = savedView();
   const views = ["cards", "list"];
   const viewButtons = views.map((v) => el("button", { type: "button", role: "radio", onclick: () => setView(v) }, t(`home.view.${v}`)));
@@ -172,6 +174,7 @@ export async function showHome(view, dialog, { openMatch }) {
     el("div", { class: "row", style: "margin-bottom:6px" }, idInput, idBtn, cancelBtn, idMsg, openDone),
     bar,
     el("div", { class: "row", style: "margin:16px 0 12px" },
+      allBtn,
       el("span", { class: "muted", style: "font-size:13px" }, t("home.hint")),
       el("div", { class: "spacer" }),
       batchBtn,
@@ -238,10 +241,16 @@ export async function showHome(view, dialog, { openMatch }) {
     }
   };
   batchBtn.addEventListener("click", () => remove([...picked]));
+  allBtn.addEventListener("click", () => {
+    if (rows.every((r) => picked.has(r.match_id))) picked.clear();
+    else for (const r of rows) picked.add(r.match_id);
+    renderTable();
+  });
 
   function renderTable() {
     countLine.textContent = t("home.count", { n: rows.length });
     if (!rows.length) {
+      allBtn.hidden = batchBtn.hidden = true;
       tableBox.replaceChildren(el("p", { class: "muted" }, t("list.empty")));
       return;
     }
@@ -249,6 +258,8 @@ export async function showHome(view, dialog, { openMatch }) {
     const sync = () => {
       batchBtn.hidden = picked.size === 0;
       batchBtn.textContent = t("home.delete.picked", { n: picked.size });
+      allBtn.hidden = rows.length === 0;
+      allBtn.textContent = t(rows.every((r) => picked.has(r.match_id)) ? "match.selectNone" : "match.selectAll");
       grid.classList.toggle("picking", picked.size > 0);
     };
     for (const r of rows) {

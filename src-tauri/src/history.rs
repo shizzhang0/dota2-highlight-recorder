@@ -320,7 +320,22 @@ fn base64(data: &[u8]) -> String {
     out
 }
 
-/// 用系统默认的程序打开文件（播放视频）
+/// 在应用里播放视频前调用：把这一个 mp4 加进 asset 协议的允许范围。
+/// 配置里的范围是空的，界面只能读到点过播放的视频文件，读不到别的文件
+#[tauri::command]
+pub fn allow_video(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    use tauri::Manager;
+    let p = Path::new(&path);
+    if !p.is_file() {
+        return Err(format!("文件不在了：{path}"));
+    }
+    if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp4")) {
+        return Err(format!("不是 mp4 视频：{path}"));
+    }
+    app.asset_protocol_scope().allow_file(p).map_err(|e| e.to_string())
+}
+
+/// 用系统默认的程序打开文件（播放器窗口里的「用系统播放器打开」）
 #[tauri::command]
 pub fn open_file(path: String) -> Result<(), String> {
     if !Path::new(&path).is_file() {

@@ -1,6 +1,6 @@
-// 已录视频：按比赛汇总的录制记录（Rust 侧 history.rs）。2026-11-11 改版：每个视频一张缩略图，点缩略图播放；
+// 已录视频：按比赛汇总的录制记录（Rust 侧 history.rs）。2026-11-11 改版：每个视频一张缩略图，点缩略图在应用里播放；
 // 没录完的片段显示成虚线框"接着录"。只有一层（2026-11-11 用户试用后去掉了详情页）：每场比赛一块，
-// 右上角「再录几段」「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
+// 比赛 ID 点了去比赛页，右上角「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
 import * as api from "./api.js";
 import { t } from "./i18n.js";
 import { clock, date, el, heroIcon, heroName } from "./format.js";
@@ -31,8 +31,69 @@ async function pumpThumbs() {
   thumbBusy = false;
 }
 
-/** 一个视频：缩略图（点了用系统播放器打开）、时长、多杀，下面是时间和被杀英雄 */
-function videoCard(file, { range, secs, victims = [], multi = 0, label }) {
+// 播放器：点缩略图在应用里放（2026-11-12 用户要的，原来是交给系统默认播放器）。
+// 视频经 Tauri 的 asset 协议读，播放前 allow_video 只放行这一个文件
+let player = null;
+function playerDialog() {
+  if (player) return player;
+  const title = el("h2", {});
+  const video = el("video", { controls: true, autoplay: true, preload: "auto" });
+  const error = el("p", { class: "error", hidden: true }, t("videos.play.error"));
+  const reveal = el("button", { type: "button" }, t("videos.reveal"));
+  const external = el("button", { type: "button" }, t("videos.play.system"));
+  const close = el("button", { type: "button", class: "close", "aria-label": t("videos.play.close"), title: t("videos.play.close") }, "×");
+  const dialog = el("dialog", { class: "player" },
+    el("div", { class: "player-head" }, title, close),
+    video, error,
+    el("div", { class: "dialog-actions" }, reveal, external));
+  close.addEventListener("click", () => dialog.close());
+  // 点遮罩（对话框外面）也关
+  dialog.addEventListener("click", (e) => e.target === dialog && dialog.close());
+  // 关了就停下、放掉文件，不然声音还在、文件也被占着
+  dialog.addEventListener("close", () => {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  });
+  video.addEventListener("error", () => { if (video.getAttribute("src")) error.hidden = false; });
+  document.body.append(dialog);
+  player = { dialog, title, video, error, reveal, external };
+  return player;
+}
+
+async function play(path, name) {
+  const p = playerDialog();
+  try {
+    await api.allowVideo(path);
+  } catch (e) {
+    alert(e.message);
+    return;
+  }
+  p.title.textContent = name;
+  p.error.hidden = true;
+  p.reveal.onclick = () => api.reveal(path);
+  p.external.onclick = () => {
+    p.dialog.close();
+    api.openFile(path).catch((e) => alert(e.message));
+  };
+  p.video.src = window.__TAURI__.core.convertFileSrc(path);
+  p.dialog.showModal();
+}
+
+// 「在文件夹中显示」用文件夹图标（2026-11-12 用户要的，原来写着"文件夹"三个字）
+const FOLDER_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.3l2 2.2h8.7A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg>';
+// 「删除记录」也换成图标（垃圾桶），平时灰色不抢眼，鼠标移上去变红；点了照样先弹确认框
+const TRASH_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 7V4.8c0-.4.3-.8.8-.8h3.4c.5 0 .8.4.8.8V7M6.5 7l.9 12.2c.1.9.8 1.8 1.8 1.8h5.6c1 0 1.7-.9 1.8-1.8L17.5 7M10 11v6M14 11v6"/></svg>';
+/** 只有图标的按钮：`title` 同时当悬停提示和读屏文字 */
+function iconButton(svg, { title, ...attrs }) {
+  const b = el("button", { type: "button", title, "aria-label": title, ...attrs });
+  b.innerHTML = svg;
+  return b;
+}
+const revealButton = (path) => iconButton(FOLDER_ICON, { class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(path) });
+
+/** 一个视频：缩略图（点了在应用里播放）、时长、多杀，下面是时间和被杀英雄。`title` 是播放器上方的标题 */
+function videoCard(file, { range, secs, victims = [], multi = 0, label, title }) {
   const img = el("img", { alt: "" });
   const th = el("div", { class: "th", title: file.path },
     img,
@@ -42,13 +103,13 @@ function videoCard(file, { range, secs, victims = [], multi = 0, label }) {
   );
   if (file.exists) {
     loadThumb(img, file.path);
-    th.addEventListener("click", () => api.openFile(file.path).catch((e) => alert(e.message)));
+    th.addEventListener("click", () => play(file.path, title ?? label ?? range));
   }
   return el("div", { class: "vid" }, th,
     el("div", { class: "meta" },
       el("span", { class: "tr" }, label ?? range),
       el("span", { class: "hero-icons" }, victims.map((v) => heroIcon(v, true))),
-      file.exists ? el("button", { type: "button", class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(file.path) }, t("videos.folder")) : null,
+      file.exists ? revealButton(file.path) : null,
     ));
 }
 
@@ -57,9 +118,13 @@ function videoGrid(m, { openMatch }) {
   const cards = [];
   for (const p of m.players) {
     for (const c of p.clips) {
-      if (c.file) cards.push(videoCard(c.file, { range: `${clock(c.start)}–${clock(c.end)}`, secs: c.end - c.start, victims: c.victims, multi: c.multi_kill }));
+      const range = `${clock(c.start)}–${clock(c.end)}`;
+      if (c.file) cards.push(videoCard(c.file, { range, secs: c.end - c.start, victims: c.victims, multi: c.multi_kill, title: `${m.match_id} · ${heroName(p.hero)} · ${range}` }));
     }
-    if (p.compilation) cards.push(videoCard(p.compilation, { label: t("videos.compilationOf", { hero: heroName(p.hero) }) }));
+    if (p.compilation) {
+      const label = t("videos.compilationOf", { hero: heroName(p.hero) });
+      cards.push(videoCard(p.compilation, { label, title: `${m.match_id} · ${label}` }));
+    }
     const left = unfinished(p);
     if (left.length) {
       cards.push(el("div", { class: "vid left" }, el("div", {},
@@ -119,7 +184,7 @@ function confirmDelete(dialog, matchId) {
   });
 }
 
-/** 一场比赛一块：标题（英雄图标、比赛 ID、谁、最近什么时候录的）、「再录几段」「删除记录」、视频、折叠的录制记录 */
+/** 一场比赛一块：标题（英雄图标、比赛 ID、谁、最近什么时候录的）（点比赛 ID 去比赛页）、「删除记录」、视频、折叠的录制记录 */
 function matchSection(m, nav) {
   const lead = m.players.find((p) => p.is_me) ?? m.players[0];
   const msg = el("span", { class: "muted" });
@@ -138,13 +203,14 @@ function matchSection(m, nav) {
     el("div", { class: "head" },
       heroIcon(lead.hero),
       el("div", {},
-        el("div", { class: "t" }, String(m.match_id)),
+        // 点比赛 ID 去比赛页（2026-11-12 把原来的「详情」按钮并进来了）
+        el("button", { type: "button", class: "t", title: t("videos.moreHint"), onclick: () => nav.openMatch(m.match_id, { from: "videos" }) },
+          String(m.match_id), el("span", { class: "go", "aria-hidden": "true" }, "›")),
         el("div", { class: "who" }, m.players.map(playerLabel).join("、"), " · ", t("videos.lastTime", { time: date(m.last_time) })),
       ),
       el("div", { class: "act" },
         msg,
-        el("button", { type: "button", title: t("videos.moreHint"), onclick: () => nav.openMatch(m.match_id, { from: "videos" }) }, t("videos.more")),
-        el("button", { type: "button", class: "danger-outline", onclick: del }, t("videos.delete.button")),
+        iconButton(TRASH_ICON, { class: "icon-btn danger-icon", title: t("videos.delete.button"), onclick: del }),
       ),
     ),
     videoGrid(m, nav),
