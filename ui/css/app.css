@@ -236,6 +236,13 @@ dialog h2 { margin: 0 0 14px; font-size: 16px; }
 .form input[type="text"] { width: 100%; }
 .form .hint { grid-column: 2; margin-top: -8px; font-size: 12px; color: var(--muted); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+/* 已录视频的播放器：大一点的对话框，视频按比例缩到窗口里 */
+dialog.player { width: min(1100px, 92vw); padding: 14px 16px 16px; }
+.player-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.player-head h2 { margin: 0; flex: 1; font: 600 15px var(--num); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-head .close { padding: 2px 10px; font-size: 18px; line-height: 1; }
+dialog.player video { display: block; width: 100%; max-height: calc(100vh - 190px); background: #000; border-radius: 6px; }
+dialog.player .dialog-actions { margin-top: 12px; }
 
 .loading { padding: 40px; text-align: center; color: var(--muted); }
 /* 按钮上的转圈（加 .busy 时显示），比如本地录像的「刷新」 */
@@ -365,8 +372,10 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .rec-match { margin-bottom: 26px; }
 .rec-match .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .rec-match .head .hero-icon { width: 40px; height: 40px; border-radius: 6px; }
-.rec-match .head .t { font: 600 17px var(--num); cursor: pointer; }
-.rec-match .head .t:hover { text-decoration: underline; }
+.rec-match .head .t { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--text); font: 600 17px var(--num); cursor: pointer; }
+.rec-match .head .t .go { color: var(--muted); font-size: 20px; line-height: 1; transition: transform .12s, color .12s; }
+.rec-match .head .t:hover:not(:disabled) { background: none; color: var(--accent); }
+.rec-match .head .t:hover .go { color: var(--accent); transform: translateX(3px); }
 .rec-match .head .who { color: var(--muted); font-size: 13px; }
 .rec-match .head .act { margin-left: auto; display: flex; gap: 8px; }
 .vid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
@@ -382,7 +391,7 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 .vid .meta { padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .vid .meta .tr { font: 600 14px var(--num); white-space: nowrap; }
-.vid .meta .reveal { border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 12.5px; }
+.vid .meta .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .meta .reveal:hover { color: var(--text); background: none; }
 .rec-match details.runs { margin-top: 10px; }
 .rec-match details.runs summary { cursor: pointer; color: var(--muted); font-size: 13px; }
@@ -406,6 +415,6 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 details.rec-log summary { cursor: pointer; color: var(--muted); }
 details.rec-log .log { margin-top: 10px; }
 
-/* 危险操作但不是这一页的主角（每场比赛都有一个"删除记录"）：红字红框，悬停才变实心，免得满屏红块 */
-button.danger-outline { color: var(--danger); border-color: var(--danger); background: transparent; }
-button.danger-outline:hover:not(:disabled) { background: var(--danger); color: #fff; }
+/* 只有图标的按钮。已录视频的「删除记录」：每场比赛都有一个，平时灰色，悬停才变红，免得满屏红色（2026-11-12 从红框文字按钮改成图标） */
+button.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; background: transparent; color: var(--muted); }
+button.icon-btn.danger-icon:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); background: rgba(224, 97, 79, .12); }

@@ -17,7 +17,7 @@ pipeline = { path = "../crates/pipeline" }
 replay = { path = "../crates/replay" }
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 # 录完或出错时弹系统通知
 tauri-plugin-notification = "2"
 # 同时只跑一个：第二次打开时把已有的窗口提到前面
