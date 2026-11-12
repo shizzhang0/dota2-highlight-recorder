@@ -41,9 +41,9 @@ Runs on Windows 10/11 (64-bit).
 3. **Record**: click "Start recording". The app starts Dota, plays the clips back in the game and encodes them with the graphics card while recording.
 4. **See the results**: recorded videos are under "Recorded videos", where you can play them, show them in the folder, or carry on with clips not yet recorded. You get one video per clip, plus an optional compilation.
 
-| Match list | Recorded videos |
+| Local replays | Recorded videos |
 | --- | --- |
-| ![Match list](docs/images/matches-en.jpg) | ![Recorded videos](docs/images/videos-en.jpg) |
+| ![Local replays](docs/images/matches-en.jpg) | ![Recorded videos](docs/images/videos-en.jpg) |
 
 File names look like `9052676196_7_phantom_assassin_31-57_32-13_三杀.mp4`: match ID, player slot, hero, start and end time, and the multi-kill if there is one.
 
