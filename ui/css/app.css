@@ -281,6 +281,22 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .page-head h1 { margin: 0; font: 600 26px var(--num); letter-spacing: .5px; }
 .page-head .meta { color: var(--muted); font-family: var(--num); }
 
+/* 本地录像：标题旁的账号切换（本机玩过 Dota 的账号有两个及以上才有） */
+.acct { position: relative; align-self: center; }
+.acct:empty { display: none; }
+.acct-chip { display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px 3px 3px; border-radius: 999px; font-size: 13px; }
+.acct-chip .caret { color: var(--muted); font-size: 11px; }
+.acct .av { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; flex: none; display: inline-grid; place-items: center; background: var(--panel-2); color: var(--muted); font-size: 11px; }
+.acct-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: 280px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+.acct-menu[hidden] { display: none; }
+.acct-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; background: none; text-align: left; }
+.acct-menu button:hover:not(:disabled) { background: var(--hover); }
+.acct-menu .av { width: 28px; height: 28px; }
+.acct-menu .who { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.acct-menu .sub { color: var(--muted); font-size: 12px; }
+.acct-menu button.on { background: var(--hover); }
+.acct-menu .note { margin-top: 6px; padding: 8px 8px 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.5; }
+
 /* 英雄图片：大图（16:9 立绘）和小图标；连不上图片服务器时显示文字 */
 .hero-pic { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: var(--panel-2); }
 .hero-icon { width: 28px; height: 28px; border-radius: 4px; background: var(--bg); flex: none; }

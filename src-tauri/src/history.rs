@@ -20,6 +20,7 @@ pub struct Run {
     /// 英雄内部名（不带前缀）
     pub hero: String,
     pub player_name: String,
+    /// 录的是不是"我"（`account::me`）。已录视频页 2026-11-15 起不再显示，照样记着
     pub is_me: bool,
     /// 这次选了要录的片段
     pub clips: Vec<RunClip>,
@@ -104,7 +105,6 @@ pub struct PlayerRecord {
     player: usize,
     hero: String,
     player_name: String,
-    is_me: bool,
     /// 按开始时间排序
     clips: Vec<ClipRecord>,
     /// 最近一次拼的合集
@@ -164,7 +164,6 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
                     player: run.player,
                     hero: run.hero.clone(),
                     player_name: run.player_name.clone(),
-                    is_me: run.is_me,
                     clips: Vec::new(),
                     compilation: None,
                 });
@@ -199,8 +198,7 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
     for p in &mut players {
         p.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     }
-    // 我在前，其余按玩家序号
-    players.sort_by_key(|p| (!p.is_me, p.player));
+    // 按第一次录的先后（不再把"我"排前面：已录视频页不分你我，2026-11-15 用户定）
     MatchRecord {
         match_id,
         last_time: runs.iter().map(|r| r.time).max().unwrap_or(0),

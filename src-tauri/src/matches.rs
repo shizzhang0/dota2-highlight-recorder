@@ -36,7 +36,7 @@ pub struct ReplayRow {
     start_time: Option<u64>,
     /// 录像时长（秒）；读不了时为 null
     duration: Option<f32>,
-    /// 我（Steam 当前账号）在这场玩的英雄，不在这场为 null
+    /// 我（`account::me`，默认是 Steam 当前账号）在这场玩的英雄，不在这场为 null
     my_hero: Option<String>,
     my_won: Option<bool>,
     /// 我在这场的终场击杀 / 死亡 / 助攻；不在这场或读不到计分板时为 null
@@ -64,7 +64,7 @@ fn scoreboard(path: &std::path::Path, match_id: u64, modified: u64) -> Option<Bo
 #[tauri::command(async)]
 pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
     let dir = replays_dir()?;
-    let me = game::steam::me();
+    let me = crate::account::me();
     let files = replay::list(&dir).map_err(|e| format!("{e:#}"))?;
     Ok(files
         .into_iter()
@@ -265,7 +265,7 @@ pub struct MatchInfo {
 #[tauri::command]
 pub async fn open_match(match_id: u64) -> Result<MatchInfo, String> {
     let r = parsed(match_id).await?;
-    let me = game::steam::me();
+    let me = crate::account::me();
     let board = replay::scoreboard(replays_dir()?.join(format!("{match_id}.dem"))).ok();
     let players: Vec<PlayerRow> = r
         .players

@@ -14,6 +14,8 @@ export const reveal = (path) => invoke("reveal", { path });
 export const videoThumb = (path) => invoke("video_thumb", { path });
 export const openFile = (path) => invoke("open_file", { path });
 export const allowVideo = (path) => invoke("allow_video", { path });
+export const accounts = () => invoke("accounts");
+export const setAccount = (id) => invoke("set_account", { id });
 export const recordedMatches = () => invoke("recorded_matches");
 export const deleteMatchRecord = (matchId, deleteFiles) => invoke("delete_match_record", { matchId, deleteFiles });
 export const startRecording = (matchId, player, clips, camera, lang) => invoke("start_recording", { matchId, player, clips, camera, lang });
