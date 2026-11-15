@@ -5,7 +5,6 @@ import * as api from "./api.js";
 import { t } from "./i18n.js";
 import { clock, date, el, heroIcon, heroName } from "./format.js";
 
-const playerLabel = (p) => `${heroName(p.hero)}${p.is_me ? t("match.me") : ""}`;
 const unfinished = (p) => p.clips.filter((c) => !c.file);
 
 // 缩略图一张一张取：第一次要 ffmpeg 现取一帧，同时开十几个 ffmpeg 会卡；取过的有缓存，很快
@@ -178,7 +177,8 @@ function confirmDelete(dialog, matchId) {
 /** 一场比赛一块：标题（英雄图标、比赛 ID、谁、最近什么时候录的）（点比赛 ID 去比赛页）、「删除记录」、视频。
  *  每次录制的明细（2026-11-12 前在下面折叠显示）用户用不上，去掉了；后台照样记 */
 function matchSection(m, nav) {
-  const lead = m.players.find((p) => p.is_me) ?? m.players[0];
+  // 不分你我（2026-11-15 用户定）：大头像用第一个录的玩家
+  const lead = m.players[0];
   const msg = el("span", { class: "muted" });
   const del = async () => {
     const answer = await confirmDelete(nav.dialog, m.match_id);
@@ -198,7 +198,7 @@ function matchSection(m, nav) {
         // 点比赛 ID 去比赛页（2026-11-12 把原来的「详情」按钮并进来了）
         el("button", { type: "button", class: "t", title: t("videos.moreHint"), onclick: () => nav.openMatch(m.match_id, { from: "videos" }) },
           String(m.match_id), el("span", { class: "go", "aria-hidden": "true" }, "›")),
-        el("div", { class: "who" }, m.players.map(playerLabel).join("、"), " · ", t("videos.lastTime", { time: date(m.last_time) })),
+        el("div", { class: "who" }, m.players.map((p) => heroName(p.hero)).join("、"), " · ", t("videos.lastTime", { time: date(m.last_time) })),
       ),
       el("div", { class: "act" },
         msg,

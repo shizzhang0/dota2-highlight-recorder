@@ -156,6 +156,8 @@ export async function showHome(view, dialog, { openMatch }) {
 
   // 录像变成卡片（2026-11-11 改版）：大图是你玩的英雄，角上标胜负、已录几段
   const countLine = el("span", { class: "meta" });
+  // 账号切换（2026-11-15 用户定）：本机玩过 Dota 的账号有两个及以上才出现，选了只在这次打开有效（见 src-tauri/src/account.rs）
+  const acctBox = el("div", { class: "acct" });
   const batchBtn = el("button", { type: "button", class: "danger", hidden: true });
   // 全选 / 全不选（2026-11-12 用户要的，批量删除用），放在工具栏最左边：全勾上了就变成「全不选」，和比赛页的片段一样
   const allBtn = el("button", { type: "button", hidden: true });
@@ -170,7 +172,7 @@ export async function showHome(view, dialog, { openMatch }) {
   };
   viewButtons.forEach((b, i) => b.classList.toggle("on", views[i] === viewMode));
   view.replaceChildren(
-    el("div", { class: "page-head" }, el("h1", {}, t("list.title")), countLine),
+    el("div", { class: "page-head" }, el("h1", {}, t("list.title")), acctBox, countLine),
     el("div", { class: "row", style: "margin-bottom:6px" }, idInput, idBtn, cancelBtn, idMsg, openDone),
     bar,
     el("div", { class: "row", style: "margin:16px 0 12px" },
@@ -214,7 +216,8 @@ export async function showHome(view, dialog, { openMatch }) {
     return true;
   }
 
-  refreshBtn.addEventListener("click", async () => {
+  /** 重读列表：列表留在原地变淡，刷新按钮转圈。点「刷新」和切换账号都走这里 */
+  async function refresh() {
     refreshBtn.disabled = true;
     refreshBtn.classList.add("busy");
     tableBox.classList.add("stale");
@@ -224,7 +227,59 @@ export async function showHome(view, dialog, { openMatch }) {
     refreshBtn.classList.remove("busy");
     tableBox.classList.remove("stale");
     if (ok && tableBox.isConnected) renderTable();
-  });
+  }
+  refreshBtn.addEventListener("click", refresh);
+
+  /** 标题旁的账号下拉：头像、昵称（读不到就是账号 ID）；展开后列出本机玩过 Dota 的账号 */
+  async function loadAccounts() {
+    const info = await api.accounts().catch(() => null);
+    if (!info || info.accounts.length < 2) return acctBox.replaceChildren();
+    const cur = info.accounts.find((a) => a.id === info.current) ?? info.accounts[0];
+    const label = (a) => a.name ?? String(a.id);
+    const avatar = (a) => a.avatar
+      ? el("img", { class: "av", src: a.avatar, alt: "" })
+      : el("span", { class: "av", "aria-hidden": "true" }, label(a).slice(0, 1));
+    const sub = (a) => a.steam_active ? t("home.account.active") : a.last_played ? t("home.account.played", { date: date(a.last_played) }) : "";
+    const menu = el("div", { class: "acct-menu", role: "menu", hidden: true },
+      info.accounts.map((a) => el("button", {
+        type: "button", role: "menuitemradio", "aria-checked": String(a.id === cur.id),
+        // 当前账号只是整行浅底色（2026-11-15 用户挑的，红对勾太扎眼，加小白点也多余）
+        class: a.id === cur.id ? "on" : "",
+        onclick: () => pick(a.id, cur.id),
+      },
+        avatar(a),
+        el("span", { class: "who" }, el("span", {}, label(a)), el("span", { class: "sub" }, sub(a))),
+      )),
+      el("div", { class: "note" }, t("home.account.note")),
+    );
+    const chip = el("button", {
+      type: "button", class: "acct-chip", title: t("home.account.switch"), "aria-haspopup": "menu",
+      onclick: (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; },
+    }, avatar(cur), el("span", {}, label(cur)), el("span", { class: "caret", "aria-hidden": "true" }, "▾"));
+    acctBox.replaceChildren(chip, menu);
+  }
+  const closeMenu = () => acctBox.querySelector(".acct-menu")?.setAttribute("hidden", "");
+  const pick = async (id, current) => {
+    closeMenu();
+    if (id === current) return;
+    try {
+      await api.setAccount(id);
+    } catch (e) {
+      return say("error", e.message);
+    }
+    await Promise.all([loadAccounts(), refresh()]);
+  };
+  // 点别处或按 Esc 收起；离开这页后自己摘掉
+  const onDoc = (e) => {
+    if (!acctBox.isConnected) {
+      document.removeEventListener("click", onDoc);
+      document.removeEventListener("keydown", onDoc);
+      return;
+    }
+    if (e.type === "click" ? !acctBox.contains(e.target) : e.key === "Escape") closeMenu();
+  };
+  document.addEventListener("click", onDoc);
+  document.addEventListener("keydown", onDoc);
 
   /** 删掉这些录像（移到回收站），成功后从列表里去掉 */
   const remove = async (ids) => {
@@ -310,5 +365,6 @@ export async function showHome(view, dialog, { openMatch }) {
     tableBox.replaceChildren(grid);
     sync();
   }
+  loadAccounts();
   if (await load()) renderTable();
 }

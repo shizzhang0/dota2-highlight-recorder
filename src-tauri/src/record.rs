@@ -269,7 +269,7 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
             player,
             hero: hero(player),
             player_name: r.players[player].name.clone(),
-            is_me: game::steam::me() == Some(r.players[player].account_id),
+            is_me: crate::account::me() == Some(r.players[player].account_id),
             clips: selected
                 .iter()
                 .map(|s| crate::history::RunClip {

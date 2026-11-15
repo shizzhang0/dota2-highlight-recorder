@@ -3,6 +3,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod account;
 mod history;
 mod matches;
 mod record;
@@ -40,6 +41,8 @@ fn main() {
             record::is_recording,
             record::quit_game,
             record::game_open,
+            account::accounts,
+            account::set_account,
             history::recorded_matches,
             history::delete_match_record,
             history::open_file,

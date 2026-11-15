@@ -30,16 +30,44 @@ fn mtime(p: &Path) -> Option<SystemTime> {
 /// 最近玩过 Dota 的账号：`user_convars.vcfg` 最近被写过的那个（Dota 每次退出都会写它）。
 /// Steam 没开时用它兜底认"自己"
 pub fn recent_account() -> Option<u32> {
-    let users = steam_dir().ok()?.join("userdata");
-    fs::read_dir(users)
-        .ok()?
+    dota_accounts().into_iter().filter_map(|(id, t)| Some((t?, id))).max().map(|(_, id)| id)
+}
+
+/// 在这台电脑上玩过 Dota 的账号（有 `userdata\<id>\570` 目录），带最近一次退出 Dota 的时间
+/// （`user_convars.vcfg` 的修改时间，读不到为 None）。按账号 ID 排
+pub fn dota_accounts() -> Vec<(u32, Option<SystemTime>)> {
+    let Ok(dir) = steam_dir().map(|d| d.join("userdata")) else { return Vec::new() };
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let mut out: Vec<_> = entries
         .filter_map(|e| e.ok())
         .filter_map(|e| {
             let id: u32 = e.file_name().to_str()?.parse().ok()?;
-            Some((mtime(&e.path().join(r"570\remote\user_convars.vcfg"))?, id))
+            let dota = e.path().join("570");
+            (id != 0 && dota.is_dir()).then(|| (id, mtime(&dota.join(r"remote\user_convars.vcfg"))))
         })
-        .max_by_key(|(t, _)| *t)
-        .map(|(_, id)| id)
+        .collect();
+    out.sort_by_key(|(id, _)| *id);
+    out
+}
+
+const STEAM_ID64_BASE: u64 = 76561197960265728;
+
+/// 账号的 Steam 昵称：先看这个账号自己的 `localconfig.vdf`，再看 Steam 登录界面记住的 `loginusers.vdf`。都没有为 None
+pub fn persona_name(account: u32) -> Option<String> {
+    let steam = steam_dir().ok()?;
+    let local = steam.join("userdata").join(account.to_string()).join(r"config\localconfig.vdf");
+    let from_local = fs::read_to_string(local).ok().and_then(|t| kv_path(&t, &["friends", "PersonaName"]));
+    let name = from_local.or_else(|| {
+        let text = fs::read_to_string(steam.join(r"config\loginusers.vdf")).ok()?;
+        kv_path(&text, &[&(STEAM_ID64_BASE + account as u64).to_string(), "PersonaName"])
+    })?;
+    (!name.trim().is_empty()).then_some(name)
+}
+
+/// Steam 缓存在本机的账号头像（`config\avatarcache\<SteamID64>.png`），没有为 None
+pub fn avatar_path(account: u32) -> Option<PathBuf> {
+    let p = steam_dir().ok()?.join("config").join("avatarcache").join(format!("{}.png", STEAM_ID64_BASE + account as u64));
+    p.is_file().then_some(p)
 }
 
 /// "自己"：优先取 Steam 当前登录的账号，没有就取最近玩过 Dota 的账号
