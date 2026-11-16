@@ -347,6 +347,10 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 
 /* 子页面左上角的返回：从哪进来回哪 */
 button.back { border: 0; background: none; color: var(--muted); padding: 0; margin-bottom: 10px; }
+/* 比赛页的返回固定在顶部（main 滚动时一直在），底色和页面一样，下面的内容从它下面滚过去 */
+/* 吸顶的参照是 main 的内容框（去掉 22px 内边距），所以 top 也要 -22px 才能从最顶上盖住，不然上面会露出一条内容 */
+.back-bar { position: sticky; top: -22px; z-index: 5; margin: -22px 0 12px; padding: 22px 0 10px; background: var(--bg); box-shadow: 0 8px 10px -10px rgba(0, 0, 0, .8); }
+.back-bar button.back { margin-bottom: 0; }
 button.back:hover:not(:disabled) { background: none; color: var(--text); }
 
 /* 比赛页：十个英雄 */
@@ -410,6 +414,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .scene.aegis { border-color: #6b4a1c; color: #e5b267; }
 /* 比赛页底部：拼成集锦 */
 .footer-bar .compile { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+/* 上面的 display 会盖过 hidden，选不到 2 段时要真的藏起来 */
+.footer-bar .compile[hidden] { display: none; }
 .footer-bar .compile input { margin: 0; accent-color: var(--accent); }
 .footer-bar .compile .name { color: #f0c35a; }
 

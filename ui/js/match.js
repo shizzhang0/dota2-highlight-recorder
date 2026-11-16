@@ -291,8 +291,22 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
   }
 
   const result = info.radiant_won == null ? "" : el("span", { class: info.radiant_won ? "win" : "lose" }, t(info.radiant_won ? "match.radiantWon" : "match.direWon"));
+  // 返回固定在顶部，翻到下面也能点；鼠标侧键的"后退"也返回（2026-11-16 用户：不要滚回顶上再点）
+  const backBar = el("div", { class: "back-bar" }, el("button", { type: "button", class: "back", onclick: back }, backLabel));
+  const onMouseBack = (e) => {
+    if (!backBar.isConnected) {
+      document.removeEventListener("mouseup", onMouseBack);
+      return;
+    }
+    if (e.button === 3) {
+      e.preventDefault();
+      document.removeEventListener("mouseup", onMouseBack);
+      back();
+    }
+  };
+  document.addEventListener("mouseup", onMouseBack);
   view.replaceChildren(
-    el("button", { type: "button", class: "back", onclick: back }, backLabel),
+    backBar,
     el("div", { class: "page-head" },
       el("h1", {}, t("match.title", { id: info.match_id })),
       el("span", { class: "meta" }, clock(info.duration), " · ", result, result ? " · " : "", t("match.build", { build: info.game_build })),
