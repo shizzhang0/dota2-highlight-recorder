@@ -256,5 +256,9 @@
   "mode.21": "1v1中路单挑",
   "mode.22": "全英雄选择",
   "mode.23": "加速模式",
-  "mode.24": "突变"
+  "mode.24": "突变",
+  "award.mvp": "MVP",
+  "award.mvp.title": "赛后评选 MVP",
+  "award.honorable": "提名",
+  "award.honorable.title": "赛后评选荣誉提名"
 }

@@ -43,6 +43,8 @@ pub struct ReplayRow {
     my_won: Option<bool>,
     /// 我在这场的终场击杀 / 死亡 / 助攻；不在这场或读不到计分板时为 null
     my_score: Option<replay::FinalScore>,
+    /// 我在赛后评选里拿了什么："mvp" / "honorable"（荣誉提名）；都没有或读不到为 null
+    my_award: Option<&'static str>,
     error: Option<String>,
 }
 
@@ -60,6 +62,22 @@ fn scoreboard(path: &std::path::Path, match_id: u64, modified: u64) -> Option<Bo
     cache.retain(|((id, _), _)| *id != match_id);
     cache.push((key, s.clone()));
     Some(s)
+}
+
+/// 赛后评选（MVP 在前，再是荣誉提名，按玩家序号），和计分板一样按（比赛 ID, 录像修改时间）缓存：要从头读一遍，一场约 50ms
+type Awards = Vec<usize>;
+static AWARDS: Mutex<Vec<((u64, u64), Awards)>> = Mutex::new(Vec::new());
+
+fn awards(path: &std::path::Path, match_id: u64, modified: u64) -> Option<Awards> {
+    let key = (match_id, modified);
+    if let Some((_, a)) = AWARDS.lock().unwrap().iter().find(|(k, _)| *k == key) {
+        return Some(a.clone());
+    }
+    let a = replay::awards(path).ok()?;
+    let mut cache = AWARDS.lock().unwrap();
+    cache.retain(|((id, _), _)| *id != match_id);
+    cache.push((key, a.clone()));
+    Some(a)
 }
 
 // 要读每场的计分板，放到后台线程跑，别卡住界面
@@ -83,6 +101,7 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
                 my_hero: None,
                 my_won: None,
                 my_score: None,
+                my_award: None,
                 error: None,
             };
             match replay::peek(&f.path) {
@@ -94,6 +113,10 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
                         row.my_hero = Some(hero(&p.hero));
                         row.my_won = Some(p.team == s.winner);
                         row.my_score = scoreboard(&f.path, f.match_id, modified).and_then(|b| b.get(p.player_id).copied());
+                        row.my_award = awards(&f.path, f.match_id, modified).and_then(|a| match a.iter().position(|&i| i == p.player_id)? {
+                            0 => Some("mvp"),
+                            _ => Some("honorable"),
+                        });
                     }
                 }
                 Err(e) => row.error = Some(format!("{e:#}")),

@@ -84,3 +84,18 @@ export function modeTag(mode) {
   const color = mode === 23 ? " turbo" : mode === 22 || mode === 1 ? " all-pick" : "";
   return name && el("span", { class: `mode${color}` }, name);
 }
+
+// 赛后评选的图标：MVP 皇冠，荣誉提名星星（2026-11-16 用户选的「图标加文字、不要底色」）
+const AWARD_ICONS = {
+  mvp: '<svg viewBox="0 0 24 22" width="14" height="13" fill="currentColor" aria-hidden="true"><path d="M2 6l5 5 5-9 5 9 5-5-2 14H4z"/></svg>',
+  honorable: '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M12 2l3 7 7 .6-5.3 4.6L18.4 22 12 18l-6.4 4 1.7-7.8L2 9.6 9 9z"/></svg>',
+};
+
+/** 赛后评选标签："mvp" / "honorable"，其他（没拿到）为 null */
+export function awardTag(award) {
+  if (!AWARD_ICONS[award]) return null;
+  const tag = el("span", { class: `award ${award}`, title: t(`award.${award}.title`) });
+  tag.innerHTML = AWARD_ICONS[award];
+  tag.append(t(`award.${award}`));
+  return tag;
+}
