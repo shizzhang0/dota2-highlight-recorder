@@ -317,7 +317,7 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
       el("div", { class: "clips-head" }, el("h2", {}, t("match.clips")), el("span", { class: "muted", style: "font-size:13px" }, t("match.clipsHint")), el("div", { class: "spacer" }), allBtn),
       chipsBox, preselectNote, clipsBox,
       el("details", { class: "rules", style: "margin-top:16px" }, el("summary", {}, t("rules.title")), rulesBox)),
-    el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }), compileLabel, camera, recordBtn),
+    el("div", { class: "footer-dock" }, el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }), compileLabel, camera, recordBtn)),
   );
   renderPlayers();
   renderRules();
