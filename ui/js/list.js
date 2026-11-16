@@ -2,7 +2,7 @@
 // 不查 OpenDota 的玩家比赛列表：它会落后几个月（2026-10-27 实测），按比赛查才可靠
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, date, el, heroIcon, heroName, heroPic, modeTag } from "./format.js";
+import { awardTag, clock, date, el, heroIcon, heroName, heroPic, modeTag } from "./format.js";
 
 // 卡片还是列表：记在本机浏览器存储里（只是个人习惯，丢了就回到卡片）
 const VIEW_KEY = "d2hr.homeView";
@@ -334,6 +334,7 @@ export async function showHome(view, dialog, { openMatch }) {
           el("span", {}, modeTag(r.game_mode)),
           el("span", { class: "hero" }, heroLine),
           el("span", { class: "num kda", title: kda && t("home.kda") }, kda),
+          el("span", {}, mine ? awardTag(r.my_award) : null),
           el("span", {}, result),
           el("span", { class: "num muted" }, r.duration == null ? "—" : clock(r.duration)),
           el("span", { class: "num muted" }, r.start_time ? date(r.start_time) : ""),
@@ -348,7 +349,8 @@ export async function showHome(view, dialog, { openMatch }) {
           el("div", {},
             el("div", { class: "id" }, String(r.match_id), modeTag(r.game_mode)),
             el("div", { class: "hero" }, mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe"),
-              kda ? el("span", { class: "kda", title: t("home.kda") }, kda) : null),
+              kda ? el("span", { class: "kda", title: t("home.kda") }, kda) : null,
+              mine ? awardTag(r.my_award) : null),
           ),
           el("div", { class: "stats" }, r.duration == null ? "—" : clock(r.duration), el("br"), r.start_time ? date(r.start_time) : ""),
         ),

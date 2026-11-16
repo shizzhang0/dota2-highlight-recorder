@@ -256,5 +256,9 @@
   "mode.21": "1v1 Solo Mid",
   "mode.22": "All Pick",
   "mode.23": "Turbo",
-  "mode.24": "Mutation"
+  "mode.24": "Mutation",
+  "award.mvp": "MVP",
+  "award.mvp.title": "Match MVP",
+  "award.honorable": "Mention",
+  "award.honorable.title": "Honorable mention"
 }
