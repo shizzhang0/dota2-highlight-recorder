@@ -36,6 +36,8 @@ pub struct ReplayRow {
     start_time: Option<u64>,
     /// 录像时长（秒）；读不了时为 null
     duration: Option<f32>,
+    /// 游戏模式（DOTA_GameMode，22 = 全英雄选择，23 = 加速模式）；读不了时为 null
+    game_mode: Option<i32>,
     /// 我（`account::me`，默认是 Steam 当前账号）在这场玩的英雄，不在这场为 null
     my_hero: Option<String>,
     my_won: Option<bool>,
@@ -77,6 +79,7 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
                 modified,
                 start_time: None,
                 duration: None,
+                game_mode: None,
                 my_hero: None,
                 my_won: None,
                 my_score: None,
@@ -85,6 +88,7 @@ pub fn list_replays() -> Result<Vec<ReplayRow>, String> {
             match replay::peek(&f.path) {
                 Ok(s) => {
                     row.duration = Some(s.playback_time);
+                    row.game_mode = Some(s.game_mode);
                     row.start_time = (s.end_time > 0).then(|| (s.end_time as u64).saturating_sub(s.playback_time as u64));
                     if let Some(p) = me.and_then(|id| s.players.iter().find(|p| p.account_id == id)) {
                         row.my_hero = Some(hero(&p.hero));

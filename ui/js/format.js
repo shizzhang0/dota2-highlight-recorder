@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 /** 秒 → m:ss（号角前为负） */
 export function clock(secs) {
   const sign = secs < 0 ? "-" : "";
@@ -66,4 +68,13 @@ export function el(tag, attrs = {}, ...children) {
   }
   e.append(...children.flat().filter((c) => c !== null && c !== undefined));
   return e;
+}
+
+/** 游戏模式标签：加速模式琥珀色，全英雄选择蓝色，其他灰色；没有模式或词条里没有这个模式时为 null，不显示 */
+export function modeTag(mode) {
+  if (mode == null) return null;
+  const key = `mode.${mode}`;
+  const name = t(key);
+  const color = mode === 23 ? " turbo" : mode === 22 || mode === 1 ? " all-pick" : "";
+  return name === key ? null : el("span", { class: `mode${color}` }, name);
 }

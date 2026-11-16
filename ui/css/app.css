@@ -323,7 +323,7 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 
 /* 首页的列表看法：一行一场 */
 .match-rows { display: grid; gap: 4px; }
-.match-row { display: grid; grid-template-columns: 20px 28px 130px minmax(0, 1fr) 90px 40px 64px 110px 96px; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+.match-row { display: grid; grid-template-columns: 20px 28px 130px 96px minmax(0, 1fr) 90px 40px 64px 110px 96px; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
 .match-row:hover { border-color: var(--line-hover); }
 .match-row.picked { border-color: var(--accent); }
 .match-row .pick { position: static; opacity: 1; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
@@ -334,6 +334,12 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .match-card .hero-fallback.unknown { font: 600 44px var(--num); }
 .match-card .hero .kda { margin-left: 10px; font-family: var(--num); color: var(--text); }
 .match-row .rec { font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--accent); color: #fff; white-space: nowrap; }
+/* 游戏模式标签：加速模式琥珀色，全英雄选择蓝色，其他灰色（2026-11-16） */
+.mode { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; font: 400 12px/18px "Segoe UI", sans-serif; letter-spacing: 0; padding: 0 7px; border-radius: 3px; border: 1px solid var(--line-hover); color: var(--muted); white-space: nowrap; }
+.mode.turbo { border-color: #6b4a1c; background: #2a2014; color: #e5b267; }
+.mode.all-pick { border-color: #24476b; background: #141f2b; color: #86b6e6; }
+.match-card .id .mode { margin-left: 8px; vertical-align: 2px; }
+.rec-match .head .who .mode { margin-right: 8px; vertical-align: 1px; }
 
 /* 子页面左上角的返回：从哪进来回哪 */
 button.back { border: 0; background: none; color: var(--muted); padding: 0; margin-bottom: 10px; }
