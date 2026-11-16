@@ -195,13 +195,15 @@ function matchSection(m, nav) {
   };
   return el("section", { class: "rec-match" },
     el("div", { class: "head" },
-      heroIcon(lead.hero),
-      el("div", {},
-        // 点比赛 ID 去比赛页（2026-11-12 把原来的「详情」按钮并进来了）
-        el("button", { type: "button", class: "t", title: t("videos.moreHint"), onclick: () => nav.openMatch(m.match_id, { from: "videos" }) },
-          String(m.match_id), el("span", { class: "go", "aria-hidden": "true" }, "›")),
-        // 英雄 · 模式 · 最近录制，模式是纯文字（2026-11-16 用户定，标签放这里显得怪）
-        el("div", { class: "who" }, [m.players.map((p) => heroName(p.hero)).join("、"), modeName(m.game_mode), t("videos.lastTime", { time: date(m.last_time) })].filter(Boolean).join(" · ")),
+      // 点这一整块（头像、比赛 ID、英雄和时间）去比赛页。2026-11-12 把原来的「详情」按钮并进比赛 ID，
+      // 2026-11-16 用户嫌只有比赛 ID 能点、区域太小，扩大到整块；右边的垃圾桶照旧单独点
+      el("button", { type: "button", class: "open", onclick: () => nav.openMatch(m.match_id, { from: "videos" }) },
+        heroIcon(lead.hero),
+        el("span", { class: "text" },
+          el("span", { class: "t" }, String(m.match_id)),
+          // 英雄 · 模式 · 最近录制，模式是纯文字（2026-11-16 用户定，标签放这里显得怪）
+          el("span", { class: "who" }, [m.players.map((p) => heroName(p.hero)).join("、"), modeName(m.game_mode), t("videos.lastTime", { time: date(m.last_time) })].filter(Boolean).join(" · ")),
+        ),
       ),
       el("div", { class: "act" },
         msg,

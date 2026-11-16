@@ -179,8 +179,10 @@ export function showSettings(view, { onSaved }) {
   card.addEventListener("input", sync);
   card.addEventListener("change", sync);
 
-  view.replaceChildren(el("div", { class: "page-head" }, el("h1", {}, t("settings.title"))), card,
-    el("div", { class: "footer-bar settings-bar" }, status, el("div", { class: "spacer" }), revertBtn, saveBtn));
+  // 包一层撑满窗口高度：内容不满一屏时保存栏也在窗口最底下（2026-11-16 用户要和比赛页一样贴底）
+  view.replaceChildren(el("div", { class: "page-fill" },
+    el("div", { class: "page-head" }, el("h1", {}, t("settings.title"))), card,
+    el("div", { class: "footer-dock" }, el("div", { class: "footer-bar settings-bar" }, status, el("div", { class: "spacer" }), revertBtn, saveBtn))));
   setCapture(captureValue);
   return { saved: () => { status.textContent = t("settings.saved"); } };
 }

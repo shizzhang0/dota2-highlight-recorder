@@ -207,10 +207,8 @@ details.rules summary { cursor: pointer; color: var(--muted); }
 .rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px 20px; margin-top: 12px; }
 .rules-grid label { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 
-/* 底部操作栏 */
+/* 底部操作栏，放在底座（.footer-dock）里 */
 .footer-bar {
-  position: sticky;
-  bottom: 0;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -220,6 +218,15 @@ details.rules summary { cursor: pointer; color: var(--muted); }
   border-radius: var(--radius);
   box-shadow: 0 -6px 18px rgba(0, 0, 0, .35);
 }
+/* 底座：吸在窗口最底下，整宽、页面底色，从栏上方 10px 一直铺到窗口底边（盖住 main 底下 22px 的内边距），
+   栏的圆角外面露出的是底座的颜色，滚过去的内容不会从栏的下面、圆角旁边透出来（2026-11-16 用户截图指出有条缝）。
+   吸底的参照是 main 的内容框，所以 bottom 是 -22px；margin-bottom 也 -22px，翻到最底时不多出一截空白 */
+.footer-dock { position: sticky; bottom: -22px; z-index: 5; margin-bottom: -22px; padding: 10px 0 22px; background: var(--bg); }
+/* 内容不满一屏的页面（设置）：main 竖排，内容区占满剩下的高度，底座推到最底下。
+   不用 min-height: 100%（会再加上 main 的上下内边距，多出一截滚动条） */
+main:has(> .page-fill) { display: flex; flex-direction: column; }
+.page-fill { flex: 1 0 auto; display: flex; flex-direction: column; }
+.page-fill > .footer-dock { margin-top: auto; }
 
 /* 设置对话框 */
 dialog {
@@ -423,11 +430,12 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .rec-match { margin-bottom: 26px; }
 .rec-match .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .rec-match .head .hero-icon { width: 40px; height: 40px; border-radius: 6px; }
-.rec-match .head .t { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; color: var(--text); font: 600 17px var(--num); cursor: pointer; }
-.rec-match .head .t .go { color: var(--muted); font-size: 20px; line-height: 1; transition: transform .12s, color .12s; }
-.rec-match .head .t:hover:not(:disabled) { background: none; color: var(--accent); }
-.rec-match .head .t:hover .go { color: var(--accent); transform: translateX(3px); }
-.rec-match .head .who { color: var(--muted); font-size: 13px; }
+/* 头像、比赛 ID、英雄和时间整块是一个按钮，点了去比赛页；悬停时整块微亮（比赛 ID 不变色、不弹提示、不要箭头，用户定） */
+.rec-match .head .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; margin: -6px -8px; padding: 6px 8px; border: 0; border-radius: var(--radius); background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.rec-match .head .open:hover:not(:disabled) { background: var(--hover); }
+.rec-match .head .open .text { display: flex; flex-direction: column; min-width: 0; }
+.rec-match .head .t { color: var(--text); font: 600 17px var(--num); }
+.rec-match .head .who { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-match .head .act { margin-left: auto; display: flex; gap: 8px; }
 .vid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .vid { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
