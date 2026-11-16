@@ -99,3 +99,31 @@ export function awardTag(award) {
   tag.append(t(`award.${award}`));
   return tag;
 }
+
+/** 片段的场景标签（比赛页的片段行、已录视频的缩略图共用）。`c` 有 kind、multi_kill、low_hp、teamwork、aegis_steal，
+ * 比赛页的还有 assists（击杀片段里同一波的有效助攻次数）。2026-11-16 照完美时刻的场景加的 */
+export function sceneTags(c) {
+  return [
+    c.multi_kill >= 2 ? el("span", { class: "multi" }, t(`tag.multi.${Math.min(c.multi_kill, 5)}`)) : null,
+    c.low_hp ? el("span", { class: "scene low-hp" }, t("scene.lowHp")) : null,
+    c.teamwork ? el("span", { class: "scene teamwork" }, t("scene.teamwork")) : null,
+    c.aegis_steal ? el("span", { class: "scene aegis" }, t("scene.aegis")) : null,
+    c.kind === "assist" ? el("span", { class: "scene assist" }, t("scene.assist")) : null,
+  ].filter(Boolean);
+}
+
+/** 集锦叫什么，按选中片段的内容定，和 clips::Collection::of 一致（2026-11-16 用户定）：
+ * 全是抢盾 / 全是残血反杀用它们的名字；否则全是击杀片段叫击杀集锦（三杀、四杀、暴走也算这里），全是助攻叫助攻集锦，混着的叫高光集锦 */
+export function collectionKey(clips) {
+  const all = (f) => clips.length > 0 && clips.every(f);
+  if (all((c) => c.aegis_steal)) return "aegis";
+  if (all((c) => c.low_hp)) return "low_hp";
+  if (all((c) => c.kind === "kill")) return "kills";
+  if (all((c) => c.kind === "assist")) return "assists";
+  return "mixed";
+}
+
+/** 集锦的显示名；`key` 为空（2026-11-16 之前拼的）叫"合集" */
+export function collectionName(key) {
+  return t(key ? `collection.${key}` : "collection.old");
+}

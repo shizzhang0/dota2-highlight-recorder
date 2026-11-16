@@ -122,7 +122,6 @@ export function showSettings(view, { onSaved }) {
   const captures = ["1080p", "native"];
   let captureValue = settings.capture === "native" ? "native" : "1080p";
   const captureButtons = captures.map((v) => el("button", { type: "button", role: "radio", onclick: () => setCapture(v) }, t(`settings.capture.${v}`)));
-  const compile = toggle(settings.compile, t("settings.compile"));
   const quit = toggle(settings.quit_when_done, t("settings.quitAfter"));
   // 1080p 录完一定退出游戏（要把显示设置改回去），"录完退出游戏"只在跟游戏窗口一致时有用
   const quitRow = row(t("settings.quitAfter"), t("settings.quitAfter.hint"), quit);
@@ -135,7 +134,6 @@ export function showSettings(view, { onSaved }) {
   form = () => ({
     out_dir: out.value.trim(),
     capture: captureValue,
-    compile: compile.checked,
     quit_when_done: quit.checked,
     language: lang.value,
   });
@@ -170,7 +168,6 @@ export function showSettings(view, { onSaved }) {
     group(t("settings.group.record"),
       row(t("settings.capture"), t("settings.capture.hint"),
         el("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.capture") }, captureButtons)),
-      row(t("settings.compile"), t("settings.compile.hint"), compile),
       quitRow),
     group(t("settings.group.output"),
       row(t("settings.outDir"), t("settings.outDir.hint"), [out,

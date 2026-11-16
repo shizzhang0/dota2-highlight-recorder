@@ -392,9 +392,19 @@ pub struct ClipRow {
     end: f32,
     /// 成片时长（剪掉的空档不算）
     duration: f32,
+    /// "kill" / "assist" / "aegis"（见 `clips::Kind`）
+    kind: &'static str,
+    /// 击杀片段是他杀的英雄，助攻片段是他助攻的那些
     victims: Vec<String>,
+    /// 击杀片段里同一波的有效助攻次数（"+N 助攻"）
+    assists: usize,
     multi_kill: u32,
     kill_streak: u32,
+    /// 残血反杀、抢盾
+    low_hp: bool,
+    /// 默契时刻（`clips::teamwork`）
+    teamwork: bool,
+    aegis_steal: bool,
     file_name: String,
     estimated_secs: f32,
     /// 输出目录里已经有这个片段的文件（再录会覆盖）
@@ -425,9 +435,17 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
             start: c.start(),
             end: c.end(),
             duration: c.duration(),
-            victims: c.kills.iter().map(|&k| hero(&r.players[r.kills[k].victim].hero)).collect(),
+            kind: c.kind.key(),
+            victims: if c.kind == clips::Kind::Kill { &c.kills } else { &c.assists }
+                .iter()
+                .map(|&k| hero(&r.players[r.kills[k].victim].hero))
+                .collect(),
+            assists: if c.kind == clips::Kind::Kill { c.assists.len() } else { 0 },
             multi_kill: c.multi_kill,
             kill_streak: c.kill_streak,
+            low_hp: c.low_hp,
+            teamwork: c.teamwork,
+            aegis_steal: c.aegis_steal,
             file_name: clips::file_name(&r, c),
             estimated_secs: c.estimated_seconds(&p),
             recorded: out_dir.join(format!("{}.mp4", clips::file_name(&r, c))).is_file(),

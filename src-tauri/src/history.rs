@@ -29,6 +29,9 @@ pub struct Run {
     pub clips: Vec<RunClip>,
     /// 合集文件；没拼合集为 None
     pub compilation: Option<PathBuf>,
+    /// 合集是哪种集锦（`clips::Collection::key`）；2026-11-16 之前的记录没有，界面叫"合集"
+    #[serde(default)]
+    pub compilation_kind: Option<String>,
     /// 停下的原因（文字）；录完或出错为 None
     pub cancelled: Option<String>,
     pub error: Option<String>,
@@ -45,6 +48,15 @@ pub struct RunClip {
     pub end: f32,
     pub victims: Vec<String>,
     pub multi_kill: u32,
+    /// 片段类别和特别场景（`clips::Kind::key`，残血反杀、抢盾）。2026-11-16 之前的记录没有，当成击杀片段
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub low_hp: bool,
+    #[serde(default)]
+    pub teamwork: bool,
+    #[serde(default)]
+    pub aegis_steal: bool,
     /// 录成的文件；没录完为 None
     pub path: Option<PathBuf>,
 }
@@ -99,6 +111,10 @@ pub struct ClipRecord {
     end: f32,
     victims: Vec<String>,
     multi_kill: u32,
+    kind: Option<String>,
+    low_hp: bool,
+    teamwork: bool,
+    aegis_steal: bool,
     /// 最近一次录成的文件；从没录成为 None（"未录完"）
     file: Option<FileRecord>,
 }
@@ -110,8 +126,16 @@ pub struct PlayerRecord {
     player_name: String,
     /// 按开始时间排序
     clips: Vec<ClipRecord>,
-    /// 最近一次拼的合集
-    compilation: Option<FileRecord>,
+    /// 拼过的集锦，最近拼的在前。不同种类文件名不同，各留一个；同一种重拼覆盖同一个文件
+    compilations: Vec<CompilationRecord>,
+}
+
+/// 一个集锦（自动合集）
+#[derive(Serialize)]
+pub struct CompilationRecord {
+    /// `clips::Collection::key`；2026-11-16 之前拼的没有，界面叫"合集"
+    kind: Option<String>,
+    file: FileRecord,
 }
 
 #[derive(Serialize)]
@@ -170,7 +194,7 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
                     hero: run.hero.clone(),
                     player_name: run.player_name.clone(),
                     clips: Vec::new(),
-                    compilation: None,
+                    compilations: Vec::new(),
                 });
                 players.last_mut().unwrap()
             }
@@ -192,12 +216,18 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
                     end: c.end,
                     victims: c.victims.clone(),
                     multi_kill: c.multi_kill,
+                    kind: c.kind.clone(),
+                    low_hp: c.low_hp,
+                    teamwork: c.teamwork,
+                    aegis_steal: c.aegis_steal,
                     file,
                 }),
             }
         }
         if let Some(c) = &run.compilation {
-            p.compilation = Some(FileRecord::new(c));
+            // 同一个文件重拼过：去掉旧的那条，新的放最前面
+            p.compilations.retain(|r| r.file.path != *c);
+            p.compilations.insert(0, CompilationRecord { kind: run.compilation_kind.clone(), file: FileRecord::new(c) });
         }
     }
     for p in &mut players {

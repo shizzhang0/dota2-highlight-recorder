@@ -368,7 +368,11 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .timeline { position: relative; height: 118px; margin: 4px 6px 0; }
 .timeline .track { position: absolute; left: 0; right: 0; top: 60px; height: 4px; background: var(--line); border-radius: 2px; }
 .timeline .seg { position: absolute; top: 52px; height: 20px; min-width: 18px; display: grid; place-items: center; background: var(--accent); border: 1px solid var(--bg); border-radius: 3px; font: 600 11px var(--num); color: #fff; cursor: pointer; }
-.timeline .seg.off { background: var(--panel-2); color: var(--muted); }
+.timeline .seg.assist { background: #3d6fa3; }
+.timeline .seg.aegis { background: #c99a2e; color: #2a1c04; }
+/* 没勾的保留原色、变淡（原来一律变灰，看不出是击杀还是助攻；2026-11-16） */
+.timeline .seg.off { opacity: .35; }
+.timeline .kills .scene-word { align-self: center; margin-right: 3px; font-size: 11px; color: #f0c35a; white-space: nowrap; }
 .timeline .seg.low { top: 74px; }
 .timeline .kills { position: absolute; display: flex; gap: 2px; transform: translateX(-50%); }
 .timeline .kills.a { top: 2px; } .timeline .kills.b { top: 26px; }
@@ -379,16 +383,35 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 
 /* 比赛页：片段列表（两列，一行一个片段） */
 .clip-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
-.clip-row { display: grid; grid-template-columns: 20px 26px 132px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid transparent; cursor: pointer; }
+.clip-row { display: grid; grid-template-columns: 20px 26px 132px auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid transparent; cursor: pointer; }
 .clip-row:hover { border-color: var(--line); }
 .clip-row.off { opacity: .5; }
 .clip-row input { margin: 0; width: 16px; height: 16px; accent-color: var(--accent); }
 .clip-row .no { font: 600 13px var(--num); color: var(--muted); text-align: right; }
 .clip-row .t { font: 600 15px var(--num); white-space: nowrap; }
 .clip-row .t small { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 6px; }
-.clip-row .end { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 12.5px; }
+.clip-row .end { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 8px; white-space: nowrap; font-size: 12.5px; }
 .clips-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .clips-head h2 { margin: 0; }
+/* 快速勾选（2026-11-16）：点了勾上这一类的全部片段 */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 12px; }
+.chips:empty { display: none; }
+.chip { border: 1px solid var(--line-hover); border-radius: 99px; padding: 3px 11px; font-size: 12.5px; background: transparent; color: var(--text); cursor: pointer; }
+.chip b { font-weight: 400; color: var(--muted); margin-left: 5px; font-family: var(--num); }
+.chip:hover { background: var(--hover); }
+/* 左边片段类别、右边高光时刻，中间一条竖线 */
+.chip-sep { width: 1px; height: 18px; background: var(--line-hover); margin: 0 6px; align-self: center; }
+.chip.on { border-color: var(--accent); background: var(--tag); }
+.chip.on b { color: var(--tag-text); }
+/* 片段的场景标签：残血反杀红框、默契蓝框、抢盾金框、助攻灰框 */
+.scene { display: inline-block; font-size: 12px; line-height: 18px; padding: 0 7px; border-radius: 3px; border: 1px solid var(--line-hover); color: var(--muted); white-space: nowrap; }
+.scene.low-hp { border-color: #7a2b22; color: #f08a7a; }
+.scene.teamwork { border-color: #24476b; color: #86b6e6; }
+.scene.aegis { border-color: #6b4a1c; color: #e5b267; }
+/* 比赛页底部：拼成集锦 */
+.footer-bar .compile { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.footer-bar .compile input { margin: 0; accent-color: var(--accent); }
+.footer-bar .compile .name { color: #f0c35a; }
 
 /* 已录视频：按比赛分组的缩略图 */
 .rec-match { margin-bottom: 26px; }
@@ -409,7 +432,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid:hover .th .play { opacity: 1; }
 .vid .th .play span { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 16px; }
 .vid .th .len { position: absolute; bottom: 6px; right: 6px; background: rgba(0, 0, 0, .7); font: 12px var(--num); padding: 0 6px; border-radius: 3px; }
-.vid .th .multi { position: absolute; top: 6px; left: 6px; }
+.vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
+.vid .th .tags .scene { background: rgba(0, 0, 0, .65); }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 .vid .meta { padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .vid .meta .tr { font: 600 14px var(--num); white-space: nowrap; }

@@ -68,7 +68,7 @@ export function recordingMatch() {
 
 /** 开始录制：`clips` 是要录的片段（plan 返回的行），`camera` 是比赛页上选的镜头。
  * 录制结束调 `onFinished(结果)`；没能开始调 `onFailed(原因)` */
-export async function startRecording(dialog, { matchId, player, hero, clips, camera, onFinished, onFailed }) {
+export async function startRecording(dialog, { matchId, player, hero, clips, camera, compile, onFinished, onFailed }) {
   rec = { matchId, hero, clips, current: null, done: new Set(), started: null, step: t("rec.starting"), bar: null, frames: null, log: [], stopping: false };
   const update = () => page?.();
   const unlisten = await Promise.all([
@@ -104,7 +104,7 @@ export async function startRecording(dialog, { matchId, player, hero, clips, cam
   ]);
 
   try {
-    await api.startRecording(matchId, player, clips.map((c) => c.index), camera, resolve(settings.language));
+    await api.startRecording(matchId, player, clips.map((c) => c.index), camera, compile, resolve(settings.language));
   } catch (e) {
     unlisten.forEach((u) => u());
     rec = null;

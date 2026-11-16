@@ -1,4 +1,5 @@
-//! 读取 Dota 2 录像（.dem）：本场玩家、英雄，英雄击杀、多杀、连杀的时间点，以及英雄之间的伤害记录。
+//! 读取 Dota 2 录像（.dem）：本场玩家、英雄，英雄击杀、多杀、连杀的时间点，英雄之间的伤害和控制记录，
+//! 英雄的最大血量，以及抢盾、击杀肉山的时间。
 
 pub mod download;
 mod local;
@@ -13,7 +14,7 @@ use std::path::Path;
 use anyhow::{Context as _, Result, anyhow, bail};
 use serde::Serialize;
 use source2_demo::prelude::*;
-use source2_demo::proto::DotaCombatlogTypes;
+use source2_demo::proto::{CDotaUserMsgChatEvent, DotaChatMessage, DotaCombatlogTypes};
 
 /// Steam64 ID 与 32 位账号 ID（OpenDota、比赛记录里用的那个）之间的差值
 const STEAM_ID64_BASE: u64 = 76561197960265728;
@@ -44,6 +45,41 @@ pub struct Replay {
     /// 游戏时钟每走一秒记一个点，用来把时钟换算成 tick（比赛暂停时时钟不走，两者不成线性）
     #[serde(skip)]
     pub clock: Vec<ClockSample>,
+    /// 英雄之间的控制（晕、变羊、缠绕等），按时间排序
+    #[serde(skip)]
+    pub disables: Vec<Disable>,
+    /// 每个玩家英雄的最大血量，跟着 `clock` 大约每秒采一次，按 tick 排序
+    #[serde(skip)]
+    pub max_health: Vec<MaxHealthSample>,
+    /// 击杀肉山的时间（游戏时钟，游戏的聊天播报），按时间排序
+    #[serde(skip)]
+    pub roshan_kills: Vec<f32>,
+    /// 抢盾：游戏播报「夺取了不朽之守护」（对面打的肉山，盾被这边的人拿走）
+    #[serde(skip)]
+    pub aegis_steals: Vec<AegisSteal>,
+}
+
+/// 一次控制：`attacker` 给 `target` 上了带晕眩时长或缠绕的效果（晕、变羊、拉人、缠绕等）
+#[derive(Debug, Clone)]
+pub struct Disable {
+    pub tick: u32,
+    pub game_time: f32,
+    pub attacker: usize,
+    pub target: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct MaxHealthSample {
+    pub tick: u32,
+    /// 按玩家序号；读不到为 0
+    pub max: Vec<i32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AegisSteal {
+    pub tick: u32,
+    pub game_time: f32,
+    pub player: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -53,6 +89,13 @@ pub struct ClockSample {
 }
 
 impl Replay {
+    /// `player` 的英雄在 `tick` 时的最大血量（取之前最近的采样点）；读不到为 None
+    pub fn max_health_at(&self, player: usize, tick: u32) -> Option<i32> {
+        let i = self.max_health.partition_point(|s| s.tick <= tick);
+        let s = self.max_health.get(i.saturating_sub(1))?;
+        s.max.get(player).copied().filter(|&m| m > 0)
+    }
+
     /// 游戏时钟 t 秒（号角为 0）对应的录像 tick，可直接用于 `demo_gototick`。超出录像范围时为 None
     pub fn tick_at(&self, t: f32) -> Option<u32> {
         let i = self.clock.partition_point(|s| s.game_time < t);
@@ -99,6 +142,8 @@ pub struct Damage {
     pub attacker: usize,
     pub target: usize,
     pub value: u32,
+    /// 挨打后受击方剩多少血（战斗日志给的，2026-11-16 和实体上的血量核对过一致）
+    pub target_health: i32,
     /// 是不是靠 damage source 才归到攻击方玩家（召唤物等），统计用
     pub via_source: bool,
 }
@@ -235,10 +280,35 @@ fn parse_with(parser: &mut Parser<'_, source2_demo::reader::SeekableReader<BufRe
                 Some(p) => (p, false),
                 None => (player_of(&d.source)?, true),
             };
-            Some(Damage { tick: d.tick, game_time: clock(d.timestamp), attacker, target, value: d.value, via_source })
+            Some(Damage { tick: d.tick, game_time: clock(d.timestamp), attacker, target, value: d.value, target_health: d.health, via_source })
         })
         .collect();
     damage.sort_by(|a, b| a.game_time.total_cmp(&b.game_time));
+
+    let mut disables: Vec<Disable> = c
+        .disables
+        .into_iter()
+        .filter_map(|d| {
+            let (attacker, target) = (player_of(&d.attacker)?, player_of(&d.target)?);
+            (players[attacker].team != players[target].team).then(|| Disable { tick: d.tick, game_time: clock(d.timestamp), attacker, target })
+        })
+        .collect();
+    disables.sort_by(|a, b| a.game_time.total_cmp(&b.game_time));
+
+    // 聊天播报只有 tick，用时钟采样换成游戏时钟
+    let time_at = |tick: u32| -> f32 {
+        let i = c.clock.partition_point(|s| s.tick <= tick);
+        c.clock.get(i.saturating_sub(1)).map_or(0.0, |s| s.game_time + tick.saturating_sub(s.tick) as f32 / TICKS_PER_SECOND)
+    };
+    let roshan_kills = c.roshan_kills.iter().map(|&t| time_at(t)).collect();
+    let aegis_steals = c
+        .aegis_steals
+        .iter()
+        .filter_map(|&(tick, player)| {
+            let player = usize::try_from(player).ok().filter(|&p| p < players.len())?;
+            Some(AegisSteal { tick, game_time: time_at(tick), player })
+        })
+        .collect();
 
     Ok(Replay {
         match_id: dota.match_id(),
@@ -252,6 +322,10 @@ fn parse_with(parser: &mut Parser<'_, source2_demo::reader::SeekableReader<BufRe
         kill_streaks,
         damage,
         clock: c.clock,
+        disables,
+        max_health: c.max_health,
+        roshan_kills,
+        aegis_steals,
     })
 }
 
@@ -264,6 +338,12 @@ struct Collector {
     score_changes: Vec<ScoreChange>,
     clock: Vec<ClockSample>,
     damage: Vec<RawDamage>,
+    disables: Vec<RawDisable>,
+    max_health: Vec<MaxHealthSample>,
+    /// 击杀肉山播报的 tick
+    roshan_kills: Vec<u32>,
+    /// 抢盾播报：（tick, 玩家序号）
+    aegis_steals: Vec<(u32, i32)>,
 }
 
 struct RawDamage {
@@ -273,6 +353,33 @@ struct RawDamage {
     source: String,
     target: String,
     value: u32,
+    health: i32,
+}
+
+/// 不算"控制"的效果：被动或附带的击晕、击退，不是有意控人（2026-11-16 把 15 场录像里出现过的 48 种控制效果过了一遍，用户定排除被动击晕）
+const PASSIVE_DISABLES: [&str; 5] = [
+    // 碎颅锤、深渊之刃等的被动击晕
+    "modifier_bashed",
+    // 白牛被动"巨力重击"
+    "modifier_spiritbreaker_greater_bash_knockback",
+    // 虚空被动"时间锁定"
+    "modifier_faceless_void_timelock_freeze",
+    // 通用击退（狙击手、黑暗贤者的附带效果）
+    "modifier_knockback",
+    // 小狗"寄生"会被标成缠绕，其实不是控人
+    "modifier_life_stealer_infest",
+];
+
+/// 通用晕眩（`modifier_stunned`）持续不到这么多秒的是微晕，不算控制：宙斯雷击 0.35 秒（15 场里 130 次，
+/// 宙斯参与的团战几乎都成了"默契"）、狙击手大招 0.01 秒、敌法大招 0.3 秒等（2026-11-16）。
+/// 只卡通用晕眩：有专门效果名的真控制在日志里记的时长可能很短（虚空"时间结界"每次只记 0.1 秒），不能按时长卡
+const MINI_STUN: f32 = 0.5;
+
+struct RawDisable {
+    tick: u32,
+    timestamp: f32,
+    attacker: String,
+    target: String,
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -342,6 +449,18 @@ impl Collector {
         let Ok(pr) = ctx.entities().get_by_class_name("CDOTA_PlayerResource") else {
             return Ok(());
         };
+        // 时钟每多一个采样点（约每秒），顺便记一次各英雄的最大血量（算残血百分比用）
+        if self.clock.len() > self.max_health.len() {
+            let max = (0..self.score.len())
+                .map(|i| {
+                    let hero: Option<u32> = try_property!(pr, u32, "m_vecPlayerTeamData.{i:04}.m_hSelectedHero");
+                    hero.and_then(|h| ctx.entities().get_by_handle(h as usize).ok())
+                        .and_then(|e| try_property!(e, i32, "m_iMaxHealth"))
+                        .unwrap_or(0)
+                })
+                .collect();
+            self.max_health.push(MaxHealthSample { tick: ctx.tick(), max });
+        }
         for (i, old) in self.score.iter_mut().enumerate() {
             let now = Score {
                 kills: try_property!(pr, "m_vecPlayerTeamData.{i:04}.m_iKills").unwrap_or(old.kills),
@@ -374,6 +493,25 @@ impl Collector {
                         source: name(cle.damage_source_name()),
                         target: name(cle.target_name()),
                         value: cle.value().unwrap_or_default(),
+                        health: cle.health().unwrap_or_default(),
+                    });
+                }
+                return Ok(());
+            }
+            DotaCombatlogTypes::DotaCombatlogModifierAdd => {
+                // 英雄给敌方英雄真身上的控制：带晕眩时长（晕、变羊、拉人等）或缠绕（2026-11-16 看战斗日志定的口径），
+                // 不算被动、附带的（`PASSIVE_DISABLES`），也不算通用晕眩里的微晕（`MINI_STUN`）
+                let hero_target = cle.is_target_hero().unwrap_or(false) && !cle.is_target_illusion().unwrap_or(false);
+                let inflictor = cle.inflictor_name().unwrap_or_default();
+                let stun = cle.stun_duration().unwrap_or(0.0);
+                let mini = inflictor == "modifier_stunned" && stun < MINI_STUN;
+                let disable = ((stun > 0.0 && !mini) || cle.root_modifier().unwrap_or(false)) && !PASSIVE_DISABLES.contains(&inflictor);
+                if hero_target && disable && cle.is_attacker_hero().unwrap_or(false) {
+                    self.disables.push(RawDisable {
+                        tick: ctx.tick(),
+                        timestamp: cle.timestamp().unwrap_or_default(),
+                        attacker: name(cle.attacker_name()),
+                        target: name(cle.target_name()),
                     });
                 }
                 return Ok(());
@@ -397,6 +535,17 @@ impl Collector {
             _ => return Ok(()),
         };
         self.entries.push(RawEntry { tick: ctx.tick(), timestamp: cle.timestamp().unwrap_or_default(), kind });
+        Ok(())
+    }
+
+    /// 游戏的聊天播报：击杀肉山、抢盾（playerid_1 是抢到盾的人）
+    #[on_message]
+    fn on_chat_event(&mut self, ctx: &Context, msg: CDotaUserMsgChatEvent) -> ObserverResult {
+        match msg.r#type() {
+            DotaChatMessage::ChatMessageRoshanKill => self.roshan_kills.push(ctx.tick()),
+            DotaChatMessage::ChatMessageAegisStolen => self.aegis_steals.push((ctx.tick(), msg.playerid_1())),
+            _ => {}
+        }
         Ok(())
     }
 }
