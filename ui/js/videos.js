@@ -3,7 +3,7 @@
 // 比赛 ID 点了去比赛页，右上角「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, date, el, heroIcon, heroName, modeTag } from "./format.js";
+import { clock, date, el, heroIcon, heroName, modeName } from "./format.js";
 
 const unfinished = (p) => p.clips.filter((c) => !c.file);
 
@@ -198,7 +198,8 @@ function matchSection(m, nav) {
         // 点比赛 ID 去比赛页（2026-11-12 把原来的「详情」按钮并进来了）
         el("button", { type: "button", class: "t", title: t("videos.moreHint"), onclick: () => nav.openMatch(m.match_id, { from: "videos" }) },
           String(m.match_id), el("span", { class: "go", "aria-hidden": "true" }, "›")),
-        el("div", { class: "who" }, modeTag(m.game_mode), m.players.map((p) => heroName(p.hero)).join("、"), " · ", t("videos.lastTime", { time: date(m.last_time) })),
+        // 英雄 · 模式 · 最近录制，模式是纯文字（2026-11-16 用户定，标签放这里显得怪）
+        el("div", { class: "who" }, [m.players.map((p) => heroName(p.hero)).join("、"), modeName(m.game_mode), t("videos.lastTime", { time: date(m.last_time) })].filter(Boolean).join(" · ")),
       ),
       el("div", { class: "act" },
         msg,
