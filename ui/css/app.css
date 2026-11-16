@@ -339,7 +339,6 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .mode.turbo { border-color: #6b4a1c; background: #2a2014; color: #e5b267; }
 .mode.all-pick { border-color: #24476b; background: #141f2b; color: #86b6e6; }
 .match-card .id .mode { margin-left: 8px; vertical-align: 2px; }
-.rec-match .head .who .mode { margin-right: 8px; vertical-align: 1px; }
 
 /* 子页面左上角的返回：从哪进来回哪 */
 button.back { border: 0; background: none; color: var(--muted); padding: 0; margin-bottom: 10px; }

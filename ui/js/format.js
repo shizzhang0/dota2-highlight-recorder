@@ -70,11 +70,17 @@ export function el(tag, attrs = {}, ...children) {
   return e;
 }
 
-/** 游戏模式标签：加速模式琥珀色，全英雄选择蓝色，其他灰色；没有模式或词条里没有这个模式时为 null，不显示 */
-export function modeTag(mode) {
+/** 游戏模式名；没有模式或词条里没有这个模式（教程等）时为 null，不显示 */
+export function modeName(mode) {
   if (mode == null) return null;
   const key = `mode.${mode}`;
   const name = t(key);
+  return name === key ? null : name;
+}
+
+/** 游戏模式标签（本地录像）：加速模式琥珀色，全英雄选择蓝色，其他灰色 */
+export function modeTag(mode) {
+  const name = modeName(mode);
   const color = mode === 23 ? " turbo" : mode === 22 || mode === 1 ? " all-pick" : "";
-  return name === key ? null : el("span", { class: `mode${color}` }, name);
+  return name && el("span", { class: `mode${color}` }, name);
 }
