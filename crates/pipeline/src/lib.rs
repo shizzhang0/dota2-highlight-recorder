@@ -524,7 +524,9 @@ fn record_all(
 
     if o.compile && outputs.len() > 1 {
         let hero = r.players[player].hero.trim_start_matches("npc_dota_hero_");
-        let dest = o.out.join(format!("{}_{player}_{hero}_合集.mp4", r.match_id));
+        // 按选中片段的内容起名（击杀集锦、助攻集锦……），不同种类各留一个文件；原来都叫"合集"
+        let label = clips::Collection::of(selected.iter().map(|s| &s.clip)).file_label();
+        let dest = o.out.join(format!("{}_{player}_{hero}_{label}.mp4", r.match_id));
         ff.concat(&outputs, &dest)?;
         host.event(Event::CompilationDone { path: dest.clone(), secs: media::mp4_duration(&dest)? });
         done.files.push(dest);

@@ -3,7 +3,7 @@
 // 比赛 ID 点了去比赛页，右上角「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, date, el, heroIcon, heroName, modeName } from "./format.js";
+import { clock, collectionName, date, el, heroIcon, heroName, modeName, sceneTags } from "./format.js";
 
 const unfinished = (p) => p.clips.filter((c) => !c.file);
 
@@ -91,14 +91,14 @@ function iconButton(svg, { title, ...attrs }) {
 }
 const revealButton = (path) => iconButton(FOLDER_ICON, { class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(path) });
 
-/** 一个视频：缩略图（点了在应用里播放）、时长、多杀，下面是时间和被杀英雄。`title` 是播放器上方的标题 */
-function videoCard(file, { range, secs, victims = [], multi = 0, label, title }) {
+/** 一个视频：缩略图（点了在应用里播放）、时长、场景标签（多杀、残血反杀……），下面是时间和被杀英雄。`title` 是播放器上方的标题 */
+function videoCard(file, { range, secs, victims = [], clip, label, title }) {
   const img = el("img", { alt: "" });
   const th = el("div", { class: "th", title: file.path },
     img,
     file.exists ? el("div", { class: "play" }, el("span", {}, "▶")) : el("div", { class: "gone" }, t("videos.missingShort")),
     secs ? el("span", { class: "len" }, `${Math.round(secs)}s`) : null,
-    multi >= 2 ? el("span", { class: "multi" }, t(`tag.multi.${Math.min(multi, 5)}`)) : null,
+    clip ? el("div", { class: "tags" }, sceneTags(clip)) : null,
   );
   if (file.exists) {
     loadThumb(img, file.path);
@@ -118,11 +118,13 @@ function videoGrid(m, { openMatch }) {
   for (const p of m.players) {
     for (const c of p.clips) {
       const range = `${clock(c.start)}–${clock(c.end)}`;
-      if (c.file) cards.push(videoCard(c.file, { range, secs: c.end - c.start, victims: c.victims, multi: c.multi_kill, title: `${m.match_id} · ${heroName(p.hero)} · ${range}` }));
+      // 2026-11-16 之前的记录没有类别，当成击杀片段
+      if (c.file) cards.push(videoCard(c.file, { range, secs: c.end - c.start, victims: c.victims, clip: { ...c, kind: c.kind ?? "kill" }, title: `${m.match_id} · ${heroName(p.hero)} · ${range}` }));
     }
-    if (p.compilation) {
-      const label = t("videos.compilationOf", { hero: heroName(p.hero) });
-      cards.push(videoCard(p.compilation, { label, title: `${m.match_id} · ${label}` }));
+    // 集锦（击杀集锦），最近拼的在前；以前拼的叫"合集"，文件名不同，可能还在
+    for (const comp of p.compilations) {
+      const label = t("videos.compilationOf", { hero: heroName(p.hero), name: collectionName(comp.kind) });
+      cards.push(videoCard(comp.file, { label, title: `${m.match_id} · ${label}` }));
     }
     const left = unfinished(p);
     if (left.length) {
@@ -225,6 +227,6 @@ export async function showVideos(view, nav) {
     return;
   }
   if (nav.latest) list = [...list.filter((m) => m.match_id === nav.latest.match_id), ...list.filter((m) => m.match_id !== nav.latest.match_id)];
-  const videos = list.reduce((a, m) => a + m.players.reduce((b, p) => b + p.clips.filter((c) => c.file).length + (p.compilation ? 1 : 0), 0), 0);
+  const videos = list.reduce((a, m) => a + m.players.reduce((b, p) => b + p.clips.filter((c) => c.file).length + p.compilations.length, 0), 0);
   view.replaceChildren(banner, head(t("videos.count", { matches: list.length, videos })), ...list.map((m) => matchSection(m, nav)));
 }

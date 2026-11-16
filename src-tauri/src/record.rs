@@ -187,10 +187,18 @@ fn options(s: &Settings) -> Options {
     }
 }
 
-/// 开始录制 `clips`（计划里的序号）。`camera` 是比赛页上选的镜头（存进设置，下次默认用它），`lang` 是界面语言（通知用）。
-/// 其他设置读当前保存的
+/// 开始录制 `clips`（计划里的序号）。`camera` 是比赛页上选的镜头、`compile` 是比赛页上"拼成集锦"勾没勾
+/// （都存进设置，下次默认用它），`lang` 是界面语言（通知用）。其他设置读当前保存的
 #[tauri::command]
-pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips: Vec<usize>, camera: String, lang: String) -> Result<(), String> {
+pub async fn start_recording(
+    app: AppHandle,
+    match_id: u64,
+    player: usize,
+    clips: Vec<usize>,
+    camera: String,
+    compile: bool,
+    lang: String,
+) -> Result<(), String> {
     if clips.is_empty() {
         return Err("没有选片段".into());
     }
@@ -199,8 +207,9 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
     }
     let prepared = async {
         let mut settings = crate::settings::get_settings();
-        if settings.camera != camera {
+        if settings.camera != camera || settings.compile != compile {
             settings.camera = camera;
+            settings.compile = compile;
             crate::settings::save_settings(settings.clone())?;
         }
         let o = options(&settings);
@@ -278,12 +287,23 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
                     file_name: clips::file_name(&r, &s.clip),
                     start: s.clip.start(),
                     end: s.clip.end(),
-                    victims: s.clip.kills.iter().map(|&k| hero(r.kills[k].victim)).collect(),
+                    victims: if s.clip.kind == clips::Kind::Kill { &s.clip.kills } else { &s.clip.assists }
+                        .iter()
+                        .map(|&k| hero(r.kills[k].victim))
+                        .collect(),
                     multi_kill: s.clip.multi_kill,
+                    kind: Some(s.clip.kind.key().to_owned()),
+                    low_hp: s.clip.low_hp,
+                    teamwork: s.clip.teamwork,
+                    aegis_steal: s.clip.aegis_steal,
                     path: done.get(&s.index).map(|p| (*p).clone()),
                 })
                 .collect(),
             compilation: report.files.get(report.completed.len()).cloned(),
+            compilation_kind: report
+                .files
+                .get(report.completed.len())
+                .map(|_| clips::Collection::of(selected.iter().map(|s| &s.clip)).key().to_owned()),
             cancelled: report.cancelled.map(|c| c.describe().to_owned()),
             error: report.error.as_ref().map(|e| format!("{e:#}")),
             elapsed_secs: report.elapsed.as_secs_f32(),

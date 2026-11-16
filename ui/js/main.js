@@ -78,7 +78,7 @@ function setRecording(on) {
 
 /** 比赛页点了开始录制（`clips` 是 plan 返回的片段行）：确认后进入进度页。
  * 录完时还在进度页就回到"已录视频"（顶上显示结果）；在别的页面就不打扰（系统通知会提示），正看着"已录视频"就刷新一下 */
-async function record({ matchId, player, hero, clips, camera, secs, minutes, overwrite }) {
+async function record({ matchId, player, hero, clips, camera, compile, secs, minutes, overwrite }) {
   const busy = recordingMatch();
   if (busy !== null) {
     if (await confirmBusy(confirmDialog, busy)) go({ name: "recording" });
@@ -92,6 +92,7 @@ async function record({ matchId, player, hero, clips, camera, secs, minutes, ove
     hero,
     clips,
     camera,
+    compile,
     onFinished: (f) => {
       setRecording(false);
       if (current.name === "recording") {

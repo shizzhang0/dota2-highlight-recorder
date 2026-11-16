@@ -2,7 +2,7 @@
 // 2026-11-11 改版：英雄用大图，片段用小图标排开，多杀就多几个（docs/app-interaction.md 第 6 节）
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, el, heroIcon, heroName, heroPic, length } from "./format.js";
+import { clock, collectionKey, collectionName, el, heroIcon, heroName, heroPic, length, sceneTags } from "./format.js";
 import { settings, persist } from "./state.js";
 
 /** `player` / `preselect`（片段文件名）从"已录视频"的"继续录未完成的"带过来：选好玩家、勾上这些片段 */
@@ -31,6 +31,16 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
   const allBtn = el("button", { type: "button" });
   const summary = el("span", { class: "muted mono" });
   const recordBtn = el("button", { type: "button", class: "primary" }, t("match.record"));
+  // 快速勾选：一类一个按钮，点了勾上这一类的全部片段（都勾着时再点就取消）。数量为 0 的不显示
+  const chipsBox = el("div", { class: "chips" });
+  // 拼成集锦：选了 2 段以上才出现，后面是按内容起的名字；记住上次的选择（开始录制时存进设置）
+  // 原来是设置页的"拼成合集"开关，2026-11-16 挪到这里（用户：和集锦重复）
+  let compileValue = settings.compile !== false;
+  const compileBox = el("input", { type: "checkbox" });
+  compileBox.checked = compileValue;
+  compileBox.addEventListener("change", () => { compileValue = compileBox.checked; });
+  const compileName = el("span", { class: "name" });
+  const compileLabel = el("label", { class: "compile" }, compileBox, el("span", {}, t("match.compile")), compileName);
   // 镜头：对这次录的所有片段生效，记住上次选的（开始录制时存进设置）。只有两种，用两段切换按钮
   const cameras = ["hero_chase", "player_view"];
   let cameraValue = settings.camera === "player_view" ? "player_view" : "hero_chase";
@@ -53,12 +63,14 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     const sel = clips.filter((c) => picked.has(c.index));
     if (!sel.length) return;
     settings.camera = cameraValue;
+    settings.compile = compileValue;
     record({
       matchId,
       player,
       hero: current().hero,
       clips: sel,
       camera: cameraValue,
+      compile: compileValue,
       overwrite: sel.filter((c) => c.recorded).length,
       secs: sel.reduce((a, c) => a + c.duration, 0),
       minutes: (sel.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1),
@@ -88,14 +100,59 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     renderClips();
   }
 
-  function multiTag(c) {
-    return c.multi_kill >= 2 ? el("span", { class: "multi" }, t(`tag.multi.${Math.min(c.multi_kill, 5)}`)) : null;
+  /** 快速勾选，分两组（2026-11-16 用户定）：
+   * 左边是片段类别，每个片段只属于其中一类（击杀勾上所有拿到人头的片段，不管杀几个，所以不另设"普通击杀"）；
+   * 右边是高光时刻，从片段里挑精彩的，一个片段可以同时属于几个。双杀、三杀、四杀、暴走（五杀及以上）各一个 */
+  const kinds = [
+    ["chip.kill", (c) => c.kind === "kill"],
+    ["chip.assist", (c) => c.kind === "assist"],
+  ];
+  const moments = [
+    ["tag.multi.2", (c) => c.multi_kill === 2],
+    ["tag.multi.3", (c) => c.multi_kill === 3],
+    ["tag.multi.4", (c) => c.multi_kill === 4],
+    ["tag.multi.5", (c) => c.multi_kill >= 5],
+    ["chip.lowHp", (c) => c.low_hp],
+    ["chip.teamwork", (c) => c.teamwork],
+    ["chip.aegis", (c) => c.aegis_steal],
+  ];
+
+  function renderChips() {
+    const chips = (group) => group.map(([name, test]) => {
+      const list = clips.filter(test);
+      if (!list.length) return null;
+      const all = list.every((c) => picked.has(c.index));
+      return el("button", {
+        type: "button",
+        class: `chip${all ? " on" : ""}`,
+        "aria-pressed": String(all),
+        onclick: () => {
+          for (const c of list) all ? picked.delete(c.index) : picked.add(c.index);
+          renderClips();
+        },
+      }, t(name), el("b", {}, String(list.length)));
+    }).filter(Boolean);
+    const left = chips(kinds), right = chips(moments);
+    // 两组都有按钮时中间加一条竖线
+    const sep = left.length && right.length ? [el("span", { class: "chip-sep", "aria-hidden": "true" })] : [];
+    chipsBox.replaceChildren(...left, ...sep, ...right);
   }
 
-  /** 高光时间线：整场一条线，红块是片段（没勾的变灰），上面挂被杀英雄的小图标，点红块也能勾选 */
+  /** 时间线上片段的场景小字（只标一个，越少见越优先） */
+  function sceneWord(c) {
+    if (c.aegis_steal) return t("scene.aegis");
+    if (c.low_hp) return t("scene.lowHp");
+    if (c.multi_kill >= 3) return t(`tag.multi.${Math.min(c.multi_kill, 5)}`);
+    if (c.teamwork) return t("scene.teamwork");
+    return null;
+  }
+
+  /** 高光时间线：整场一条线，色块是片段（击杀红、助攻蓝、抢盾金，没勾的变淡），上面挂被杀英雄的小图标和场景小字，点色块也能勾选 */
   function renderTimeline() {
     const p = current();
-    const kills = clips.reduce((a, c) => a + c.victims.length, 0);
+    const kills = clips.filter((c) => c.kind === "kill").reduce((a, c) => a + c.victims.length, 0);
+    const assists = clips.reduce((a, c) => a + (c.kind === "assist" ? c.victims.length : c.assists), 0);
+    const aegis = clips.filter((c) => c.aegis_steal).length;
     const total = Math.max(info.duration, ...clips.map((c) => c.end), 1);
     const pct = (s) => `${(Math.max(0, s) / total) * 100}%`;
     const line = el("div", { class: "timeline" }, el("div", { class: "track" }));
@@ -109,17 +166,23 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
       lastEnd = Math.max(c.end, c.start + 18 * perPx);
       lastLow = low;
       line.append(
-        el("div", { class: `seg${off ? " off" : ""}${low ? " low" : ""}`, style: `left:${pct(c.start)};width:max(18px,${pct(c.end - c.start)})`, title: `${clock(c.start)}–${clock(c.end)}`, onclick: () => toggle(c.index) }, String(c.index)),
+        el("div", { class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}`, style: `left:${pct(c.start)};width:max(18px,${pct(c.end - c.start)})`, title: `${clock(c.start)}–${clock(c.end)}`, onclick: () => toggle(c.index) }, String(c.index)),
         // 相邻片段的图标会叠在一起，上下两排交替放
-        el("div", { class: `kills ${i % 2 ? "b" : "a"}${off ? " off" : ""}`, style: `left:${pct((c.start + c.end) / 2)}` }, c.victims.map((v) => heroIcon(v, true))),
+        el("div", { class: `kills ${i % 2 ? "b" : "a"}${off ? " off" : ""}`, style: `left:${pct((c.start + c.end) / 2)}` },
+          sceneWord(c) ? el("span", { class: "scene-word" }, sceneWord(c)) : null,
+          c.victims.map((v) => heroIcon(v, true))),
       );
     });
     const ticks = el("div", { class: "ticks" });
     for (let m = 0; m * 60 <= total; m += 10) ticks.append(el("span", { style: `left:${pct(m * 60)}` }, `${m}:00`));
     line.append(ticks);
+    // 颜色说明只写这场实际出现的类别
+    const colors = ["kill", "assist", "aegis"].filter((k) => clips.some((c) => c.kind === k)).map((k) => t(`match.legend.${k}`)).join(t("match.legend.sep"));
     highlight.replaceChildren(
       el("h2", {}, t("match.highlights", { hero: heroName(p.hero), name: p.name })),
-      el("p", { class: "sub" }, clips.length ? t("match.highlightsSub", { kills, n: clips.length }) : t("match.noClips")),
+      el("p", { class: "sub" }, clips.length
+        ? t("match.highlightsSub", { kills, assists, n: clips.length }) + (aegis ? t("match.highlightsAegis", { n: aegis }) : "") + t("match.highlightsHint", { colors })
+        : t("match.noClips")),
       clips.length ? line : "",
     );
   }
@@ -132,6 +195,8 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     summary.textContent = t("match.summary", {
       n: sel.length, total: clips.length, secs: length(secs), minutes: (est / 60).toFixed(1),
     }) + (overwrite ? t("match.overwrite", { n: overwrite }) : "");
+    compileLabel.hidden = sel.length < 2;
+    compileName.textContent = t("match.compileName", { hero: heroName(current().hero), name: collectionName(collectionKey(sel)) });
     recordBtn.disabled = sel.length === 0;
     allBtn.hidden = clips.length === 0;
     allBtn.textContent = t(picked.size === clips.length ? "match.selectNone" : "match.selectAll");
@@ -140,6 +205,7 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
   /** 片段列表：两列，一行一个片段；被杀英雄用小图标排开，多杀就多几个 */
   function renderClips() {
     renderTimeline();
+    renderChips();
     if (!clips.length) {
       clipsBox.replaceChildren();
       renderSummary();
@@ -151,14 +217,18 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
       box.checked = on;
       // 点框本身也是点这一行，不让它再触发一次
       box.addEventListener("click", (e) => { e.preventDefault(); });
-      return el("div", { class: `clip-row${on ? "" : " off"}`, title: c.file_name, onclick: () => toggle(c.index) },
+      // 连杀只放在悬停提示里（2026-11-16 用户定）：它从上次死亡累计，和这段杀几个无关，挂在行上几乎每行都有、数还忽高忽低
+      const streak = c.kill_streak >= 3
+        ? "\n" + t("match.streakHint", { n: c.kill_streak, name: t(`tag.streak.${Math.min(c.kill_streak, 10)}`) })
+        : "";
+      return el("div", { class: `clip-row${on ? "" : " off"}`, title: c.file_name + streak, onclick: () => toggle(c.index) },
         box,
         el("span", { class: "no" }, String(c.index)),
         el("span", { class: "t" }, `${clock(c.start)}–${clock(c.end)}`, el("small", {}, length(c.duration))),
-        el("span", { class: "hero-icons" }, c.victims.map((v) => heroIcon(v))),
+        // 抢盾片段没有被杀的英雄，写"肉山"
+        el("span", { class: "hero-icons" }, c.victims.length ? c.victims.map((v) => heroIcon(v)) : el("span", { class: "muted" }, t("scene.roshan"))),
         el("span", { class: "end" },
-          multiTag(c),
-          c.kill_streak >= 3 ? el("span", { class: "tag" }, t("tag.streak", { n: c.kill_streak })) : null,
+          ...sceneTags(c),
           c.recorded ? el("span", { class: "ok", title: t("match.recordedHint") }, t("match.recorded")) : null),
       );
     })));
@@ -231,9 +301,9 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     highlight,
     el("div", { class: "card" },
       el("div", { class: "clips-head" }, el("h2", {}, t("match.clips")), el("span", { class: "muted", style: "font-size:13px" }, t("match.clipsHint")), el("div", { class: "spacer" }), allBtn),
-      preselectNote, clipsBox,
+      chipsBox, preselectNote, clipsBox,
       el("details", { class: "rules", style: "margin-top:16px" }, el("summary", {}, t("rules.title")), rulesBox)),
-    el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }), camera, recordBtn),
+    el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }), compileLabel, camera, recordBtn),
   );
   renderPlayers();
   renderRules();

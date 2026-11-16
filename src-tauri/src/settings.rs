@@ -16,7 +16,7 @@ pub struct Settings {
     pub capture: String,
     /// 镜头："hero_chase"（英雄一直在画面中间）或 "player_view"（还原玩家当时自己的镜头）。比赛页上选，记住上次的
     pub camera: String,
-    /// 录完再拼一个合集
+    /// 录完再拼一个集锦。比赛页底部"拼成集锦"勾没勾（2026-11-16 从设置页挪过去），记住上次的；新装默认勾上
     pub compile: bool,
     /// 全部录完后让游戏退出（中途停下或出错时保留，方便接着录）。只对 "native" 有用：1080p 录完一定退出（要改回显示设置）。
     /// 原先叫 quit_after、默认关，改名后旧值不再沿用
@@ -54,7 +54,7 @@ impl Default for Settings {
             out_dir: videos.to_string_lossy().into_owned(),
             capture: "1080p".into(),
             camera: "hero_chase".into(),
-            compile: false,
+            compile: true,
             quit_when_done: true,
             language: "auto".into(),
             ffmpeg: String::new(),
