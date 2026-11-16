@@ -16,6 +16,9 @@ pub struct Run {
     /// 开始时间（Unix 秒）
     pub time: u64,
     pub match_id: u64,
+    /// 游戏模式（DOTA_GameMode，22 = 全英雄选择，23 = 加速模式）。2026-11-16 起才记，之前的记录没有
+    #[serde(default)]
+    pub game_mode: Option<i32>,
     pub player: usize,
     /// 英雄内部名（不带前缀）
     pub hero: String,
@@ -127,6 +130,8 @@ pub struct RunSummary {
 #[derive(Serialize)]
 pub struct MatchRecord {
     match_id: u64,
+    /// 游戏模式；记录里没有（2026-11-16 之前录的）就读本地录像，录像也没了为 None
+    game_mode: Option<i32>,
     /// 最近一次录制的时间
     last_time: u64,
     players: Vec<PlayerRecord>,
@@ -199,8 +204,13 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
         p.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
     }
     // 按第一次录的先后（不再把"我"排前面：已录视频页不分你我，2026-11-15 用户定）
+    let game_mode = runs.iter().rev().find_map(|r| r.game_mode).or_else(|| {
+        let dem = game::launch::replays_dir().ok()?.join(format!("{match_id}.dem"));
+        dem.is_file().then(|| replay::peek(&dem).ok().map(|s| s.game_mode)).flatten()
+    });
     MatchRecord {
         match_id,
+        game_mode,
         last_time: runs.iter().map(|r| r.time).max().unwrap_or(0),
         players,
         runs: runs

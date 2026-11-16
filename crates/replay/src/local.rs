@@ -26,6 +26,8 @@ pub struct LocalReplay {
 pub struct Summary {
     pub match_id: u64,
     pub players: Vec<Player>,
+    /// 游戏模式（DOTA_GameMode）：22 = 全英雄选择，23 = 加速模式……
+    pub game_mode: i32,
     /// 录像时长（秒）
     pub playback_time: f32,
     /// 比赛结束时间（Unix 时间戳）
@@ -67,6 +69,7 @@ pub fn peek(path: impl AsRef<Path>) -> Result<Summary> {
     Ok(Summary {
         match_id: dota.match_id(),
         players: players_of(dota),
+        game_mode: dota.game_mode(),
         playback_time: info.playback_time(),
         end_time: dota.end_time(),
         winner: dota.game_winner(),

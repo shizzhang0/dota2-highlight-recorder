@@ -28,6 +28,8 @@ pub struct Replay {
     pub match_id: u64,
     /// 录像里服务器信息给的游戏版本号，见 [`VERIFIED_GAME_BUILD`]
     pub game_build: u32,
+    /// 游戏模式（DOTA_GameMode）：22 = 全英雄选择，23 = 加速模式……
+    pub game_mode: i32,
     /// 录像总 tick 数
     pub playback_ticks: i32,
     /// 开局号角那一刻的引擎时间（秒），游戏时钟 = 引擎时间 - 此值
@@ -241,6 +243,7 @@ fn parse_with(parser: &mut Parser<'_, source2_demo::reader::SeekableReader<BufRe
     Ok(Replay {
         match_id: dota.match_id(),
         game_build,
+        game_mode: dota.game_mode(),
         playback_ticks,
         game_start_time,
         players,

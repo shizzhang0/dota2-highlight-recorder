@@ -266,6 +266,7 @@ pub async fn start_recording(app: AppHandle, match_id: u64, player: usize, clips
         let run = crate::history::Run {
             time,
             match_id,
+            game_mode: Some(r.game_mode),
             player,
             hero: hero(player),
             player_name: r.players[player].name.clone(),
