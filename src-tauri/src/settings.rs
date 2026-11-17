@@ -18,9 +18,6 @@ pub struct Settings {
     pub camera: String,
     /// 录完再拼一个集锦。比赛页底部"拼成集锦"勾没勾（2026-11-16 从设置页挪过去），记住上次的；新装默认勾上
     pub compile: bool,
-    /// 全部录完后让游戏退出（中途停下或出错时保留，方便接着录）。只对 "native" 有用：1080p 录完一定退出（要改回显示设置）。
-    /// 原先叫 quit_after、默认关，改名后旧值不再沿用
-    pub quit_when_done: bool,
     /// 界面语言："auto" 跟随系统，或 "zh-CN" / "en"
     pub language: String,
     /// ffmpeg.exe 或所在目录；空 = 自动找（程序目录、环境变量 D2HR_FFMPEG、PATH）
@@ -55,7 +52,6 @@ impl Default for Settings {
             capture: "1080p".into(),
             camera: "hero_chase".into(),
             compile: true,
-            quit_when_done: true,
             language: "auto".into(),
             ffmpeg: String::new(),
             rules: Rules::default(),

@@ -168,7 +168,7 @@ struct Finished {
     error: Option<String>,
     elapsed_secs: f32,
     out_dir: String,
-    /// 录制用的游戏还开着（停下或出错时保留，或者设置了录完不退出）
+    /// 录制用的游戏还开着（停下或出错时保留；全部录完会退出，退出失败时也是 true）
     game_open: bool,
     /// 这次实测的录制速度（每秒墙钟录多少秒画面）
     speed: Option<f32>,
@@ -180,7 +180,9 @@ fn options(s: &Settings) -> Options {
         resolution: s.capture_size(),
         out: PathBuf::from(&s.out_dir),
         gsi_port: game::gsi::DEFAULT_PORT,
-        quit: s.quit_when_done,
+        // 全部录完一定退出游戏；中途停下或出错时保留，方便接着录。原先"跟游戏窗口一致"时设置里可以关，
+        // 2026-11-17 用户要去掉这项设置（旧设置文件里的 quit_when_done 读的时候忽略）
+        quit: true,
         camera: if s.camera == "player_view" { Camera::PlayerView } else { Camera::HeroChase },
         block_input: true,
         log_dir: crate::settings::logs_dir(),

@@ -38,6 +38,21 @@ body {
 
 button, input, select { font: inherit; color: inherit; }
 
+/* 滚动条（2026-11-17 用户嫌系统自带的怪）：细的、没有上下箭头、轨道透明，滑块半透明圆角，悬停/拖动时亮一点。
+   用 ::-webkit-scrollbar 而不是 scrollbar-color：后者在 Chromium 里会让前者失效，而且做不出圆角和内边距 */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .14);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 99px;
+  min-height: 40px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, .26); }
+::-webkit-scrollbar-thumb:active { background-color: rgba(255, 255, 255, .36); }
+
 button {
   border: 1px solid var(--line);
   background: var(--panel);
@@ -84,36 +99,8 @@ input[type="number"] { width: 90px; }
 .setting.stack { grid-template-columns: 1fr; }
 .setting.stack input[type="text"] { flex: 1; min-width: 0; }
 
-/* 开关：代替复选框，用在"是/否"的设置上 */
-input.switch {
-  appearance: none;
-  position: relative;
-  width: 38px;
-  height: 22px;
-  margin: 0;
-  border-radius: 99px;
-  background: var(--line);
-  cursor: pointer;
-  transition: background .15s;
-}
-input.switch::before {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
-  transition: transform .15s;
-}
-input.switch:checked { background: var(--accent); }
-input.switch:checked::before { transform: translateX(16px); }
-input.switch:focus-visible, .segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) {
-  input.switch, input.switch::before { transition: none; }
-}
+/* 设置页原来的"是/否"开关（input.switch）2026-11-17 随最后一项「录完退出游戏」一起去掉了 */
+.segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .topbar {
   flex: none;
@@ -164,7 +151,8 @@ input.switch:focus-visible, .segmented button:focus-visible { outline: 2px solid
 .game-status { color: var(--muted); }
 
 /* 内容区占满导航栏下面的空间、自己滚；内容最宽 1156px 居中，靠左右留白实现，滚动条才能贴着窗口右边 */
-main { flex: 1; min-height: 0; overflow-y: auto; padding: 22px max(22px, calc((100% - 1156px) / 2)); }
+/* scrollbar-gutter：不管这一页要不要滚，都留出滚动条的位置，换页时内容不会左右跳 */
+main { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 22px max(22px, calc((100% - 1156px) / 2)); }
 
 .card {
   background: var(--panel);
