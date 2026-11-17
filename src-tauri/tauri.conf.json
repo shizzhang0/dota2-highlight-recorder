@@ -11,6 +11,7 @@
     "windows": [
       {
         "label": "main",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
         "title": "Dota 2 高光录制",
         "decorations": false,
         "shadow": true,
@@ -23,6 +24,7 @@
       },
       {
         "label": "overlay",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
         "url": "overlay.html",
         "title": "d2hr overlay",
         "visible": false,
@@ -38,6 +40,7 @@
       },
       {
         "label": "prompt",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion",
         "url": "prompt.html",
         "title": "d2hr prompt",
         "visible": false,
