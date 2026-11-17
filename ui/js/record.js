@@ -1,4 +1,5 @@
-// 录制：开始前确认 → 进度（事件来自 Rust 的 pipeline）。录完的结果在"已录视频"里看（videos.js）。
+// 录制：开始前确认 → 进度（事件来自 Rust 的 pipeline）→ 录完进度页原地变成结果（2026-11-17 用户定：
+// 原来录完跳到"已录视频"、顶上显示结果卡片，用户觉得不好，改成在这个页面的基础上改文字）。
 // 录制中可以切到别的页面，回到进度页时按保存的状态重画
 // Dota 放在最前面录，发给它的点击和按键被拦下；Dota 左上角有置顶的进度窗（overlay.js），那里和这里都能停止
 import * as api from "./api.js";
@@ -56,15 +57,19 @@ function ask(dialog, question, id) {
 // 正在录的这一次：状态不跟着页面走。录制中可以切到别的页面（2026-11-10 放开：录制不再暂停，点主窗口不影响录制），
 // 点导航上的"录制中"回到进度页，按这里的状态重画。null = 没在录
 // { matchId, hero, clips（plan 的片段行）, current（正在录的片段序号）, done（录好的序号）, started（开录的时刻）,
-//   step, bar（这一段的进度 0–1；null = 还没开始录）, frames: [已录帧, 共几帧], log: [文字], stopping }
+//   step, bar（这一段的进度 0–1；null = 还没开始录）, frames: [已录帧, 共几帧], log: [文字], stopping,
+//   result（录完后 Rust 发来的结果；有它就是录完了，进度页显示结果） }
 let rec = null;
 /** 当前进度页的刷新函数（切走后它的元素已经不在文档里，调了也不显示） */
 let page = null;
 
-/** 正在录的比赛 ID；没在录返回 null */
+/** 正在录的比赛 ID；没在录（包括已经录完）返回 null */
 export function recordingMatch() {
-  return rec?.matchId ?? null;
+  return rec && !rec.result ? rec.matchId : null;
 }
+
+/** 录完的结果是哪种：录完 / 停止 / 出错 */
+const resultKind = (f) => (f.error ? "error" : f.cancelled ? "stopped" : "done");
 
 /** 开始录制：`clips` 是要录的片段（plan 返回的行），`camera` 是比赛页上选的镜头。
  * 录制结束调 `onFinished(结果)`；没能开始调 `onFailed(原因)` */
@@ -95,10 +100,12 @@ export async function startRecording(dialog, { matchId, player, hero, clips, cam
       if (yes !== null) api.answerConfirm(q.id, yes);
     }),
     listen("record-confirm-done", (id) => { if (asking?.id === id) asking.close(); }),
+    // 录完：保留这次的状态，进度页原地改成结果
     listen("record-finished", (f) => {
       unlisten.forEach((u) => u());
-      rec = null;
-      page = null;
+      rec.result = f;
+      rec.current = null;
+      update();
       onFinished(f);
     }),
   ]);
@@ -114,34 +121,83 @@ export async function startRecording(dialog, { matchId, player, hero, clips, cam
 }
 
 /** 进度页（2026-11-11 改版）：上面是正在录的片段（英雄大图、时间、被杀英雄、这一段的进度），
- * 下面一排小卡片是全部片段的状态，详细记录折叠起来。按 `rec` 画，录制状态变了就重画会变的部分 */
-export function showRecording(view) {
+ * 下面一排小卡片是全部片段的状态，详细记录折叠起来。按 `rec` 画，录制状态变了就重画会变的部分。
+ * 录完原地改文字：标题、中间大字换成结果，「停止录制」收起，左上角出现「← 已录视频」（`onVideos`）——
+ * 和比赛页的返回一样固定在顶部，鼠标侧键也能用（2026-11-17 用户定：原来右上的蓝色「查看视频」按钮位置和说法都怪） */
+export function showRecording(view, { onVideos }) {
+  const title = el("h1", {}, t("rec.title"));
   const meta = el("span", { class: "meta" });
   const stopBtn = el("button", {
     type: "button",
     onclick: () => { stopBtn.disabled = true; api.stopRecording(); },
   }, t("rec.stop"));
+  const backBar = el("div", { class: "back-bar", hidden: true }, el("button", { type: "button", class: "back", onclick: onVideos }, t("nav.backVideos")));
+  // 录完后鼠标侧键的"后退"也去已录视频；切走后（页面元素不在文档里）就卸掉
+  const onMouseBack = (e) => {
+    if (!backBar.isConnected) {
+      document.removeEventListener("mouseup", onMouseBack);
+      return;
+    }
+    if (e.button === 3 && !backBar.hidden) {
+      e.preventDefault();
+      document.removeEventListener("mouseup", onMouseBack);
+      onVideos();
+    }
+  };
+  document.addEventListener("mouseup", onMouseBack);
+  const warn = el("p", { class: "warn" }, t("rec.window"));
   const lbl = el("span", { class: "lbl" });
   const big = el("span", { class: "big" });
   const victims = el("span", { class: "hero-icons" });
   const fill = el("div", { class: "bar-fill" });
   const barBox = el("div", { class: "bar", hidden: true }, fill);
   const pct = el("div", { class: "pct" });
+  const note = el("div", { class: "note", hidden: true });
   const steps = el("div", { class: "rec-steps" });
   const log = el("ol", { class: "log" });
   const logTitle = el("summary", {});
   view.replaceChildren(
-    el("div", { class: "page-head" }, el("h1", {}, t("rec.title")), meta, el("div", { class: "spacer" }), stopBtn),
-    el("p", { class: "warn" }, t("rec.window")),
+    backBar,
+    el("div", { class: "page-head" }, title, meta, el("div", { class: "spacer" }), stopBtn),
+    warn,
     el("div", { class: "card" }, el("div", { class: "rec-now" },
       rec ? heroPic(rec.hero) : "",
-      el("div", { class: "what" }, lbl, big, victims, barBox, pct),
+      el("div", { class: "what" }, lbl, big, victims, barBox, pct, note),
     )),
     el("div", { class: "card" }, el("h2", {}, t("rec.allClips")), el("p", { class: "sub" }, t("rec.allClipsHint")), steps),
     el("details", { class: "card rec-log" }, logTitle, log),
   );
-  page = () => {
-    if (!rec || !big.isConnected) return;
+  // 录完：标题、按钮、中间大字换成结果；下面的片段卡片和详细记录照旧
+  const finished = (f) => {
+    const kind = resultKind(f);
+    title.textContent = t(`rec.title.${kind}`);
+    meta.textContent = [String(rec.matchId), heroName(rec.hero), t("rec.used", { time: clock(f.elapsed_secs) })].join(" · ");
+    stopBtn.hidden = true;
+    backBar.hidden = false;
+    warn.hidden = true;
+    lbl.textContent = "";
+    big.className = `big result-${kind}`;
+    big.style.fontSize = "24px";
+    big.textContent = {
+      done: t("rec.result.done", { n: f.completed.length }),
+      stopped: t("rec.result.stopped", { reason: f.cancelled }),
+      error: t("rec.result.error"),
+    }[kind];
+    victims.replaceChildren();
+    barBox.hidden = true;
+    pct.replaceChildren();
+    const sub = [t("rec.result.progress", { done: f.completed.length, total: f.selected.length, minutes: (f.elapsed_secs / 60).toFixed(1) })];
+    if (kind !== "done") sub.push(t("rec.result.restored"));
+    if (f.game_open) sub.push(t(kind === "done" ? "rec.result.gameOpen" : "rec.result.gameKept"));
+    note.hidden = false;
+    note.replaceChildren(
+      el("p", { class: "muted" }, sub.join(" ")),
+      f.error ? el("p", { class: "error" }, f.error) : "",
+      f.history_error ? el("p", { class: "error" }, t("rec.result.historyError", { error: f.history_error })) : "",
+    );
+  };
+  // 录制中：标题旁的进度、正在录的片段和这一段的进度条
+  const progress = () => {
     const total = rec.clips.length;
     const n = rec.current == null ? 0 : rec.clips.findIndex((c) => c.index === rec.current) + 1;
     const parts = [String(rec.matchId), heroName(rec.hero)];
@@ -169,13 +225,19 @@ export function showRecording(view) {
       el("span", {}, t("rec.segmentPct", { pct: Math.round((rec.bar ?? 0) * 100) })),
       el("span", {}, t("rec.frames", { done: rec.frames[0], total: rec.frames[1] })),
     ] : []));
-
+  };
+  page = () => {
+    if (!rec || !big.isConnected) return;
+    if (rec.result) finished(rec.result);
+    else progress();
+    // 录完后没录到的片段写「未录」，不再是「等待」
+    const waiting = rec.result ? "rec.st.skipped" : "rec.st.wait";
     steps.replaceChildren(...rec.clips.map((x) => {
       const state = rec.done.has(x.index) ? "done" : x.index === rec.current ? "cur" : "";
       return el("div", { class: `rec-step ${state}` },
         el("span", { class: "tr" }, `${clock(x.start)}–${clock(x.end)}`),
         el("span", { class: "hero-icons" }, x.victims.map((v) => heroIcon(v, true))),
-        el("span", { class: "st" }, t(state === "done" ? "rec.st.done" : state === "cur" ? "rec.st.cur" : "rec.st.wait")),
+        el("span", { class: "st" }, t(state === "done" ? "rec.st.done" : state === "cur" ? "rec.st.cur" : waiting)),
       );
     }));
     // 记录只追加新的几行，免得每半秒整个重画、展开状态和滚动位置跳掉

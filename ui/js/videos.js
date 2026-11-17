@@ -138,25 +138,6 @@ function videoGrid(m, { openMatch }) {
   return el("div", { class: "vid-grid" }, cards);
 }
 
-/** 刚录完时页面顶上的结果：录完 / 停止 / 出错，游戏还开着没有 */
-function latestBanner(f) {
-  const kind = f.error ? "error" : f.cancelled ? "stopped" : "done";
-  const title = {
-    done: t("rec.result.done", { n: f.completed.length }),
-    stopped: t("rec.result.stopped", { reason: f.cancelled }),
-    error: t("rec.result.error"),
-  }[kind];
-  const sub = [t("rec.result.progress", { done: f.completed.length, total: f.selected.length, minutes: (f.elapsed_secs / 60).toFixed(1) })];
-  if (kind !== "done") sub.push(t("rec.result.restored"));
-  if (f.game_open) sub.push(t(kind === "done" ? "rec.result.gameOpen" : "rec.result.gameKept"));
-  return el("div", { class: `card result ${kind}` },
-    el("h2", {}, title),
-    el("p", { class: "muted" }, sub.join(" ")),
-    f.error ? el("p", { class: "error" }, f.error) : null,
-    f.history_error ? el("p", { class: "error" }, t("rec.result.historyError", { error: f.history_error })) : null,
-  );
-}
-
 /** 从已录视频中移除这场：确认框里可以勾"同时删除视频文件"（移到回收站），默认不勾 */
 function confirmDelete(dialog, matchId) {
   return new Promise((resolve) => {
@@ -214,21 +195,19 @@ function matchSection(m, nav) {
   );
 }
 
-/** `nav.latest`：刚录完的结果（从录制页回来时有），显示在顶上，刚录的那场排第一 */
+/** 已录视频：按比赛分组，最近录的在前。录完的结果 2026-11-17 起在录制页上原地显示，这里不再放结果卡片 */
 export async function showVideos(view, nav) {
   view.replaceChildren(el("div", { class: "loading" }, "…"));
-  let list = await api.recordedMatches().catch((e) => {
+  const list = await api.recordedMatches().catch((e) => {
     view.replaceChildren(el("div", { class: "card error" }, e.message));
     return null;
   });
   if (!list) return;
-  const banner = nav.latest ? latestBanner(nav.latest) : "";
   const head = (meta) => el("div", { class: "page-head" }, el("h1", {}, t("nav.videos")), el("span", { class: "meta" }, meta));
   if (!list.length) {
-    view.replaceChildren(banner, head(""), el("div", { class: "card" }, el("p", { class: "muted", style: "margin:0" }, t("videos.empty"))));
+    view.replaceChildren(head(""), el("div", { class: "card" }, el("p", { class: "muted", style: "margin:0" }, t("videos.empty"))));
     return;
   }
-  if (nav.latest) list = [...list.filter((m) => m.match_id === nav.latest.match_id), ...list.filter((m) => m.match_id !== nav.latest.match_id)];
   const videos = list.reduce((a, m) => a + m.players.reduce((b, p) => b + p.clips.filter((c) => c.file).length + p.compilations.length, 0), 0);
-  view.replaceChildren(banner, head(t("videos.count", { matches: list.length, videos })), ...list.map((m) => matchSection(m, nav)));
+  view.replaceChildren(head(t("videos.count", { matches: list.length, videos })), ...list.map((m) => matchSection(m, nav)));
 }

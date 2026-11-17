@@ -274,10 +274,12 @@ button.busy:disabled { opacity: 1; cursor: progress; }
 .log li { margin: 2px 0; }
 .files { padding-left: 20px; }
 .files li { margin: 4px 0; }
-.result h2 { font-size: 17px; }
-.result.done h2, .ok { color: var(--radiant); }
-.result.stopped h2 { color: var(--tag-text); }
-.result.error h2 { color: var(--danger); }
+.ok { color: var(--radiant); }
+/* 录完：进度页中间的大字换成结果（2026-11-17 起，原来是"已录视频"顶上的结果卡片） */
+.rec-now .big.result-done { color: var(--radiant); }
+.rec-now .big.result-stopped { color: var(--tag-text); }
+.rec-now .big.result-error { color: var(--danger); }
+.rec-now .note p { margin: 0 0 4px; }
 button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; }
 button.link:hover:not(:disabled) { background: none; text-decoration: underline; }
 
