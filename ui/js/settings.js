@@ -112,19 +112,11 @@ export function showSettings(view, { onSaved }) {
     el("div", {}, el("div", { class: "setting-name" }, label), desc ? el("div", { class: "setting-desc" }, desc) : ""),
     el("div", { class: "setting-control" }, control));
   const group = (title, ...rows) => el("section", { class: "settings-group" }, el("h3", {}, title), rows);
-  const toggle = (checked, label) => {
-    const box = el("input", { type: "checkbox", class: "switch", "aria-label": label });
-    box.checked = checked;
-    return box;
-  };
-
-  // 录制画面：1080p（较快）或跟游戏窗口一致，两段切换（和比赛页的镜头一样）
+  // 录制画面：1080p（较快）或跟游戏窗口一致，两段切换（和比赛页的镜头一样）。
+  // 原来"跟游戏窗口一致"时下面还有一项「录完退出游戏」，2026-11-17 用户要去掉：全部录完一定退出
   const captures = ["1080p", "native"];
   let captureValue = settings.capture === "native" ? "native" : "1080p";
   const captureButtons = captures.map((v) => el("button", { type: "button", role: "radio", onclick: () => setCapture(v) }, t(`settings.capture.${v}`)));
-  const quit = toggle(settings.quit_when_done, t("settings.quitAfter"));
-  // 1080p 录完一定退出游戏（要把显示设置改回去），"录完退出游戏"只在跟游戏窗口一致时有用
-  const quitRow = row(t("settings.quitAfter"), t("settings.quitAfter.hint"), quit);
   const out = el("input", { type: "text", value: settings.out_dir, "aria-label": t("settings.outDir") });
   const lang = el("select", { "aria-label": t("settings.language") },
     el("option", { value: "auto" }, t("settings.language.auto")),
@@ -134,7 +126,6 @@ export function showSettings(view, { onSaved }) {
   form = () => ({
     out_dir: out.value.trim(),
     capture: captureValue,
-    quit_when_done: quit.checked,
     language: lang.value,
   });
 
@@ -154,7 +145,6 @@ export function showSettings(view, { onSaved }) {
       b.classList.toggle("on", captures[i] === v);
       b.setAttribute("aria-checked", String(captures[i] === v));
     });
-    quitRow.hidden = v !== "native";
     sync();
   };
   saveBtn.addEventListener("click", async () => {
@@ -167,8 +157,7 @@ export function showSettings(view, { onSaved }) {
   const card = el("div", { class: "card settings" },
     group(t("settings.group.record"),
       row(t("settings.capture"), t("settings.capture.hint"),
-        el("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.capture") }, captureButtons)),
-      quitRow),
+        el("div", { class: "segmented", role: "radiogroup", "aria-label": t("settings.capture") }, captureButtons))),
     group(t("settings.group.output"),
       row(t("settings.outDir"), t("settings.outDir.hint"), [out,
         el("button", { type: "button", onclick: () => reveal(out.value.trim() || settings.out_dir) }, t("settings.outDir.open"))], true)),
