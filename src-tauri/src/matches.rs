@@ -409,8 +409,6 @@ pub struct ClipRow {
     estimated_secs: f32,
     /// 输出目录里已经有这个片段的文件（再录会覆盖）
     recorded: bool,
-    /// 拼进了还在的集锦或成品里（单段文件已经删了，「自定义」里标"已录 · 在集锦里"）
-    in_product: bool,
 }
 
 /// 「推荐」里的一个成品（`clips::Product`）
@@ -455,7 +453,6 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
     p.speed = settings.params().speed;
     let out_dir = PathBuf::from(&settings.out_dir);
     let exists = |name: &str| out_dir.join(format!("{name}.mp4")).is_file();
-    let inside = crate::history::clips_in_products(match_id);
     let made = crate::history::product_files(match_id);
     let plan = clips::plan(&r, player, &p);
     let products = clips::products(&r, &plan)
@@ -500,7 +497,6 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
             file_name: clips::file_name(&r, c),
             estimated_secs: c.estimated_seconds(&p),
             recorded: exists(&clips::file_name(&r, c)),
-            in_product: inside.contains(&clips::file_name(&r, c)),
         })
         .collect();
     Ok(PlanInfo { clips, products })

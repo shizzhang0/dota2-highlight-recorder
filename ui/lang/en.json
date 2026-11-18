@@ -301,8 +301,6 @@
   "match.genNone": "Tick the videos to make",
   "match.generate": "Make {n}",
   "match.generateNone": "Make",
-  "match.inProduct": "Recorded · in highlights",
-  "match.inProductHint": "This clip went into highlights; its own file was removed after joining",
   "product.kills": "Kill highlights",
   "product.assists": "Assist highlights",
   "product.rampage": "Rampage",

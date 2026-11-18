@@ -322,15 +322,6 @@ pub fn product_files(match_id: u64) -> std::collections::HashSet<PathBuf> {
         .collect()
 }
 
-/// 这场比赛里拼进了还在的集锦或成品里的片段（比赛页「自定义」标"已录 · 在集锦里"用）
-pub fn clips_in_products(match_id: u64) -> std::collections::HashSet<String> {
-    let runs = {
-        let _g = LOCK.lock().unwrap();
-        load()
-    };
-    in_products(&runs.iter().filter(|r| r.match_id == match_id).collect::<Vec<_>>())
-}
-
 /// 删掉一场比赛的全部记录。`delete_files` 时把记录里的视频移到回收站，返回移走了几个
 #[tauri::command]
 pub fn delete_match_record(match_id: u64, delete_files: bool) -> Result<usize, String> {

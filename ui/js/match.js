@@ -322,9 +322,9 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
         el("span", { class: "hero-icons" }, c.victims.length ? c.victims.map((v) => heroIcon(v)) : el("span", { class: "muted" }, t("scene.roshan"))),
         el("span", { class: "end" },
           ...sceneTags(c),
-          // 拼进集锦后单段文件删了（2026-11-18 起），照样算录过，免得以为没录又录一遍
-          c.recorded ? el("span", { class: "ok", title: t("match.recordedHint") }, t("match.recorded"))
-            : c.in_product ? el("span", { class: "ok", title: t("match.inProductHint") }, t("match.inProduct")) : null),
+          // 只有单段文件还在才标「已录」。拼进集锦的单段已经删了，在这里勾上照样要重录，不标
+          // （2026-11-18 先做过「已录 · 在集锦里」，用户说不对：单段并没有保留）
+          c.recorded ? el("span", { class: "ok", title: t("match.recordedHint") }, t("match.recorded")) : null),
       );
     })));
     renderSummary();
