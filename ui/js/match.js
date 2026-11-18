@@ -6,9 +6,11 @@ import * as api from "./api.js";
 import { t } from "./i18n.js";
 import { clock, el, heroIcon, heroName, heroPic, length, productName, sceneTags } from "./format.js";
 import { settings, persist } from "./state.js";
-import { play } from "./videos.js";
+import { play, revealButton } from "./videos.js";
 
 const MODES = ["rec", "custom"];
+/** 已生成卡片上的播放按钮图标（实心三角，往右挪一点看着才居中） */
+const PLAY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>';
 
 /** `player` / `preselect`（片段文件名）从"已录视频"的"继续录未完成的"带过来：选好玩家、勾上这些片段 */
 /** `back` / `backLabel`：左上角的返回，从哪进来回哪（本地录像或已录视频） */
@@ -255,9 +257,18 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
         ? `${clock(x.start)} · ${length(x.duration)}`
         : t(x.picked < x.total ? "product.picked" : "product.all", { picked: x.picked, total: x.total, unit, len: length(x.duration) });
       if (x.generated) {
-        return el("button", { type: "button", class: "product done", title: x.file_name, onclick: () => play(x.path, `${matchId} · ${heroName(current().hero)} · ${productName(x.kind)}`) },
-          el("span", { class: "name" }, productName(x.kind)), el("span", { class: "sub" }, sub),
-          el("span", { class: "badge" }, t("product.generated")));
+        // 已生成（2026-11-18 用户定）：名字后面绿色「✓ 已生成」；右上角（没生成时放勾选框的地方）两个圆形按钮，
+        // 播放实心、在文件夹中显示描边，卡片和没生成的一样高。点卡片别处也是播放
+        const title = `${matchId} · ${heroName(current().hero)} · ${productName(x.kind)}`;
+        const playBtn = el("button", { type: "button", class: "round primary", title: t("product.play"), "aria-label": t("product.play"), onclick: (e) => { e.stopPropagation(); play(x.path, title); } });
+        playBtn.innerHTML = PLAY_ICON;
+        const folder = revealButton(x.path);
+        folder.className = "round";
+        folder.addEventListener("click", (e) => e.stopPropagation());
+        return el("div", { class: "product done", title: x.file_name, onclick: () => play(x.path, title) },
+          el("span", { class: "name" }, productName(x.kind), el("span", { class: "done-tag" }, "✓ ", t("product.generated"))),
+          el("span", { class: "sub" }, sub),
+          el("span", { class: "actions" }, playBtn, folder));
       }
       const on = chosen.has(x.id);
       const box = el("input", { type: "checkbox", tabindex: -1, "aria-hidden": "true" });

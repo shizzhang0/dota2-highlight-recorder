@@ -309,7 +309,8 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .match-card .pic { position: relative; }
 .match-card .pic .hero-pic { aspect-ratio: 16 / 7; object-position: center 25%; }
 .match-card .res { position: absolute; top: 8px; left: 8px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 3px; background: rgba(0, 0, 0, .65); }
-.match-card .rec { position: absolute; top: 8px; right: 38px; font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--accent); color: #fff; }
+/* 已录 N 个视频：原来是红底白字，像警告；2026-11-18 改成绿框 */
+.match-card .rec { position: absolute; top: 8px; right: 38px; font-size: 12px; background: var(--panel); padding: 1px 8px; border-radius: 3px; border: 1px solid rgba(91, 176, 127, .55); color: var(--radiant); }
 .match-card .info { padding: 10px 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
 .match-card .id { font: 600 16px var(--num); letter-spacing: .3px; }
 .match-card .hero { color: var(--muted); font-size: 13px; }
@@ -330,7 +331,7 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .match-row .kda { color: var(--text); }
 .match-card .hero-fallback.unknown { font: 600 44px var(--num); }
 .match-card .hero .kda { margin-left: 10px; font-family: var(--num); color: var(--text); }
-.match-row .rec { font-size: 12px; padding: 1px 8px; border-radius: 3px; background: var(--accent); color: #fff; white-space: nowrap; }
+.match-row .rec { font-size: 12px; padding: 1px 8px; border-radius: 3px; border: 1px solid rgba(91, 176, 127, .55); color: var(--radiant); white-space: nowrap; }
 /* 游戏模式标签：加速模式琥珀色，全英雄选择蓝色，其他灰色（2026-11-16） */
 .mode { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; font: 400 12px/18px "Segoe UI", sans-serif; letter-spacing: 0; padding: 0 7px; border-radius: 3px; border: 1px solid var(--line-hover); color: var(--muted); white-space: nowrap; }
 .mode.turbo { border-color: #6b4a1c; background: #2a2014; color: #e5b267; }
@@ -404,8 +405,16 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .product .name { font-weight: 600; font-size: 15px; }
 /* margin 要清掉：外面的 .card .sub 有 16px 的下边距 */
 .product .sub { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--num); }
-.product .badge { color: var(--radiant); font-size: 12px; }
-.product.done { padding-right: 14px; }
+/* 已生成（2026-11-18 用户选 A）：名字后面绿色小标；右上角两个圆形按钮，播放实心强调色、在文件夹中显示描边；卡片和没生成的一样高 */
+.product.done { padding-right: 78px; cursor: pointer; }
+.product .done-tag { margin-left: 8px; padding: 1px 8px; border-radius: 99px; background: rgba(91, 176, 127, .15); color: var(--radiant); font-size: 12px; font-weight: 400; vertical-align: 2px; white-space: nowrap; }
+.product .actions { position: absolute; top: 11px; right: 12px; display: flex; gap: 6px; }
+.product .actions .round { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 1px solid var(--line-hover); background: transparent; color: var(--muted); }
+.product .actions .round:hover:not(:disabled) { color: var(--text); border-color: var(--muted); background: var(--hover); }
+.product .actions .round.primary { border-color: transparent; background: var(--accent); color: var(--accent-text); }
+.product .actions .round.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.product .actions .round svg { width: 14px; height: 14px; }
+.product .actions .round.primary svg { width: 11px; height: 11px; margin-left: 2px; }
 /* 快速勾选（2026-11-16）：点了勾上这一类的全部片段 */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 12px; }
 .chips:empty { display: none; }
