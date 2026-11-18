@@ -301,8 +301,6 @@
   "match.genNone": "勾选要生成的视频",
   "match.generate": "生成 {n} 个",
   "match.generateNone": "生成",
-  "match.inProduct": "已录 · 在集锦里",
-  "match.inProductHint": "这段拼进了集锦，单独的文件拼完已删掉",
   "product.kills": "击杀集锦",
   "product.assists": "助攻集锦",
   "product.rampage": "暴走",
