@@ -168,6 +168,8 @@ pub struct Selected {
 pub enum Event {
     /// Dota 以普通模式开着，等用户自己退出
     WaitingForDotaToQuit,
+    /// Steam 没开或没登录，用户同意后打开了 Steam，等它登录好
+    WaitingForSteam,
     /// 启动游戏，带这些启动参数
     LaunchingGame { args: Vec<String> },
     /// 录像加载好了
@@ -266,7 +268,10 @@ fn client_size() -> Option<(u32, u32)> {
 /// 第三个返回值：是不是我们带 `-w -h` 启动的（是的话录完要让游戏退出、把窗口大小改回去）
 /// 准备好游戏：要启动（或重启）的话带上分辨率启动，连上控制台。带 `-w -h` 启动了就把 `sized` 设成 true——
 /// 出错或停下时调用方也要靠它决定让游戏退出、改回窗口大小
-fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Result<(Netcon, gsi::Listener)> {
+/// 第四个返回值是拦截输入（`block_input` 时）：游戏窗口一出现就开始拦（2026-11-18 用户定）。原来是镜头设好、开录时才拦，
+/// 启动、加载录像那一两分钟里按键照样进游戏，用户按了打开控制台的键，控制台被录进了视频。
+/// 游戏自己弹窗的话会点不掉，但 Dota 左上角的进度窗不在拦截范围里，那里的「停止录制」照样能点
+fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Result<(Netcon, gsi::Listener, Option<game::input_guard::Guard>)> {
     gsi::check_port(o.gsi_port)?;
     let changed = gsi::install(o.gsi_port)?;
     let rx = gsi::listen(o.gsi_port)?;
@@ -286,7 +291,9 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Resul
             restart_needed(host, &format!("游戏窗口现在是 {}×{}，要录 {}×{} 得重新启动游戏。", now.0, now.1, want.0, want.1))?;
         }
     }
+    let mut guard = None;
     if !dota_running() {
+        ensure_steam(host)?;
         let account = game::steam::me().context("认不出 Steam 账号（Steam 没登录？）")?;
         // 带上用户在 Steam 里设的启动选项（例如国服的 -perfectworld），再加分辨率
         let mut extra = game::steam::launch_options(account).unwrap_or_default();
@@ -296,12 +303,57 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Resul
         }
         host.event(Event::LaunchingGame { args: extra.clone() });
         game::launch::launch(NETCON_PORT, &extra)?;
+        guard = guard_when_window(o, Duration::from_secs(180))?;
         game::launch::wait_netcon(NETCON_PORT, Duration::from_secs(180))?;
+    }
+    // 游戏本来就开着（上一轮停下后留着的）：现在就拦
+    if guard.is_none() {
+        guard = guard_when_window(o, Duration::from_secs(10))?;
     }
     let mut con = Netcon::connect_logged(NETCON_PORT, &diag.join("console.log"))?;
     con.wait_responsive(Duration::from_secs(120))?;
     con.drain(Duration::from_millis(300), Duration::from_secs(2));
-    Ok((con, rx))
+    Ok((con, rx, guard))
+}
+
+/// 启动 Dota 前要 Steam 开着并登录了，不然游戏不发游戏状态（GSI），等一分多钟才报错（2026-11-18 用户遇到）。
+/// 没开就问用户：同意就打开 Steam、等登录好（最多 5 分钟，可以停止）；不同意就停下，说清楚要先开 Steam
+fn ensure_steam(host: &dyn Host) -> Result<()> {
+    if game::steam::signed_in() {
+        return Ok(());
+    }
+    if !host.confirm("Steam 没在运行（或者没登录）。录制要 Steam 登录着才能读到比赛数据，要现在打开 Steam 吗？") {
+        bail!("Steam 没在运行，请先打开 Steam 并登录，再开始录制");
+    }
+    game::steam::start()?;
+    host.event(Event::WaitingForSteam);
+    let started = Instant::now();
+    while !game::steam::signed_in() {
+        cancel::check()?;
+        if started.elapsed() > Duration::from_secs(300) {
+            bail!("等了 5 分钟 Steam 还没登录好，请登录 Steam 后再开始录制");
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    // 刚登录完 Steam 还在初始化，马上启动游戏可能还是连不上，多等一会儿
+    std::thread::sleep(Duration::from_secs(5));
+    Ok(())
+}
+
+/// 等游戏窗口出现（最多 `timeout`），出现了就开始拦截输入；不拦（`block_input` 为假）返回 None
+fn guard_when_window(o: &Options, timeout: Duration) -> Result<Option<game::input_guard::Guard>> {
+    if !o.block_input {
+        return Ok(None);
+    }
+    let started = Instant::now();
+    while !dota_running() {
+        cancel::check()?;
+        if started.elapsed() > timeout {
+            bail!("等了 {timeout:?} 游戏窗口还没出来");
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    game::input_guard::start().map(Some)
 }
 
 /// 把显示设置里的窗口大小改回 `original`（要等带 `-w -h` 启动的游戏退出后）
@@ -400,7 +452,8 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     let account = game::steam::me();
     let original_size = account.and_then(|a| game::steam::video(a).ok()).and_then(|v| v.width.zip(v.height));
     let mut sized = false;
-    let (con, rx) = match prepare(host, o, &diag, &mut sized) {
+    // 拦截输入从游戏窗口出现一直开到这个函数结束（录完、恢复设置、让游戏退出之后才卸掉）
+    let (con, rx, _guard) = match prepare(host, o, &diag, &mut sized) {
         Ok(v) => v,
         Err(e) => {
             // 还没开始改设置，只要删掉刚写的 GSI 配置
@@ -512,8 +565,7 @@ fn record_all(
     seek(&rec, s, at)?;
     setup_view(&rec, s)?;
 
-    // 从这里起拦下用户发给 Dota 的点击和按键。离开这个函数时卸掉
-    let _guard = if o.block_input { Some(game::input_guard::start()?) } else { None };
+    // 拦截输入在游戏窗口一出现时就开了（`prepare`），这里不再另开
     let total_secs = selected.iter().map(|s| s.clip.duration()).sum();
     host.event(Event::Recording { block_input: o.block_input, encoder: codec.name().into(), total_secs });
 
@@ -596,6 +648,8 @@ fn setup_view(rec: &Rec, s: &mut Session) -> Result<()> {
     // 在前面渲染也可能更快：同一段在后面录 28 秒，在前面 18 秒（只碰巧测到一次）。
     // 等窗口大小稳定，设好镜头、渲染 2 秒再录（万一录到黑的世界画面，`capture` 会查出来重录）
     let dota = game::window::dota_window()?;
+    // 拦截从游戏刚启动就开着，以防这之间游戏窗口换过，按现在的窗口来拦
+    game::input_guard::retarget();
     game::window::restore(dota);
     game::ui::bring_to_front(dota.0 as isize);
     wait_window_settled(rec.size);

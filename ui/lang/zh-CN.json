@@ -178,7 +178,7 @@
   "settings.capture.hint": "1080p 比 2560×1600 录得快约一倍：会以 1080p 重启游戏，录完退出并把显示设置改回原样。",
   "rec.confirm.window": "录制时 Dota 会放在最前面。可以用 Alt+Tab 切到别的程序，但每段开头 Dota 会自己跳回前面。",
   "rec.window": "录制中：Dota 在最前面录，发给它的点击和按键会被拦下，不影响录制。要停下，点这里或 Dota 左上角进度窗上的「停止录制」。",
-  "rec.confirm.block": "录制时发给 Dota 的点击和按键会被拦下，不会打乱录制；要停下，点 Dota 左上角进度窗上的「停止录制」。已经录好的片段会保留。",
+  "rec.confirm.block": "从 Dota 启动起，发给它的点击和按键都会被拦下（包括打开控制台），不会打乱录制；要停下，点 Dota 左上角进度窗上的「停止录制」。已经录好的片段会保留。",
   "rec.stop": "停止录制",
   "rec.busy.title": "正在录制",
   "rec.busy.what": "比赛 {id} 还在录，录完才能开始新的录制。",
@@ -319,5 +319,6 @@
   "rec.result.doneProducts": "录完了：生成 {n} 个视频",
   "match.highlightsHintRec": "。{colors}，上面是被击杀的英雄；亮的是勾了的视频要用到的片段",
   "product.unitMoments": "",
-  "product.play": "播放"
+  "product.play": "播放",
+  "ev.waitSteam": "已打开 Steam，等它登录好（没登录的话请登录），好了会自动接着录…"
 }

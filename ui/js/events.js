@@ -6,6 +6,7 @@ import { clock } from "./format.js";
 export function describe(e) {
   switch (e.kind) {
     case "waiting_for_dota_to_quit": return t("ev.waitQuit");
+    case "waiting_for_steam": return t("ev.waitSteam");
     case "launching_game": return t("ev.launch", { args: e.args.join(" ") });
     case "replay_loaded": return t("ev.loaded");
     case "recording": return t("ev.recording", { encoder: e.encoder });
