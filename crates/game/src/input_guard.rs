@@ -121,6 +121,16 @@ pub struct Guard {
 }
 
 /// 开始拦截（游戏要已经开着）
+/// 重新找一下游戏窗口，拦截按新的窗口来（2026-11-18 起从游戏刚启动就开始拦，以防启动过程中窗口换过）。
+/// 没在拦或找不到窗口时什么都不做
+pub fn retarget() {
+    if DOTA.load(Ordering::SeqCst) != 0
+        && let Ok(w) = crate::window::dota_window()
+    {
+        DOTA.store(w.0 as isize, Ordering::SeqCst);
+    }
+}
+
 pub fn start() -> Result<Guard> {
     let window = crate::window::dota_window()?;
     DOTA.store(window.0 as isize, Ordering::SeqCst);
@@ -161,5 +171,7 @@ impl Drop for Guard {
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+        // 不拦了：`retarget` 就什么都不做
+        DOTA.store(0, Ordering::SeqCst);
     }
 }

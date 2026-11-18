@@ -16,6 +16,7 @@ impl Host for Console {
                 println!("Dota 正以普通模式运行。录制要带控制台端口（-netconport -insecure）重新启动游戏。");
                 println!("请先退出 Dota（主菜单 → 退出游戏），退出后会自动继续；按 Ctrl+C 取消。");
             }
+            Event::WaitingForSteam => println!("已打开 Steam，等它登录好（没登录的话请登录），好了会自动继续；按 Ctrl+C 取消。"),
             Event::LaunchingGame { args } => println!("启动游戏：{}", args.join(" ")),
             Event::ReplayLoaded
             | Event::SegmentStarted { .. }

@@ -23,6 +23,36 @@ pub fn active_account() -> Option<u32> {
     (id != 0).then_some(id)
 }
 
+/// Steam 开着并且登录了：注册表里记的 Steam 进程还活着，当前账号不是 0。
+/// 2026-11-18 用户 Steam 没开就录：直接启动的 Dota 连不上 Steam（`SteamAPI_Init failed`），照样能放录像，
+/// 但不发游戏状态（GSI），等了 60 秒才报错，报的还不是 Steam 的事。[`me`] 在 Steam 没开时会退回最近玩过的账号，不能拿它判断
+pub fn signed_in() -> bool {
+    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Software\Valve\Steam\ActiveProcess") else { return false };
+    let pid: u32 = key.get_value("pid").unwrap_or(0);
+    let user: u32 = key.get_value("ActiveUser").unwrap_or(0);
+    pid != 0 && user != 0 && process_alive(pid)
+}
+
+/// 这个进程还在不在
+fn process_alive(pid: u32) -> bool {
+    use windows::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    unsafe {
+        let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return false };
+        let mut code = 0u32;
+        let alive = GetExitCodeProcess(h, &mut code).is_ok() && code == STILL_ACTIVE.0 as u32;
+        let _ = CloseHandle(h);
+        alive
+    }
+}
+
+/// 打开 Steam（已经开着的话只是把窗口提到前面）。不等它登录，调用方自己等 [`signed_in`]
+pub fn start() -> Result<()> {
+    let exe = steam_dir()?.join("steam.exe");
+    std::process::Command::new(&exe).spawn().with_context(|| format!("打不开 {}", exe.display()))?;
+    Ok(())
+}
+
 fn mtime(p: &Path) -> Option<SystemTime> {
     fs::metadata(p).and_then(|m| m.modified()).ok()
 }
