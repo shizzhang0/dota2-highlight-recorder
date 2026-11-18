@@ -9,6 +9,7 @@ mod matches;
 mod record;
 mod settings;
 mod updater;
+mod video;
 
 use tauri::Manager;
 
@@ -46,7 +47,7 @@ fn main() {
             history::recorded_matches,
             history::delete_match_record,
             history::open_file,
-            history::allow_video,
+            video::video_url,
             history::video_thumb,
             settings::get_settings,
             settings::save_settings,

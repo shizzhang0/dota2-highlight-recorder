@@ -13,7 +13,7 @@ export const heroNames = (language) => invoke("hero_names", { language });
 export const reveal = (path) => invoke("reveal", { path });
 export const videoThumb = (path) => invoke("video_thumb", { path });
 export const openFile = (path) => invoke("open_file", { path });
-export const allowVideo = (path) => invoke("allow_video", { path });
+export const videoUrl = (path) => invoke("video_url", { path });
 export const accounts = () => invoke("accounts");
 export const setAccount = (id) => invoke("set_account", { id });
 export const recordedMatches = () => invoke("recorded_matches");
