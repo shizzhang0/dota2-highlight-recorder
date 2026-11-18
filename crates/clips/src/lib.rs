@@ -212,9 +212,8 @@ fn damage_between(r: &Replay, from: f32, to: f32) -> &[replay::Damage] {
     &r.damage[lo..hi.max(lo)]
 }
 
-/// 有效助攻：击杀前 `ASSIST_WINDOW` 秒里，`player` 打出了被杀者受到的英雄伤害的至少 `ASSIST_SHARE`，或者控过被杀者。
-/// 光环、给队友加状态、早先蹭的伤害这类助攻，录出来他多半在旁边没做什么（2026-11-16 用户定）
-pub fn effective_assist(r: &Replay, player: usize, k: &Kill) -> bool {
+/// 击杀前 `ASSIST_WINDOW` 秒里 `player` 对被杀者的贡献：打出了它受到的英雄伤害的多少（0–1）、控没控过它
+fn assist_detail(r: &Replay, player: usize, k: &Kill) -> (f32, bool) {
     let (from, to) = (k.game_time - ASSIST_WINDOW, k.game_time);
     let victim_team = r.players[k.victim].team;
     let (mut mine, mut all) = (0.0f32, 0.0f32);
@@ -224,11 +223,16 @@ pub fn effective_assist(r: &Replay, player: usize, k: &Kill) -> bool {
             mine += d.value as f32;
         }
     }
-    if all > 0.0 && mine / all >= ASSIST_SHARE {
-        return true;
-    }
     let lo = r.disables.partition_point(|d| d.game_time < from);
-    r.disables[lo..].iter().take_while(|d| d.game_time <= to + 0.05).any(|d| d.attacker == player && d.target == k.victim)
+    let disabled = r.disables[lo..].iter().take_while(|d| d.game_time <= to + 0.05).any(|d| d.attacker == player && d.target == k.victim);
+    (if all > 0.0 { mine / all } else { 0.0 }, disabled)
+}
+
+/// 有效助攻：击杀前 `ASSIST_WINDOW` 秒里，`player` 打出了被杀者受到的英雄伤害的至少 `ASSIST_SHARE`，或者控过被杀者。
+/// 光环、给队友加状态、早先蹭的伤害这类助攻，录出来他多半在旁边没做什么（2026-11-16 用户定）
+pub fn effective_assist(r: &Replay, player: usize, k: &Kill) -> bool {
+    let (share, disabled) = assist_detail(r, player, k);
+    share >= ASSIST_SHARE || disabled
 }
 
 /// 残血反杀（2026-11-16 用户定）：击杀者
@@ -483,6 +487,202 @@ impl Collection {
             Collection::Mixed => "高光集锦",
         }
     }
+}
+
+/// 集锦最长多少秒（2026-11-18 用户定 2 分钟：90 秒嫌短，完美时刻算上它自己的片头约 2 分 15 秒）
+pub const COLLECTION_CAP: f32 = 120.0;
+/// 助攻打分里"打了一大块血"：占被杀者死前 `ASSIST_WINDOW` 秒受到伤害的这么多
+const ASSIST_BIG_SHARE: f32 = 0.30;
+
+/// 比赛页「推荐」里的成品（2026-11-18 用户定，参考完美时刻：一局直接告诉你能生成什么，不用一个个勾片段）。
+/// 击杀集锦、助攻集锦；高光时刻同一种的也合成一个（三杀、默契时刻……，用户：同一个 tag 应该放一起做成集锦）。
+/// 每个都精选到 `COLLECTION_CAP` 以内。双杀不单独成品，只进击杀集锦
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductKind {
+    Kills,
+    Assists,
+    Rampage,
+    Ultra,
+    Triple,
+    Aegis,
+    LowHp,
+    Teamwork,
+}
+
+impl ProductKind {
+    /// 界面、录制记录里用的名字
+    pub fn key(self) -> &'static str {
+        match self {
+            ProductKind::Kills => "kills",
+            ProductKind::Assists => "assists",
+            ProductKind::Rampage => "rampage",
+            ProductKind::Ultra => "ultra",
+            ProductKind::Triple => "triple",
+            ProductKind::Aegis => "aegis",
+            ProductKind::LowHp => "low_hp",
+            ProductKind::Teamwork => "teamwork",
+        }
+    }
+
+    /// 文件名里用的叫法（和完美时刻一样：三杀、四杀、暴走、残血反杀、抢盾时刻、默契时刻）
+    pub fn file_label(self) -> &'static str {
+        match self {
+            ProductKind::Kills => "击杀集锦",
+            ProductKind::Assists => "助攻集锦",
+            ProductKind::Rampage => "暴走",
+            ProductKind::Ultra => "四杀",
+            ProductKind::Triple => "三杀",
+            ProductKind::Aegis => "抢盾时刻",
+            ProductKind::LowHp => "残血反杀",
+            ProductKind::Teamwork => "默契时刻",
+        }
+    }
+
+    /// 击杀集锦、助攻集锦（按击杀、助攻次数数）；其余是某种高光时刻（按片段数数）
+    pub fn is_collection(self) -> bool {
+        matches!(self, ProductKind::Kills | ProductKind::Assists)
+    }
+
+    /// 高光时刻，按难得程度排（比赛页上也按这个顺序）
+    pub const MOMENTS: [ProductKind; 6] =
+        [ProductKind::Rampage, ProductKind::Ultra, ProductKind::Triple, ProductKind::Aegis, ProductKind::LowHp, ProductKind::Teamwork];
+
+    /// 这个片段有没有这种高光时刻。一个片段可以有好几种（三杀又是默契），会进好几个成品，录的时候只录一次
+    pub fn in_clip(self, c: &Clip) -> bool {
+        match self {
+            ProductKind::Kills => c.kind == Kind::Kill,
+            ProductKind::Assists => c.kind == Kind::Assist,
+            ProductKind::Rampage => c.multi_kill >= 5,
+            ProductKind::Ultra => c.multi_kill == 4,
+            ProductKind::Triple => c.multi_kill == 3,
+            ProductKind::Aegis => c.aegis_steal,
+            ProductKind::LowHp => c.low_hp,
+            ProductKind::Teamwork => c.teamwork,
+        }
+    }
+}
+
+/// 一个成品：用到哪些片段，怎么拼
+#[derive(Debug, Clone)]
+pub struct Product {
+    pub kind: ProductKind,
+    /// 用到的片段在 [`plan`] 结果里的下标（从 0 开始），按时间排序
+    pub clips: Vec<usize>,
+    /// 选进来的、一共有多少：击杀集锦、助攻集锦按击杀（助攻）次数，高光时刻按片段数。没超过上限时两者相等
+    pub picked: usize,
+    pub total: usize,
+}
+
+impl Product {
+    /// 界面和录制命令用的标识：一种一个，就是种类名
+    pub fn id(&self) -> String {
+        self.kind.key().to_owned()
+    }
+
+    /// 成片时长
+    pub fn duration(&self, clips: &[Clip]) -> f32 {
+        self.clips.iter().map(|&i| clips[i].duration()).sum()
+    }
+
+    /// 文件名（不含扩展名）：`比赛ID_玩家序号_英雄_击杀集锦`、`…_默契时刻`（一种一个，不带时间）
+    pub fn file_name(&self, r: &Replay, clips: &[Clip]) -> String {
+        let player = clips[self.clips[0]].player;
+        let hero = r.players[player].hero.trim_start_matches("npc_dota_hero_");
+        format!("{}_{}_{}_{}", r.match_id, player, hero, self.kind.file_label())
+    }
+}
+
+/// 「自定义」里勾的片段拼成的集锦叫什么（不含扩展名）：`比赛ID_玩家序号_英雄_自定义集锦`
+pub fn custom_file_name(r: &Replay, player: usize) -> String {
+    let hero = r.players[player].hero.trim_start_matches("npc_dota_hero_");
+    format!("{}_{}_{}_自定义集锦", r.match_id, player, hero)
+}
+
+/// 多杀的分（2026-11-18 用户定）：双杀 3、三杀 6、四杀 10、暴走 15
+fn multi_weight(n: u32) -> f32 {
+    match n {
+        0 | 1 => 0.0,
+        2 => 3.0,
+        3 => 6.0,
+        4 => 10.0,
+        _ => 15.0,
+    }
+}
+
+/// 击杀片段的分：一杀 1 分、多杀按 [`multi_weight`]（取大的）；抢盾 +5，残血反杀 +4，默契 +3；
+/// 同一波里还有他的助攻（团战）每个 +0.5
+pub fn kill_score(c: &Clip) -> f32 {
+    let base = (c.kills.len() as f32).max(multi_weight(c.multi_kill));
+    let bonus = [(c.aegis_steal, 5.0), (c.low_hp, 4.0), (c.teamwork, 3.0)].iter().filter(|(on, _)| *on).map(|(_, v)| v).sum::<f32>();
+    base + bonus + 0.5 * c.assists.len() as f32
+}
+
+/// 助攻片段的分：每个有效助攻 1 分，控住过它 +1，打了它三成以上的伤害（`ASSIST_BIG_SHARE`）+1；默契 +3
+pub fn assist_score(r: &Replay, c: &Clip) -> f32 {
+    let each: f32 = c
+        .assists
+        .iter()
+        .map(|&k| {
+            let (share, disabled) = assist_detail(r, c.player, &r.kills[k]);
+            1.0 + if disabled { 1.0 } else { 0.0 } + if share >= ASSIST_BIG_SHARE { 1.0 } else { 0.0 }
+        })
+        .sum();
+    each + if c.teamwork { 3.0 } else { 0.0 }
+}
+
+/// 片段有没有高光时刻（三杀以上、抢盾、残血反杀、默契）
+fn has_moment(c: &Clip) -> bool {
+    ProductKind::MOMENTS.iter().any(|k| k.in_clip(c))
+}
+
+/// 片段的分：助攻片段按 [`assist_score`]，其余按 [`kill_score`]
+fn score(r: &Replay, c: &Clip) -> f32 {
+    if c.kind == Kind::Assist { assist_score(r, c) } else { kill_score(c) }
+}
+
+/// 从候选片段里挑进集锦（2026-11-18 用户定）：有高光时刻的先保证进；然后按分从高到低，放得下（总长不超过 `cap`）就放；
+/// 一段都放不下时至少放分最高的那段。挑完按时间排。片段本身不剪
+fn pick(clips: &[Clip], candidates: &[(usize, f32)], cap: f32) -> Vec<usize> {
+    let mut order: Vec<(usize, f32)> = candidates.to_vec();
+    let special = |i: usize| has_moment(&clips[i]);
+    order.sort_by(|a, b| special(b.0).cmp(&special(a.0)).then(b.1.total_cmp(&a.1)).then(a.0.cmp(&b.0)));
+    let (mut chosen, mut total) = (Vec::new(), 0.0f32);
+    for (i, _) in order {
+        let d = clips[i].duration();
+        if chosen.is_empty() || total + d <= cap {
+            chosen.push(i);
+            total += d;
+        }
+    }
+    chosen.sort_unstable();
+    chosen
+}
+
+/// 这个玩家这局能生成的成品（`clips` 是 [`plan`] 的结果）：击杀集锦、助攻集锦，再是每种高光时刻（按 `MOMENTS` 的顺序）。
+/// 每个都精选到 `COLLECTION_CAP` 以内；这局没有的不列
+pub fn products(r: &Replay, clips: &[Clip]) -> Vec<Product> {
+    let kinds = [ProductKind::Kills, ProductKind::Assists].into_iter().chain(ProductKind::MOMENTS);
+    kinds
+        .filter_map(|kind| {
+            let cands: Vec<(usize, f32)> = clips.iter().enumerate().filter(|(_, c)| kind.in_clip(c)).map(|(i, c)| (i, score(r, c))).collect();
+            if cands.is_empty() {
+                return None;
+            }
+            let chosen = pick(clips, &cands, COLLECTION_CAP);
+            // 击杀集锦按击杀次数数，助攻集锦按助攻次数数，高光时刻按片段数
+            let count = |i: usize| match kind {
+                ProductKind::Kills => clips[i].kills.len(),
+                ProductKind::Assists => clips[i].assists.len(),
+                _ => 1,
+            };
+            Some(Product {
+                kind,
+                picked: chosen.iter().map(|&i| count(i)).sum(),
+                total: cands.iter().map(|c| count(c.0)).sum(),
+                clips: chosen,
+            })
+        })
+        .collect()
 }
 
 /// 把一段连续内容拆成不超过 `max` 秒的导出：先在内部空档的中点拆，拆完还超长的部分再均分

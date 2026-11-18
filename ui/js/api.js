@@ -18,7 +18,8 @@ export const accounts = () => invoke("accounts");
 export const setAccount = (id) => invoke("set_account", { id });
 export const recordedMatches = () => invoke("recorded_matches");
 export const deleteMatchRecord = (matchId, deleteFiles) => invoke("delete_match_record", { matchId, deleteFiles });
-export const startRecording = (matchId, player, clips, camera, compile, lang) => invoke("start_recording", { matchId, player, clips, camera, compile, lang });
+// `products`：「推荐」选的成品标识，不空时按成品录（`clips` 是它们用到的片段，进度页显示用）；空时录「自定义」勾的 `clips`
+export const startRecording = (matchId, player, clips, products, camera, compile, lang) => invoke("start_recording", { matchId, player, clips, products, camera, compile, lang });
 export const stopRecording = () => invoke("stop_recording");
 export const answerConfirm = (id, yes) => invoke("answer_confirm", { id, yes });
 export const isRecording = () => invoke("is_recording");

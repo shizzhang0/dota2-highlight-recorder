@@ -32,6 +32,9 @@ pub struct Run {
     /// 合集是哪种集锦（`clips::Collection::key`）；2026-11-16 之前的记录没有，界面叫"合集"
     #[serde(default)]
     pub compilation_kind: Option<String>,
+    /// 这次做成的成品（2026-11-18 起：「推荐」的集锦和单个时刻、「自定义集锦」）。之前的记录只有 `compilation`
+    #[serde(default)]
+    pub products: Vec<RunProduct>,
     /// 停下的原因（文字）；录完或出错为 None
     pub cancelled: Option<String>,
     pub error: Option<String>,
@@ -59,6 +62,19 @@ pub struct RunClip {
     pub aegis_steal: bool,
     /// 录成的文件；没录完为 None
     pub path: Option<PathBuf>,
+}
+
+/// 一个成品
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RunProduct {
+    /// `clips::ProductKind::key`，「自定义」拼的是 "custom"
+    pub kind: String,
+    pub file: PathBuf,
+    /// 用到的片段（`RunClip::file_name`）
+    pub clips: Vec<String>,
+    /// 只有一段的高光时刻的起止（游戏时钟）；集锦和多段的为 None
+    pub start: Option<f32>,
+    pub end: Option<f32>,
 }
 
 fn path() -> Option<PathBuf> {
@@ -117,6 +133,8 @@ pub struct ClipRecord {
     aegis_steal: bool,
     /// 最近一次录成的文件；从没录成为 None（"未录完"）
     file: Option<FileRecord>,
+    /// 拼进了还在的集锦或成品里（2026-11-18 起拼完就删单段，`file` 为 None 也不算没录完）
+    in_product: bool,
 }
 
 #[derive(Serialize)]
@@ -130,12 +148,18 @@ pub struct PlayerRecord {
     compilations: Vec<CompilationRecord>,
 }
 
-/// 一个集锦（自动合集）
+/// 一个集锦或成品
 #[derive(Serialize)]
 pub struct CompilationRecord {
-    /// `clips::Collection::key`；2026-11-16 之前拼的没有，界面叫"合集"
+    /// 成品是 `clips::ProductKind::key` 或 "custom"；2026-11-18 之前拼的集锦是 `clips::Collection::key`；
+    /// 2026-11-16 之前拼的没有，界面叫"合集"
     kind: Option<String>,
     file: FileRecord,
+    /// 用了几段；以前的合集不知道，为 0
+    clips: usize,
+    /// 只有一段的高光时刻的起止；集锦和多段的为 None
+    start: Option<f32>,
+    end: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -221,17 +245,28 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
                     teamwork: c.teamwork,
                     aegis_steal: c.aegis_steal,
                     file,
+                    in_product: false,
                 }),
             }
         }
+        // 同一个文件重拼过：去掉旧的那条，新的放最前面
+        let mut add = |c: CompilationRecord| {
+            p.compilations.retain(|r| r.file.path != c.file.path);
+            p.compilations.insert(0, c);
+        };
         if let Some(c) = &run.compilation {
-            // 同一个文件重拼过：去掉旧的那条，新的放最前面
-            p.compilations.retain(|r| r.file.path != *c);
-            p.compilations.insert(0, CompilationRecord { kind: run.compilation_kind.clone(), file: FileRecord::new(c) });
+            add(CompilationRecord { kind: run.compilation_kind.clone(), file: FileRecord::new(c), clips: 0, start: None, end: None });
+        }
+        for x in run.products.iter().rev() {
+            add(CompilationRecord { kind: Some(x.kind.clone()), file: FileRecord::new(&x.file), clips: x.clips.len(), start: x.start, end: x.end });
         }
     }
+    let inside = in_products(runs);
     for p in &mut players {
         p.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+        for c in &mut p.clips {
+            c.in_product = inside.contains(&c.file_name);
+        }
     }
     // 按第一次录的先后（不再把"我"排前面：已录视频页不分你我，2026-11-15 用户定）
     let game_mode = runs.iter().rev().find_map(|r| r.game_mode).or_else(|| {
@@ -260,6 +295,42 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
     }
 }
 
+/// 拼进了还在的集锦或成品里的片段（`RunClip::file_name`）。2026-11-18 之前的合集里是那次录成的全部片段
+fn in_products(runs: &[&Run]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for run in runs {
+        if run.compilation.as_deref().is_some_and(Path::is_file) {
+            out.extend(run.clips.iter().filter(|c| c.path.is_some()).map(|c| c.file_name.clone()));
+        }
+        for x in run.products.iter().filter(|x| x.file.is_file()) {
+            out.extend(x.clips.iter().cloned());
+        }
+    }
+    out
+}
+
+/// 这场比赛「推荐」做出来、文件还在的成品（比赛页标"已生成"用）。以前「拼成集锦」拼的击杀集锦和新的同名，
+/// 但内容是当时勾的那几段，不算
+pub fn product_files(match_id: u64) -> std::collections::HashSet<PathBuf> {
+    let _g = LOCK.lock().unwrap();
+    load()
+        .into_iter()
+        .filter(|r| r.match_id == match_id)
+        .flat_map(|r| r.products)
+        .filter(|x| x.kind != "custom" && x.file.is_file())
+        .map(|x| x.file)
+        .collect()
+}
+
+/// 这场比赛里拼进了还在的集锦或成品里的片段（比赛页「自定义」标"已录 · 在集锦里"用）
+pub fn clips_in_products(match_id: u64) -> std::collections::HashSet<String> {
+    let runs = {
+        let _g = LOCK.lock().unwrap();
+        load()
+    };
+    in_products(&runs.iter().filter(|r| r.match_id == match_id).collect::<Vec<_>>())
+}
+
 /// 删掉一场比赛的全部记录。`delete_files` 时把记录里的视频移到回收站，返回移走了几个
 #[tauri::command]
 pub fn delete_match_record(match_id: u64, delete_files: bool) -> Result<usize, String> {
@@ -270,7 +341,7 @@ pub fn delete_match_record(match_id: u64, delete_files: bool) -> Result<usize, S
     if delete_files {
         let mut files: Vec<PathBuf> = gone
             .iter()
-            .flat_map(|r| r.clips.iter().filter_map(|c| c.path.clone()).chain(r.compilation.clone()))
+            .flat_map(|r| r.clips.iter().filter_map(|c| c.path.clone()).chain(r.compilation.clone()).chain(r.products.iter().map(|x| x.file.clone())))
             .filter(|p| p.is_file())
             .collect();
         files.sort();

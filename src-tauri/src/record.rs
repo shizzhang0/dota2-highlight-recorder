@@ -144,10 +144,16 @@ fn notify(app: &AppHandle, f: &Finished, lang: &str) {
             if en { "Recording stopped" } else { "录制已停止" }.to_owned(),
             if en { format!("{} of {} clips done ({reason})", f.completed.len(), f.selected.len()) } else { format!("完成 {}/{} 个片段（{reason}）", f.completed.len(), f.selected.len()) },
         ),
-        (None, None) => (
-            if en { "Recording finished" } else { "录完了" }.to_owned(),
-            if en { format!("{} clips, {:.1} min", f.completed.len(), f.elapsed_secs / 60.0) } else { format!("{} 个片段，用时 {:.1} 分钟", f.completed.len(), f.elapsed_secs / 60.0) },
-        ),
+        (None, None) => {
+            let mins = f.elapsed_secs / 60.0;
+            let body = match (en, f.products) {
+                (true, 0) => format!("{} clips, {mins:.1} min", f.completed.len()),
+                (true, n) => format!("{n} videos, {mins:.1} min"),
+                (false, 0) => format!("{} 个片段，用时 {mins:.1} 分钟", f.completed.len()),
+                (false, n) => format!("生成 {n} 个视频，用时 {mins:.1} 分钟"),
+            };
+            (if en { "Recording finished" } else { "录完了" }.to_owned(), body)
+        }
     };
     let _ = app.notification().builder().title(title).body(body).show();
 }
@@ -172,11 +178,15 @@ struct Finished {
     game_open: bool,
     /// 这次实测的录制速度（每秒墙钟录多少秒画面）
     speed: Option<f32>,
+    /// 做好了几个成品（集锦、单个时刻、自定义集锦）；0 = 只有单段
+    products: usize,
 }
 
-fn options(s: &Settings) -> Options {
+fn options(s: &Settings, outputs: Vec<pipeline::Output>) -> Options {
     Options {
-        compile: s.compile,
+        outputs,
+        // 拼完就删单段（2026-11-18 用户定）；没有成品（「自定义」只勾一段、没勾拼成集锦）时单段就是结果，不删
+        keep_parts: false,
         resolution: s.capture_size(),
         out: PathBuf::from(&s.out_dir),
         gsi_port: game::gsi::DEFAULT_PORT,
@@ -189,32 +199,46 @@ fn options(s: &Settings) -> Options {
     }
 }
 
-/// 开始录制 `clips`（计划里的序号）。`camera` 是比赛页上选的镜头、`compile` 是比赛页上"拼成集锦"勾没勾
-/// （都存进设置，下次默认用它），`lang` 是界面语言（通知用）。其他设置读当前保存的
+/// 一个成品在录制记录里要记的东西：种类、起止（单个时刻）
+struct ProductMeta {
+    kind: String,
+    start: Option<f32>,
+    end: Option<f32>,
+}
+
+/// 开始录制。两种（2026-11-18 起）：
+/// - `products` 不空：比赛页「推荐」选的成品（`clips::Product::id`），要录的段是它们用到的片段合起来，同一段只录一次；
+/// - 否则录「自定义」里勾的 `clips`（计划里的序号），`compile` 时两段以上拼成「自定义集锦」（勾没勾存进设置）。
+///
+/// `camera` 是比赛页上选的镜头（存进设置），`lang` 是界面语言（通知用）。其他设置读当前保存的
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_recording(
     app: AppHandle,
     match_id: u64,
     player: usize,
     clips: Vec<usize>,
+    products: Vec<String>,
     camera: String,
     compile: bool,
     lang: String,
 ) -> Result<(), String> {
-    if clips.is_empty() {
+    if clips.is_empty() && products.is_empty() {
         return Err("没有选片段".into());
     }
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("已经在录了".into());
     }
+    let custom = products.is_empty();
     let prepared = async {
         let mut settings = crate::settings::get_settings();
-        if settings.camera != camera || settings.compile != compile {
+        if settings.camera != camera || (custom && settings.compile != compile) {
             settings.camera = camera;
-            settings.compile = compile;
+            if custom {
+                settings.compile = compile;
+            }
             crate::settings::save_settings(settings.clone())?;
         }
-        let o = options(&settings);
         // ffmpeg 随安装包附带，设置页不再让用户填（2026-11-11 用户定：普通用户不会关心）。
         // settings.json 里的 ffmpeg 字段和环境变量 D2HR_FFMPEG 还认，只给开发用
         let ffmpeg = settings.ffmpeg.trim();
@@ -223,14 +247,50 @@ pub async fn start_recording(
         let r = crate::matches::parsed(match_id).await?;
         let p = settings.params();
         let plan = clips::plan(&r, player, &p);
-        let selected: Vec<Selected> = clips
-            .iter()
-            .map(|&i| plan.get(i.wrapping_sub(1)).map(|c| Selected { index: i, clip: c.clone() }).ok_or(format!("没有第 {i} 个片段")))
-            .collect::<Result<_, _>>()?;
-        Ok::<_, String>((o, ff, r, p, selected))
+        let (selected, outputs, metas) = if custom {
+            let selected: Vec<Selected> = clips
+                .iter()
+                .map(|&i| plan.get(i.wrapping_sub(1)).map(|c| Selected { index: i, clip: c.clone() }).ok_or(format!("没有第 {i} 个片段")))
+                .collect::<Result<_, _>>()?;
+            let (outputs, metas) = if compile && selected.len() > 1 {
+                let name = clips::custom_file_name(&r, player);
+                (vec![pipeline::Output { name, parts: (0..selected.len()).collect() }], vec![ProductMeta { kind: "custom".into(), start: None, end: None }])
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            (selected, outputs, metas)
+        } else {
+            let all = clips::products(&r, &plan);
+            let chosen: Vec<&clips::Product> = products
+                .iter()
+                .map(|id| all.iter().find(|x| x.id() == *id).ok_or(format!("这场没有「{id}」（规则改过？）")))
+                .collect::<Result<_, _>>()?;
+            // 用到的片段合起来按时间排，共用的只录一次
+            let mut used: Vec<usize> = chosen.iter().flat_map(|x| x.clips.iter().copied()).collect();
+            used.sort_unstable();
+            used.dedup();
+            let selected = used.iter().map(|&i| Selected { index: i + 1, clip: plan[i].clone() }).collect();
+            let outputs = chosen
+                .iter()
+                .map(|x| pipeline::Output {
+                    name: x.file_name(&r, &plan),
+                    parts: x.clips.iter().map(|c| used.iter().position(|u| u == c).expect("在 used 里")).collect(),
+                })
+                .collect();
+            let metas = chosen
+                .iter()
+                .map(|x| {
+                    let one = (!x.kind.is_collection() && x.clips.len() == 1).then(|| &plan[x.clips[0]]);
+                    ProductMeta { kind: x.kind.key().into(), start: one.map(|c| c.start()), end: one.map(|c| c.end()) }
+                })
+                .collect();
+            (selected, outputs, metas)
+        };
+        let o = options(&settings, outputs);
+        Ok::<_, String>((o, ff, r, p, selected, metas))
     }
     .await;
-    let (o, ff, r, p, selected) = match prepared {
+    let (o, ff, r, p, selected, metas) = match prepared {
         Ok(v) => v,
         Err(e) => {
             RUNNING.store(false, Ordering::SeqCst);
@@ -271,9 +331,21 @@ pub async fn start_recording(
             settings.measured_speed = Some(speed);
             let _ = crate::settings::save_settings(settings);
         }
-        // 记进"已录视频"：files 和 completed 一一对应，多出来的最后一个是合集
-        let done: std::collections::HashMap<usize, &PathBuf> = report.completed.iter().copied().zip(&report.files).collect();
+        // 记进"已录视频"：files 和 completed 一一对应；拼完删掉的单段不记文件（拼在成品里，见 products）
+        let done: std::collections::HashMap<usize, &PathBuf> =
+            report.completed.iter().copied().zip(&report.files).filter(|(_, f)| !report.removed.contains(f)).collect();
         let hero = |i: usize| r.players[i].hero.trim_start_matches("npc_dota_hero_").to_owned();
+        let products: Vec<crate::history::RunProduct> = report
+            .products
+            .iter()
+            .map(|(k, file)| crate::history::RunProduct {
+                kind: metas[*k].kind.clone(),
+                file: file.clone(),
+                clips: o.outputs[*k].parts.iter().map(|&i| clips::file_name(&r, &selected[i].clip)).collect(),
+                start: metas[*k].start,
+                end: metas[*k].end,
+            })
+            .collect();
         let run = crate::history::Run {
             time,
             match_id,
@@ -301,11 +373,10 @@ pub async fn start_recording(
                     path: done.get(&s.index).map(|p| (*p).clone()),
                 })
                 .collect(),
-            compilation: report.files.get(report.completed.len()).cloned(),
-            compilation_kind: report
-                .files
-                .get(report.completed.len())
-                .map(|_| clips::Collection::of(selected.iter().map(|s| &s.clip)).key().to_owned()),
+            // 2026-11-18 起集锦都记在 products 里
+            compilation: None,
+            compilation_kind: None,
+            products,
             cancelled: report.cancelled.map(|c| c.describe().to_owned()),
             error: report.error.as_ref().map(|e| format!("{e:#}")),
             elapsed_secs: report.elapsed.as_secs_f32(),
@@ -318,7 +389,8 @@ pub async fn start_recording(
             history_error,
             files: report.files,
             completed: report.completed,
-            selected: clips,
+            selected: selected.iter().map(|s| s.index).collect(),
+            products: report.products.len(),
             cancelled: report.cancelled.map(|c| c.describe().to_owned()),
             error: report.error.map(|e| format!("{e:#}")),
             elapsed_secs: report.elapsed.as_secs_f32(),

@@ -1,9 +1,14 @@
-// 比赛页：选玩家（十个英雄卡片）→ 高光时间线 + 片段列表（默认不勾，标出已录过的）→ 规则参数 → 底部汇总。
-// 2026-11-11 改版：英雄用大图，片段用小图标排开，多杀就多几个（docs/app-interaction.md 第 6 节）
+// 比赛页：选玩家（十个英雄卡片）→ 高光时间线 →「推荐」｜「自定义」→ 底部汇总。
+// 2026-11-11 改版：英雄用大图，片段用小图标排开，多杀就多几个（docs/app-interaction.md 第 6 节）。
+// 2026-11-18 用户定（参考完美时刻）：默认是「推荐」，直接列这局能生成的成品（击杀集锦、助攻集锦、三杀……），勾成品就行；
+// 原来逐个勾片段的那套挪到「自定义」
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, collectionKey, collectionName, el, heroIcon, heroName, heroPic, length, sceneTags } from "./format.js";
+import { clock, el, heroIcon, heroName, heroPic, length, productName, sceneTags } from "./format.js";
 import { settings, persist } from "./state.js";
+import { play } from "./videos.js";
+
+const MODES = ["rec", "custom"];
 
 /** `player` / `preselect`（片段文件名）从"已录视频"的"继续录未完成的"带过来：选好玩家、勾上这些片段 */
 /** `back` / `backLabel`：左上角的返回，从哪进来回哪（本地录像或已录视频） */
@@ -23,7 +28,14 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
   const preselectNote = el("p", { class: "warn", hidden: true });
   let clips = [];
   let picked = new Set();
+  // 「推荐」：这名玩家能生成的成品、勾了哪些（成品标识）
+  let products = [];
+  let chosen = new Set();
+  // 带着"继续录未完成的"进来时直接到「自定义」，那些片段在那里勾着
+  let mode = preselect ? "custom" : "rec";
   const current = () => info.players.find((p) => p.id === player);
+  /** 勾了的成品用到的片段序号（同一段只录一次） */
+  const usedClips = () => new Set(products.filter((x) => chosen.has(x.id)).flatMap((x) => x.clips));
 
   const playersBox = el("div", { class: "teams" });
   const highlight = el("div", { class: "card" });
@@ -60,20 +72,33 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
   setCamera(cameraValue);
   const camera = el("div", { class: "segmented", role: "radiogroup", "aria-label": t("match.camera") }, cameraButtons);
   recordBtn.addEventListener("click", () => {
+    settings.camera = cameraValue;
+    const minutes = (list) => (list.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1);
+    if (mode === "rec") {
+      const ids = products.filter((x) => chosen.has(x.id)).map((x) => x.id);
+      const used = usedClips();
+      const sel = clips.filter((c) => used.has(c.index));
+      if (!ids.length) return;
+      record({
+        matchId, player, hero: current().hero, clips: sel, products: ids, camera: cameraValue, compile: false, overwrite: 0,
+        secs: sel.reduce((a, c) => a + c.duration, 0), minutes: minutes(sel),
+      });
+      return;
+    }
     const sel = clips.filter((c) => picked.has(c.index));
     if (!sel.length) return;
-    settings.camera = cameraValue;
     settings.compile = compileValue;
     record({
       matchId,
       player,
       hero: current().hero,
       clips: sel,
+      products: [],
       camera: cameraValue,
       compile: compileValue,
       overwrite: sel.filter((c) => c.recorded).length,
       secs: sel.reduce((a, c) => a + c.duration, 0),
-      minutes: (sel.reduce((a, c) => a + c.estimated_secs, 0) / 60).toFixed(1),
+      minutes: minutes(sel),
     });
   });
   allBtn.addEventListener("click", () => {
@@ -160,13 +185,15 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     // 按时间线大概的像素宽度算，和前一段挤到一起（留不出 2 像素）就放到下一排
     const perPx = total / Math.max(400, window.innerWidth - 110);
     let lastEnd = -Infinity, lastLow = false;
+    // 「推荐」里亮的是勾了的成品用到的片段，点色块不勾选；「自定义」里亮的是勾了的片段，点色块勾选
+    const used = mode === "rec" ? usedClips() : picked;
     clips.forEach((c, i) => {
-      const off = !picked.has(c.index);
+      const off = !used.has(c.index);
       const low = !lastLow && c.start - lastEnd < 2 * perPx;
       lastEnd = Math.max(c.end, c.start + 18 * perPx);
       lastLow = low;
       line.append(
-        el("div", { class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}`, style: `left:${pct(c.start)};width:max(18px,${pct(c.end - c.start)})`, title: `${clock(c.start)}–${clock(c.end)}`, onclick: () => toggle(c.index) }, String(c.index)),
+        el("div", { class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}`, style: `left:${pct(c.start)};width:max(18px,${pct(c.end - c.start)})`, title: `${clock(c.start)}–${clock(c.end)}`, onclick: () => mode === "custom" && toggle(c.index) }, String(c.index)),
         // 相邻片段的图标会叠在一起，上下两排交替放
         el("div", { class: `kills ${i % 2 ? "b" : "a"}${off ? " off" : ""}`, style: `left:${pct((c.start + c.end) / 2)}` },
           sceneWord(c) ? el("span", { class: "scene-word" }, sceneWord(c)) : null,
@@ -181,13 +208,26 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     highlight.replaceChildren(
       el("h2", {}, t("match.highlights", { hero: heroName(p.hero), name: p.name })),
       el("p", { class: "sub" }, clips.length
-        ? t("match.highlightsSub", { kills, assists, n: clips.length }) + (aegis ? t("match.highlightsAegis", { n: aegis }) : "") + t("match.highlightsHint", { colors })
+        ? t("match.highlightsSub", { kills, assists, n: clips.length }) + (aegis ? t("match.highlightsAegis", { n: aegis }) : "")
+          // 说明按当前页写：「推荐」里点色块不勾选，亮的是勾了的成品要用的片段
+          + t(mode === "rec" ? "match.highlightsHintRec" : "match.highlightsHint", { colors })
         : t("match.noClips")),
       clips.length ? line : "",
     );
   }
 
   function renderSummary() {
+    if (mode === "rec") {
+      // 「推荐」：勾了几个成品、要录几段（共用的只算一次）、预计多久
+      const n = products.filter((x) => chosen.has(x.id)).length;
+      const used = usedClips();
+      const est = clips.filter((c) => used.has(c.index)).reduce((a, c) => a + c.estimated_secs, 0);
+      summary.textContent = n ? t("match.genSummary", { n, clips: used.size, minutes: (est / 60).toFixed(1) }) : t("match.genNone");
+      compileLabel.hidden = true;
+      recordBtn.textContent = n ? t("match.generate", { n }) : t("match.generateNone");
+      recordBtn.disabled = n === 0;
+      return;
+    }
     const sel = clips.filter((c) => picked.has(c.index));
     const secs = sel.reduce((a, c) => a + c.duration, 0);
     const est = sel.reduce((a, c) => a + c.estimated_secs, 0);
@@ -195,17 +235,59 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     summary.textContent = t("match.summary", {
       n: sel.length, total: clips.length, secs: length(secs), minutes: (est / 60).toFixed(1),
     }) + (overwrite ? t("match.overwrite", { n: overwrite }) : "");
+    // 「自定义」拼出来的统一叫自定义集锦（2026-11-18 起，「推荐」里才有击杀集锦、助攻集锦）
     compileLabel.hidden = sel.length < 2;
-    compileName.textContent = t("match.compileName", { hero: heroName(current().hero), name: collectionName(collectionKey(sel)) });
+    compileName.textContent = t("match.compileName", { hero: heroName(current().hero), name: productName("custom") });
+    recordBtn.textContent = t("match.record");
     recordBtn.disabled = sel.length === 0;
     allBtn.hidden = clips.length === 0;
     allBtn.textContent = t(picked.size === clips.length ? "match.selectNone" : "match.selectAll");
+  }
+
+  /** 「推荐」：成品卡片，只列这局有的。集锦在前，高光时刻按难得程度排。
+   * 已生成的点卡片直接播放，没生成的点了勾选。
+   * 卡片里不列选了哪几段（2026-11-18 用户：文字、小标签都不好看）：勾上后时间线上亮的就是它要用的片段 */
+  function renderProducts() {
+    const card = (x) => {
+      // 击杀集锦、助攻集锦按击杀、助攻次数说；高光时刻（同一种合成一个，2026-11-18 用户定）按次数说，只有一次就写时间
+      const unit = t(x.kind === "kills" ? "product.unitKills" : x.kind === "assists" ? "product.unitAssists" : "product.unitMoments");
+      const sub = x.start != null
+        ? `${clock(x.start)} · ${length(x.duration)}`
+        : t(x.picked < x.total ? "product.picked" : "product.all", { picked: x.picked, total: x.total, unit, len: length(x.duration) });
+      if (x.generated) {
+        return el("button", { type: "button", class: "product done", title: x.file_name, onclick: () => play(x.path, `${matchId} · ${heroName(current().hero)} · ${productName(x.kind)}`) },
+          el("span", { class: "name" }, productName(x.kind)), el("span", { class: "sub" }, sub),
+          el("span", { class: "badge" }, t("product.generated")));
+      }
+      const on = chosen.has(x.id);
+      const box = el("input", { type: "checkbox", tabindex: -1, "aria-hidden": "true" });
+      box.checked = on;
+      return el("button", { type: "button", class: `product${on ? " on" : ""}`, "aria-pressed": String(on), title: x.file_name, onclick: () => {
+        on ? chosen.delete(x.id) : chosen.add(x.id);
+        renderClips();
+      } }, box, el("span", { class: "name" }, productName(x.kind)), el("span", { class: "sub" }, sub));
+    };
+    // 只列这局有的（2026-11-18 用户定：原来没有的时刻合成一张灰卡片「这局没有」，不要）
+    productsBox.replaceChildren(products.length ? el("div", { class: "product-grid" }, products.map(card)) : el("p", { class: "muted", style: "margin:0" }, t("match.noClips")));
+  }
+
+  /** 「推荐」｜「自定义」切换：两边的勾选各自保留 */
+  function setMode(m) {
+    mode = m;
+    modeButtons.forEach((b, i) => {
+      b.classList.toggle("on", MODES[i] === m);
+      b.setAttribute("aria-checked", String(MODES[i] === m));
+    });
+    recCard.hidden = m !== "rec";
+    customCard.hidden = m !== "custom";
+    renderClips();
   }
 
   /** 片段列表：两列，一行一个片段；被杀英雄用小图标排开，多杀就多几个 */
   function renderClips() {
     renderTimeline();
     renderChips();
+    renderProducts();
     if (!clips.length) {
       clipsBox.replaceChildren();
       renderSummary();
@@ -229,7 +311,9 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
         el("span", { class: "hero-icons" }, c.victims.length ? c.victims.map((v) => heroIcon(v)) : el("span", { class: "muted" }, t("scene.roshan"))),
         el("span", { class: "end" },
           ...sceneTags(c),
-          c.recorded ? el("span", { class: "ok", title: t("match.recordedHint") }, t("match.recorded")) : null),
+          // 拼进集锦后单段文件删了（2026-11-18 起），照样算录过，免得以为没录又录一遍
+          c.recorded ? el("span", { class: "ok", title: t("match.recordedHint") }, t("match.recorded"))
+            : c.in_product ? el("span", { class: "ok", title: t("match.inProductHint") }, t("match.inProduct")) : null),
       );
     })));
     renderSummary();
@@ -237,13 +321,15 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
 
   async function replan() {
     try {
-      clips = (await api.plan(matchId, player, settings.rules)).clips;
+      ({ clips, products } = await api.plan(matchId, player, settings.rules));
     } catch (e) {
       clipsBox.replaceChildren(el("p", { class: "error" }, e.message));
       clips = [];
+      products = [];
     }
     // 默认一个都不勾，用户自己挑
     picked = new Set();
+    chosen = new Set();
     if (pending) {
       const found = clips.filter((c) => pending.has(c.file_name));
       picked = new Set(found.map((c) => c.index));
@@ -305,6 +391,16 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     }
   };
   document.addEventListener("mouseup", onMouseBack);
+  // 「推荐」｜「自定义」两段切换，和镜头、录制画面的切换一样
+  const modeButtons = MODES.map((m) => el("button", { type: "button", role: "radio", onclick: () => setMode(m) }, t(`match.tab.${m}`)));
+  const productsBox = el("div");
+  const recCard = el("div", { class: "card" },
+    el("div", { class: "clips-head" }, el("h2", {}, t("match.tab.rec")), el("span", { class: "muted", style: "font-size:13px" }, t("match.recHint"))),
+    productsBox);
+  const customCard = el("div", { class: "card" },
+    el("div", { class: "clips-head" }, el("h2", {}, t("match.clips")), el("span", { class: "muted", style: "font-size:13px" }, t("match.clipsHint")), el("div", { class: "spacer" }), allBtn),
+    chipsBox, preselectNote, clipsBox,
+    el("details", { class: "rules", style: "margin-top:16px" }, el("summary", {}, t("rules.title")), rulesBox));
   view.replaceChildren(
     backBar,
     el("div", { class: "page-head" },
@@ -313,13 +409,13 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     ),
     playersBox,
     highlight,
-    el("div", { class: "card" },
-      el("div", { class: "clips-head" }, el("h2", {}, t("match.clips")), el("span", { class: "muted", style: "font-size:13px" }, t("match.clipsHint")), el("div", { class: "spacer" }), allBtn),
-      chipsBox, preselectNote, clipsBox,
-      el("details", { class: "rules", style: "margin-top:16px" }, el("summary", {}, t("rules.title")), rulesBox)),
+    el("div", { class: "segmented mode-tabs", role: "radiogroup", "aria-label": t("match.tab.label") }, modeButtons),
+    recCard,
+    customCard,
     el("div", { class: "footer-dock" }, el("div", { class: "footer-bar" }, summary, el("div", { class: "spacer" }), compileLabel, camera, recordBtn)),
   );
   renderPlayers();
   renderRules();
+  setMode(mode);
   await replan();
 }

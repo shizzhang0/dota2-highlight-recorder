@@ -112,18 +112,12 @@ export function sceneTags(c) {
   ].filter(Boolean);
 }
 
-/** 集锦叫什么，按选中片段的内容定，和 clips::Collection::of 一致（2026-11-16 用户定）：
- * 全是抢盾 / 全是残血反杀用它们的名字；否则全是击杀片段叫击杀集锦（三杀、四杀、暴走也算这里），全是助攻叫助攻集锦，混着的叫高光集锦 */
-export function collectionKey(clips) {
-  const all = (f) => clips.length > 0 && clips.every(f);
-  if (all((c) => c.aegis_steal)) return "aegis";
-  if (all((c) => c.low_hp)) return "low_hp";
-  if (all((c) => c.kind === "kill")) return "kills";
-  if (all((c) => c.kind === "assist")) return "assists";
-  return "mixed";
+/** 成品的显示名（`clips::ProductKind::key`，「自定义」拼的是 custom）：击杀集锦、三杀…… */
+export function productName(kind) {
+  return t(`product.${kind}`);
 }
 
-/** 集锦的显示名；`key` 为空（2026-11-16 之前拼的）叫"合集" */
+/** 2026-11-18 之前拼的集锦的显示名（按 clips::Collection 起的：击杀集锦、高光集锦……）；`key` 为空（2026-11-16 之前拼的）叫"合集" */
 export function collectionName(key) {
   return t(key ? `collection.${key}` : "collection.old");
 }

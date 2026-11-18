@@ -185,8 +185,17 @@ fn run() -> Result<()> {
                 CameraArg::Hero => pipeline::Camera::HeroChase,
                 CameraArg::Player => pipeline::Camera::PlayerView,
             };
+            // 合集和以前一样：两段以上才拼，按内容起名（击杀集锦……），单段照样留着
+            let outputs = if compile && selected.len() > 1 {
+                let label = clips::Collection::of(selected.iter().map(|s| &s.clip)).file_label();
+                let name = format!("{}_{player}_{}_{label}", r.match_id, r.players[player].hero.trim_start_matches("npc_dota_hero_"));
+                vec![pipeline::Output { name, parts: (0..selected.len()).collect() }]
+            } else {
+                Vec::new()
+            };
             let o = pipeline::Options {
-                compile,
+                outputs,
+                keep_parts: true,
                 resolution,
                 out,
                 gsi_port,

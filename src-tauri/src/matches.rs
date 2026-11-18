@@ -409,11 +409,38 @@ pub struct ClipRow {
     estimated_secs: f32,
     /// 输出目录里已经有这个片段的文件（再录会覆盖）
     recorded: bool,
+    /// 拼进了还在的集锦或成品里（单段文件已经删了，「自定义」里标"已录 · 在集锦里"）
+    in_product: bool,
+}
+
+/// 「推荐」里的一个成品（`clips::Product`）
+#[derive(Serialize)]
+pub struct ProductRow {
+    /// 录制命令用的标识（`Product::id`）
+    id: String,
+    /// `clips::ProductKind::key`
+    kind: &'static str,
+    /// 用到的片段序号（从 1 开始），按时间排
+    clips: Vec<usize>,
+    /// 集锦：选进来的击杀（助攻）次数 / 一共多少次
+    picked: usize,
+    total: usize,
+    /// 成片时长
+    duration: f32,
+    /// 只有一段的高光时刻的起止；集锦和多段的为 None
+    start: Option<f32>,
+    end: Option<f32>,
+    file_name: String,
+    /// 成品文件的完整路径（已生成时点卡片直接播放）
+    path: PathBuf,
+    /// 「推荐」做过这个成品、文件还在（以前「拼成集锦」拼的同名文件不算）
+    generated: bool,
 }
 
 #[derive(Serialize)]
 pub struct PlanInfo {
     clips: Vec<ClipRow>,
+    products: Vec<ProductRow>,
 }
 
 #[tauri::command]
@@ -427,7 +454,31 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
     let mut p = rules.params();
     p.speed = settings.params().speed;
     let out_dir = PathBuf::from(&settings.out_dir);
-    let clips = clips::plan(&r, player, &p)
+    let exists = |name: &str| out_dir.join(format!("{name}.mp4")).is_file();
+    let inside = crate::history::clips_in_products(match_id);
+    let made = crate::history::product_files(match_id);
+    let plan = clips::plan(&r, player, &p);
+    let products = clips::products(&r, &plan)
+        .iter()
+        .map(|x| {
+            let file_name = x.file_name(&r, &plan);
+            let one = (!x.kind.is_collection() && x.clips.len() == 1).then(|| &plan[x.clips[0]]);
+            ProductRow {
+                id: x.id(),
+                kind: x.kind.key(),
+                clips: x.clips.iter().map(|i| i + 1).collect(),
+                picked: x.picked,
+                total: x.total,
+                duration: x.duration(&plan),
+                start: one.map(|c| c.start()),
+                end: one.map(|c| c.end()),
+                generated: made.contains(&out_dir.join(format!("{file_name}.mp4"))),
+                path: out_dir.join(format!("{file_name}.mp4")),
+                file_name,
+            }
+        })
+        .collect();
+    let clips = plan
         .iter()
         .enumerate()
         .map(|(i, c)| ClipRow {
@@ -448,10 +499,11 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
             aegis_steal: c.aegis_steal,
             file_name: clips::file_name(&r, c),
             estimated_secs: c.estimated_seconds(&p),
-            recorded: out_dir.join(format!("{}.mp4", clips::file_name(&r, c))).is_file(),
+            recorded: exists(&clips::file_name(&r, c)),
+            in_product: inside.contains(&clips::file_name(&r, c)),
         })
         .collect();
-    Ok(PlanInfo { clips })
+    Ok(PlanInfo { clips, products })
 }
 
 /// 英雄显示名（读游戏的本地化文件）。`language` 是界面语言 "zh-CN" / "en"；读不到返回空表，前端退回内部名
