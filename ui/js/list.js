@@ -198,10 +198,11 @@ export async function showHome(view, dialog, { openMatch }) {
     try {
       const [list, history] = await Promise.all([api.listReplays(), api.recordedMatches().catch(() => [])]);
       rows = list;
-      // 已录几段：从"已录视频"的记录里数（文件还在的才算）
+      // 已录几个视频：从"已录视频"的记录里数（文件还在的才算），单段加上集锦、成品。
+      // 原来只数单段，2026-11-18 起拼完就删单段，只录了成品的比赛就显示不出来
       recorded = new Map();
       for (const m of history) {
-        const n = m.players.reduce((a, p) => a + p.clips.filter((c) => c.file?.exists).length, 0);
+        const n = m.players.reduce((a, p) => a + p.clips.filter((c) => c.file?.exists).length + p.compilations.filter((c) => c.file.exists).length, 0);
         if (n) recorded.set(m.match_id, n);
       }
     } catch (e) {

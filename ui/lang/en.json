@@ -210,7 +210,7 @@
   "home.account.active": "Signed in to Steam",
   "home.account.played": "Last played {date}",
   "home.account.note": "Only for this session. Next time the app follows the account signed in to Steam.",
-  "home.recorded": "{n} recorded",
+  "home.recorded": "✓ {n} videos recorded",
   "home.pick": "Select",
   "match.you": "You",
   "match.highlights": "{hero} · {name}'s highlights",
@@ -316,9 +316,10 @@
   "product.unitAssists": "assists",
   "product.picked": "Best {picked} of {total} {unit} · about {len}",
   "product.all": "All {total} {unit} · about {len}",
-  "product.generated": "Made · click to play",
+  "product.generated": "Made",
   "videos.partsN": "{n} clips",
   "rec.result.doneProducts": "Done: {n} videos made",
   "match.highlightsHintRec": ". {colors}, with the heroes killed above; lit blocks are the clips your ticked videos use",
-  "product.unitMoments": "times"
+  "product.unitMoments": "times",
+  "product.play": "Play"
 }

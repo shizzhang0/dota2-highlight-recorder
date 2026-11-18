@@ -210,7 +210,7 @@
   "home.account.active": "Steam 当前登录",
   "home.account.played": "上次玩 {date}",
   "home.account.note": "只影响这次打开；下次启动回到 Steam 当前登录的账号",
-  "home.recorded": "已录 {n} 段",
+  "home.recorded": "✓ 已录 {n} 个视频",
   "home.pick": "勾选",
   "match.you": "你",
   "match.highlights": "{hero} · {name} 的高光",
@@ -316,9 +316,10 @@
   "product.unitAssists": "助攻",
   "product.picked": "精选 {picked}/{total} 次{unit} · 约 {len}",
   "product.all": "全部 {total} 次{unit} · 约 {len}",
-  "product.generated": "已生成 · 点开播放",
+  "product.generated": "已生成",
   "videos.partsN": "{n} 段",
   "rec.result.doneProducts": "录完了：生成 {n} 个视频",
   "match.highlightsHintRec": "。{colors}，上面是被击杀的英雄；亮的是勾了的视频要用到的片段",
-  "product.unitMoments": ""
+  "product.unitMoments": "",
+  "product.play": "播放"
 }

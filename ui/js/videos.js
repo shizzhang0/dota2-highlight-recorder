@@ -92,7 +92,7 @@ function iconButton(svg, { title, ...attrs }) {
   b.innerHTML = svg;
   return b;
 }
-const revealButton = (path) => iconButton(FOLDER_ICON, { class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(path) });
+export const revealButton = (path) => iconButton(FOLDER_ICON, { class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(path) });
 
 /** 一个视频：缩略图（点了在应用里播放）、时长、场景标签（多杀、残血反杀……），下面是时间和被杀英雄。`title` 是播放器上方的标题 */
 function videoCard(file, { range, secs, victims = [], clip, label, title }) {
