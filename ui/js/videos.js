@@ -3,9 +3,10 @@
 // 比赛 ID 点了去比赛页，右上角「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, collectionName, date, el, heroIcon, heroName, modeName, sceneTags } from "./format.js";
+import { clock, collectionName, date, el, heroIcon, heroName, modeName, productName, sceneTags } from "./format.js";
 
-const unfinished = (p) => p.clips.filter((c) => !c.file);
+// 没录成的片段；拼进了集锦的（2026-11-18 起单段文件拼完就删）不算
+const unfinished = (p) => p.clips.filter((c) => !c.file && !c.in_product);
 
 // 缩略图一张一张取：第一次要 ffmpeg 现取一帧，同时开十几个 ffmpeg 会卡；取过的有缓存，很快
 const thumbQueue = [];
@@ -61,7 +62,7 @@ function playerDialog() {
   return player;
 }
 
-async function play(path, name) {
+export async function play(path, name) {
   const p = playerDialog();
   let url;
   try {
@@ -123,10 +124,15 @@ function videoGrid(m, { openMatch }) {
       // 2026-11-16 之前的记录没有类别，当成击杀片段
       if (c.file) cards.push(videoCard(c.file, { range, secs: c.end - c.start, victims: c.victims, clip: { ...c, kind: c.kind ?? "kill" }, title: `${m.match_id} · ${heroName(p.hero)} · ${range}` }));
     }
-    // 集锦（击杀集锦），最近拼的在前；以前拼的叫"合集"，文件名不同，可能还在
+    // 成品和集锦，最近做的在前（2026-11-18 起每场主要就是这些：击杀集锦、三杀 · 16:40、自定义集锦 · 2 段）。
+    // 单个时刻带起止时间；以前拼的集锦按以前的叫法（击杀集锦、高光集锦），更早的叫"合集"
     for (const comp of p.compilations) {
-      const label = t("videos.compilationOf", { hero: heroName(p.hero), name: collectionName(comp.kind) });
-      cards.push(videoCard(comp.file, { label, title: `${m.match_id} · ${label}` }));
+      const moment = comp.start != null;
+      const name = moment ? `${productName(comp.kind)} · ${clock(comp.start)}`
+        : comp.kind === "custom" || (comp.clips && comp.kind) ? productName(comp.kind) : collectionName(comp.kind);
+      const label = t("videos.compilationOf", { hero: heroName(p.hero), name });
+      const extra = !moment && comp.clips ? t("videos.partsN", { n: comp.clips }) : "";
+      cards.push(videoCard(comp.file, { label: extra ? `${label} · ${extra}` : label, secs: moment ? comp.end - comp.start : 0, title: `${m.match_id} · ${label}` }));
     }
     const left = unfinished(p);
     if (left.length) {
@@ -140,10 +146,12 @@ function videoGrid(m, { openMatch }) {
   return el("div", { class: "vid-grid" }, cards);
 }
 
-/** 从已录视频中移除这场：确认框里可以勾"同时删除视频文件"（移到回收站），默认不勾 */
+/** 从已录视频中移除这场：确认框里"同时删除视频文件"（移到回收站）默认勾着，可以去掉 */
 function confirmDelete(dialog, matchId) {
   return new Promise((resolve) => {
+    // 默认勾上（2026-11-18 用户定；原来默认不勾，文件留在原处）。移到回收站，删错了还能找回
     const files = el("input", { type: "checkbox" });
+    files.checked = true;
     const done = (ok) => { dialog.close(); resolve(ok ? { deleteFiles: files.checked } : null); };
     dialog.replaceChildren(
       el("h2", {}, t("videos.delete.title", { id: matchId })),

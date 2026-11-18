@@ -55,8 +55,19 @@ impl std::fmt::Display for BlackWorld {
 
 impl std::error::Error for BlackWorld {}
 
+/// 录完后要做的一个成品：用哪几段（`selected` 里的位置），文件名（不含扩展名）。
+/// 只有一段的直接用那段的文件（名字不同就复制一份），两段以上按顺序拼起来
+#[derive(Debug, Clone)]
+pub struct Output {
+    pub name: String,
+    pub parts: Vec<usize>,
+}
+
 pub struct Options {
-    pub compile: bool,
+    /// 录完后要做的成品（集锦、改名的单个时刻）；空 = 只要每段各自的文件
+    pub outputs: Vec<Output>,
+    /// 成品都做好后，还留着每段各自的文件。桌面应用不留（2026-11-18 用户定：拼完就删单段）；命令行留
+    pub keep_parts: bool,
     pub resolution: Option<(u32, u32)>,
     pub out: PathBuf,
     pub gsi_port: u16,
@@ -200,10 +211,14 @@ pub trait Host {
 /// 录制结果。出错或停下时也会给出已经做好的部分，方便从没录完的片段继续
 #[derive(Debug)]
 pub struct Report {
-    /// 输出的文件（最后一个可能是合集）
+    /// 录好的每段的文件，和 `completed` 一一对应（`removed` 里的已经删了）
     pub files: Vec<PathBuf>,
     /// 已经做好的片段序号（计划里的序号，从 1 开始）
     pub completed: Vec<usize>,
+    /// 做好的成品：(`Options::outputs` 里的位置, 文件)
+    pub products: Vec<(usize, PathBuf)>,
+    /// 成品做好后删掉的单段文件（`keep_parts` 为 false 时）
+    pub removed: Vec<PathBuf>,
     /// 停下的原因；正常录完或出错是 None
     pub cancelled: Option<Reason>,
     pub error: Option<anyhow::Error>,
@@ -307,12 +322,13 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
     let blocked_watch = log.watch_blocked();
     let indices: Vec<usize> = selected.iter().map(|s| s.index).collect();
     log.line(&format!(
-        "开始：比赛 {}，玩家 #{player}，片段 {indices:?}，输出到 {}，分辨率 {:?}，镜头 {:?}，合集 {}，录完退出 {}",
+        "开始：比赛 {}，玩家 #{player}，片段 {indices:?}，输出到 {}，分辨率 {:?}，镜头 {:?}，成品 {:?}，留单段 {}，录完退出 {}",
         r.match_id,
         o.out.display(),
         o.resolution,
         o.camera,
-        o.compile,
+        o.outputs.iter().map(|x| (&x.name, &x.parts)).collect::<Vec<_>>(),
+        o.keep_parts,
         o.quit
     ));
     // 开始时的前台窗口（终端或应用）：不管怎么结束，最后都切回它，用户回来能直接看到结果
@@ -324,9 +340,11 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
     // 停下的原因要在 hold 之外读（restore 期间读不到）
     let cancelled = cancel::reason();
     log.line(&format!(
-        "结束：完成 {:?}，文件 {:?}，停下 {:?}，出错 {}，退出游戏 {}，录制速度 {:?}",
+        "结束：完成 {:?}，文件 {:?}，成品 {:?}，删掉的单段 {:?}，停下 {:?}，出错 {}，退出游戏 {}，录制速度 {:?}",
         done.completed,
         done.files,
+        done.products,
+        done.removed,
         cancelled.map(|c| c.describe()),
         error.as_ref().map_or("无".into(), |e| format!("{e:#}")),
         done.game_quit,
@@ -335,6 +353,8 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
     Report {
         files: done.files,
         completed: done.completed,
+        products: done.products,
+        removed: done.removed,
         cancelled,
         error: if cancelled.is_some() { None } else { error },
         elapsed: started.elapsed(),
@@ -348,6 +368,8 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
 struct Done {
     files: Vec<PathBuf>,
     completed: Vec<usize>,
+    products: Vec<(usize, PathBuf)>,
+    removed: Vec<PathBuf>,
     game_quit: bool,
     speed: Option<f32>,
 }
@@ -522,14 +544,32 @@ fn record_all(
     }
     result?;
 
-    if o.compile && outputs.len() > 1 {
-        let hero = r.players[player].hero.trim_start_matches("npc_dota_hero_");
-        // 按选中片段的内容起名（击杀集锦、助攻集锦……），不同种类各留一个文件；原来都叫"合集"
-        let label = clips::Collection::of(selected.iter().map(|s| &s.clip)).file_label();
-        let dest = o.out.join(format!("{}_{player}_{hero}_{label}.mp4", r.match_id));
-        ff.concat(&outputs, &dest)?;
+    make_outputs(host, ff, o, &outputs, done)
+}
+
+/// 全部段录完后做成品（2026-11-18 起：比赛页「推荐」的集锦和单个时刻，「自定义」的自定义集锦）。
+/// 一个成品只有一段时复制那段（同名就不用动），多段按顺序拼。全部做好后，不留单段的话删掉不是成品的单段文件；
+/// 中途出错就都留着，什么都不丢
+fn make_outputs(host: &dyn Host, ff: &Ffmpeg, o: &Options, parts: &[PathBuf], done: &mut Done) -> Result<()> {
+    for (k, out) in o.outputs.iter().enumerate() {
+        let dest = o.out.join(format!("{}.mp4", out.name));
+        let files: Vec<PathBuf> = out.parts.iter().map(|&i| parts.get(i).cloned().context("成品用到的片段没录成")).collect::<Result<_>>()?;
+        match files.as_slice() {
+            [one] if *one == dest => {}
+            [one] => {
+                std::fs::copy(one, &dest).with_context(|| format!("复制 {} 失败", dest.display()))?;
+            }
+            _ => ff.concat(&files, &dest)?,
+        }
         host.event(Event::CompilationDone { path: dest.clone(), secs: media::mp4_duration(&dest)? });
-        done.files.push(dest);
+        done.products.push((k, dest));
+    }
+    if !o.keep_parts && !o.outputs.is_empty() {
+        for p in parts {
+            if !done.products.iter().any(|(_, d)| d == p) && std::fs::remove_file(p).is_ok() {
+                done.removed.push(p.clone());
+            }
+        }
     }
     Ok(())
 }

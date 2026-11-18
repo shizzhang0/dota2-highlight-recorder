@@ -73,7 +73,7 @@ const resultKind = (f) => (f.error ? "error" : f.cancelled ? "stopped" : "done")
 
 /** 开始录制：`clips` 是要录的片段（plan 返回的行），`camera` 是比赛页上选的镜头。
  * 录制结束调 `onFinished(结果)`；没能开始调 `onFailed(原因)` */
-export async function startRecording(dialog, { matchId, player, hero, clips, camera, compile, onFinished, onFailed }) {
+export async function startRecording(dialog, { matchId, player, hero, clips, products = [], camera, compile, onFinished, onFailed }) {
   rec = { matchId, hero, clips, current: null, done: new Set(), started: null, step: t("rec.starting"), bar: null, frames: null, log: [], stopping: false };
   const update = () => page?.();
   const unlisten = await Promise.all([
@@ -111,7 +111,7 @@ export async function startRecording(dialog, { matchId, player, hero, clips, cam
   ]);
 
   try {
-    await api.startRecording(matchId, player, clips.map((c) => c.index), camera, compile, resolve(settings.language));
+    await api.startRecording(matchId, player, clips.map((c) => c.index), products, camera, compile, resolve(settings.language));
   } catch (e) {
     unlisten.forEach((u) => u());
     rec = null;
@@ -179,7 +179,8 @@ export function showRecording(view, { onVideos }) {
     big.className = `big result-${kind}`;
     big.style.fontSize = "24px";
     big.textContent = {
-      done: t("rec.result.done", { n: f.completed.length }),
+      // 做了成品（集锦、时刻）就说生成了几个视频，单段拼完已经删了
+      done: f.products ? t("rec.result.doneProducts", { n: f.products }) : t("rec.result.done", { n: f.completed.length }),
       stopped: t("rec.result.stopped", { reason: f.cancelled }),
       error: t("rec.result.error"),
     }[kind];

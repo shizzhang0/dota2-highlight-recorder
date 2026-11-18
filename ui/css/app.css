@@ -394,6 +394,18 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .clip-row .end { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 8px; white-space: nowrap; font-size: 12.5px; }
 .clips-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .clips-head h2 { margin: 0; }
+/* 比赛页「推荐」｜「自定义」（2026-11-18）：切换放在时间线下面，「推荐」是成品卡片，点了勾选，已生成的点了播放 */
+.mode-tabs { margin: 0 0 12px; }
+.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.product { position: relative; display: grid; gap: 4px; align-content: start; padding: 12px 40px 12px 14px; text-align: left; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); }
+.product:hover:not(:disabled) { background: var(--panel-2); border-color: var(--line-hover); }
+.product.on, .product.on:hover:not(:disabled) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.product input { position: absolute; top: 12px; right: 12px; margin: 0; pointer-events: none; accent-color: var(--accent); }
+.product .name { font-weight: 600; font-size: 15px; }
+/* margin 要清掉：外面的 .card .sub 有 16px 的下边距 */
+.product .sub { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--num); }
+.product .badge { color: var(--radiant); font-size: 12px; }
+.product.done { padding-right: 14px; }
 /* 快速勾选（2026-11-16）：点了勾上这一类的全部片段 */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -2px 0 12px; }
 .chips:empty { display: none; }
