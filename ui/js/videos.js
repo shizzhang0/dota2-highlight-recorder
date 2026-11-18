@@ -31,7 +31,8 @@ async function pumpThumbs() {
 }
 
 // 播放器：点缩略图在应用里放（2026-11-12 用户要的，原来是交给系统默认播放器）。
-// 视频经 Tauri 的 asset 协议读，播放前 allow_video 只放行这一个文件
+// 视频从本机的播放服务读（src-tauri/src/video.rs），播放前 video_url 只放行这一个文件、给出带令牌的地址。
+// 2026-11-18 前用 Tauri 的 asset 协议，用户反馈有时卡顿
 let player = null;
 function playerDialog() {
   if (player) return player;
@@ -62,8 +63,9 @@ function playerDialog() {
 
 async function play(path, name) {
   const p = playerDialog();
+  let url;
   try {
-    await api.allowVideo(path);
+    url = await api.videoUrl(path);
   } catch (e) {
     alert(e.message);
     return;
@@ -75,7 +77,7 @@ async function play(path, name) {
     p.dialog.close();
     api.openFile(path).catch((e) => alert(e.message));
   };
-  p.video.src = window.__TAURI__.core.convertFileSrc(path);
+  p.video.src = url;
   p.dialog.showModal();
 }
 
