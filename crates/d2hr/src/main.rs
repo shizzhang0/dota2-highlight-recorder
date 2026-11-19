@@ -202,7 +202,6 @@ fn run() -> Result<()> {
                 quit,
                 camera,
                 block_input: !allow_input,
-                log_dir: None,
             };
             record::run(&r, player, &selected, &ff, &o)
         }

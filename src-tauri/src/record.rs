@@ -195,7 +195,6 @@ fn options(s: &Settings, outputs: Vec<pipeline::Output>) -> Options {
         quit: true,
         camera: if s.camera == "player_view" { Camera::PlayerView } else { Camera::HeroChase },
         block_input: true,
-        log_dir: crate::settings::logs_dir(),
     }
 }
 
@@ -294,6 +293,7 @@ pub async fn start_recording(
         Ok(v) => v,
         Err(e) => {
             RUNNING.store(false, Ordering::SeqCst);
+            pipeline::applog::write("录制", &format!("没能开始：比赛 {match_id}，{e}"));
             return Err(e);
         }
     };
@@ -382,6 +382,9 @@ pub async fn start_recording(
             elapsed_secs: report.elapsed.as_secs_f32(),
         };
         let history_error = crate::history::add(run).err();
+        if let Some(e) = &history_error {
+            pipeline::applog::write("录制", &format!("记进已录视频失败：{e}"));
+        }
         let game_open = !report.game_quit && game::window::dota_window().is_ok();
         GAME_OPEN.store(game_open, Ordering::SeqCst);
         let finished = Finished {

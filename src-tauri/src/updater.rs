@@ -43,6 +43,14 @@ struct Progress {
 /// 错误给前端显示："portable" = 不是安装版，"recording" = 正在录制，"none" = latest.json 里没有更新的版本
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
+    let r = install(app).await;
+    if let Err(e) = &r {
+        crate::log::app(&format!("更新没装上：{e}"));
+    }
+    r
+}
+
+async fn install(app: AppHandle) -> Result<(), String> {
     if !app_installed() {
         return Err("portable".into());
     }
@@ -53,6 +61,7 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
     let Some(update) = update else {
         return Err("none".into());
     };
+    crate::log::app(&format!("开始更新：v{} → v{}", update.current_version, update.version));
     let mut downloaded = 0u64;
     let app2 = app.clone();
     update
