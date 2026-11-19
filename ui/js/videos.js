@@ -3,7 +3,7 @@
 // 比赛 ID 点了去比赛页，右上角「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, collectionName, date, el, heroIcon, heroName, modeName, productName, sceneTags } from "./format.js";
+import { clock, collectionName, date, el, heroIcon, heroName, modeName, productName, sceneTags, span } from "./format.js";
 import { endPlayback, watchPlayback } from "./playlog.js";
 
 // 没录成的片段；拼进了集锦的（2026-11-18 起单段文件拼完就删）不算
@@ -119,46 +119,45 @@ function videoCard(file, { range, secs, victims = [], clip, label, title }) {
     ));
 }
 
-/** 一场比赛的所有视频（每个玩家的片段、合集），加上没录完的"接着录" */
-function videoGrid(m, { openMatch }) {
+/** 一场比赛里一个英雄的所有视频（片段、成品、集锦），加上没录完的"接着录" */
+function videoGrid(m, p, { openMatch }) {
   const cards = [];
-  for (const p of m.players) {
-    for (const c of p.clips) {
-      const range = `${clock(c.start)}–${clock(c.end)}`;
-      // 2026-11-16 之前的记录没有类别，当成击杀片段
-      if (c.file) cards.push(videoCard(c.file, { range, secs: c.end - c.start, victims: c.victims, clip: { ...c, kind: c.kind ?? "kill" }, title: `${m.match_id} · ${heroName(p.hero)} · ${range}` }));
-    }
-    // 成品和集锦，最近做的在前（2026-11-18 起每场主要就是这些：击杀集锦、三杀 · 16:40、自定义集锦 · 2 段）。
-    // 单个时刻带起止时间；以前拼的集锦按以前的叫法（击杀集锦、高光集锦），更早的叫"合集"
-    for (const comp of p.compilations) {
-      const moment = comp.start != null;
-      const name = moment ? `${productName(comp.kind)} · ${clock(comp.start)}`
-        : comp.kind === "custom" || (comp.clips && comp.kind) ? productName(comp.kind) : collectionName(comp.kind);
-      const label = t("videos.compilationOf", { hero: heroName(p.hero), name });
-      const extra = !moment && comp.clips ? t("videos.partsN", { n: comp.clips }) : "";
-      cards.push(videoCard(comp.file, { label: extra ? `${label} · ${extra}` : label, secs: moment ? comp.end - comp.start : 0, title: `${m.match_id} · ${label}` }));
-    }
-    const left = unfinished(p);
-    if (left.length) {
-      cards.push(el("div", { class: "vid left" }, el("div", {},
-        t("videos.leftN", { n: left.length, hero: heroName(p.hero) }), el("br"),
-        // 走正常的录制流程：到比赛页、选好这名玩家、勾上没录完的片段，用户确认后开始
-        el("button", { type: "button", style: "margin-top:10px", onclick: () => openMatch(m.match_id, { from: "videos", player: p.player, preselect: left.map((c) => c.file_name) }) }, t("videos.resumeShort")),
-      )));
-    }
+  for (const c of p.clips) {
+    const range = span(c.start, c.end);
+    // 2026-11-16 之前的记录没有类别，当成击杀片段
+    if (c.file) cards.push(videoCard(c.file, { range, secs: c.end - c.start, victims: c.victims, clip: { ...c, kind: c.kind ?? "kill" }, title: `${m.match_id} · ${heroName(p.hero)} · ${range}` }));
+  }
+  // 成品和集锦，最近做的在前（2026-11-18 起每场主要就是这些：击杀集锦、三杀 · 16:40、自定义集锦 · 2 段）。
+  // 单个时刻带起止时间；以前拼的集锦按以前的叫法（击杀集锦、高光集锦），更早的叫"合集"
+  for (const comp of p.compilations) {
+    const moment = comp.start != null;
+    const name = moment ? `${productName(comp.kind)} · ${clock(comp.start)}`
+      : comp.kind === "custom" || (comp.clips && comp.kind) ? productName(comp.kind) : collectionName(comp.kind);
+    // 一块只有一个英雄（2026-11-19 起），卡片上不再写英雄名；播放器标题里还写
+    const extra = !moment && comp.clips ? t("videos.partsN", { n: comp.clips }) : "";
+    const label = extra ? `${name} · ${extra}` : name;
+    cards.push(videoCard(comp.file, { label, secs: moment ? comp.end - comp.start : 0, title: `${m.match_id} · ${heroName(p.hero)} · ${label}` }));
+  }
+  const left = unfinished(p);
+  if (left.length) {
+    cards.push(el("div", { class: "vid left" }, el("div", {},
+      t("videos.leftN", { n: left.length }), el("br"),
+      // 走正常的录制流程：到比赛页、选好这名玩家、勾上没录完的片段，用户确认后开始
+      el("button", { type: "button", style: "margin-top:10px", onclick: () => openMatch(m.match_id, { from: "videos", player: p.player, preselect: left.map((c) => c.file_name) }) }, t("videos.resumeShort")),
+    )));
   }
   return el("div", { class: "vid-grid" }, cards);
 }
 
 /** 从已录视频中移除这场：确认框里"同时删除视频文件"（移到回收站）默认勾着，可以去掉 */
-function confirmDelete(dialog, matchId) {
+function confirmDelete(dialog, matchId, hero) {
   return new Promise((resolve) => {
     // 默认勾上（2026-11-18 用户定；原来默认不勾，文件留在原处）。移到回收站，删错了还能找回
     const files = el("input", { type: "checkbox" });
     files.checked = true;
     const done = (ok) => { dialog.close(); resolve(ok ? { deleteFiles: files.checked } : null); };
     dialog.replaceChildren(
-      el("h2", {}, t("videos.delete.title", { id: matchId })),
+      el("h2", {}, t("videos.delete.title", { id: matchId, hero: heroName(hero) })),
       el("p", {}, t("videos.delete.what")),
       el("label", { class: "row" }, files, t("videos.delete.files")),
       el("div", { class: "dialog-actions" },
@@ -171,17 +170,16 @@ function confirmDelete(dialog, matchId) {
   });
 }
 
-/** 一场比赛一块：标题（英雄图标、比赛 ID、谁、最近什么时候录的）（点比赛 ID 去比赛页）、「删除记录」、视频。
+/** 一场比赛的一个英雄一块（2026-11-19 用户定；原来一场一块，录了几个英雄时头像只有第一个、单段看不出是谁的）：
+ *  标题（英雄头像、英雄 · 比赛 ID、模式、这个英雄最近什么时候录的）（点了去比赛页、选好这个英雄）、「删除记录」、视频。
  *  每次录制的明细（2026-11-12 前在下面折叠显示）用户用不上，去掉了；后台照样记 */
-function matchSection(m, nav) {
-  // 不分你我（2026-11-15 用户定）：大头像用第一个录的玩家
-  const lead = m.players[0];
+function heroSection({ m, p, last }, nav) {
   const msg = el("span", { class: "muted" });
   const del = async () => {
-    const answer = await confirmDelete(nav.dialog, m.match_id);
+    const answer = await confirmDelete(nav.dialog, m.match_id, p.hero);
     if (!answer) return;
     try {
-      await api.deleteMatchRecord(m.match_id, answer.deleteFiles);
+      await api.deleteMatchRecord(m.match_id, p.player, answer.deleteFiles);
       nav.videos();
     } catch (e) {
       msg.className = "error";
@@ -192,12 +190,12 @@ function matchSection(m, nav) {
     el("div", { class: "head" },
       // 点这一整块（头像、比赛 ID、英雄和时间）去比赛页。2026-11-12 把原来的「详情」按钮并进比赛 ID，
       // 2026-11-16 用户嫌只有比赛 ID 能点、区域太小，扩大到整块；右边的垃圾桶照旧单独点
-      el("button", { type: "button", class: "open", onclick: () => nav.openMatch(m.match_id, { from: "videos" }) },
-        heroIcon(lead.hero),
+      el("button", { type: "button", class: "open", onclick: () => nav.openMatch(m.match_id, { from: "videos", player: p.player }) },
+        heroIcon(p.hero),
         el("span", { class: "text" },
-          el("span", { class: "t" }, String(m.match_id)),
-          // 英雄 · 模式 · 最近录制，模式是纯文字（2026-11-16 用户定，标签放这里显得怪）
-          el("span", { class: "who" }, [m.players.map((p) => heroName(p.hero)).join("、"), modeName(m.game_mode), t("videos.lastTime", { time: date(m.last_time) })].filter(Boolean).join(" · ")),
+          el("span", { class: "t" }, `${heroName(p.hero)} · ${m.match_id}`),
+          // 模式 · 最近录制，模式是纯文字（2026-11-16 用户定，标签放这里显得怪）
+          el("span", { class: "who" }, [modeName(m.game_mode), t("videos.lastTime", { time: date(last) })].filter(Boolean).join(" · ")),
         ),
       ),
       el("div", { class: "act" },
@@ -205,7 +203,7 @@ function matchSection(m, nav) {
         iconButton(TRASH_ICON, { class: "icon-btn danger-icon", title: t("videos.delete.button"), onclick: del }),
       ),
     ),
-    videoGrid(m, nav),
+    videoGrid(m, p, nav),
   );
 }
 
@@ -223,5 +221,10 @@ export async function showVideos(view, nav) {
     return;
   }
   const videos = list.reduce((a, m) => a + m.players.reduce((b, p) => b + p.clips.filter((c) => c.file).length + p.compilations.length, 0), 0);
-  view.replaceChildren(head(t("videos.count", { matches: list.length, videos })), ...list.map((m) => matchSection(m, nav)));
+  // 拆成一场比赛的一个英雄一块，按这个英雄最近一次录制排，最近的在前（同一场的几块不一定挨着）
+  const blocks = list.flatMap((m) => m.players.map((p) => ({
+    m, p, last: Math.max(0, ...m.runs.filter((r) => r.player === p.player).map((r) => r.time)) || m.last_time,
+  })));
+  blocks.sort((a, b) => b.last - a.last);
+  view.replaceChildren(head(t("videos.count", { matches: list.length, videos })), ...blocks.map((b) => heroSection(b, nav)));
 }

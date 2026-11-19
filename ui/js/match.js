@@ -4,7 +4,7 @@
 // 原来逐个勾片段的那套挪到「自定义」
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, el, heroIcon, heroName, heroPic, length, productName, sceneTags } from "./format.js";
+import { clock, el, heroIcon, heroName, heroPic, length, productName, sceneTags, span } from "./format.js";
 import { settings, persist } from "./state.js";
 import { play, revealButton } from "./videos.js";
 
@@ -195,7 +195,7 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
       lastEnd = Math.max(c.end, c.start + 18 * perPx);
       lastLow = low;
       line.append(
-        el("div", { class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}`, style: `left:${pct(c.start)};width:max(18px,${pct(c.end - c.start)})`, title: `${clock(c.start)}–${clock(c.end)}`, onclick: () => mode === "custom" && toggle(c.index) }, String(c.index)),
+        el("div", { class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}`, style: `left:${pct(c.start)};width:max(18px,${pct(c.end - c.start)})`, title: span(c.start, c.end), onclick: () => mode === "custom" && toggle(c.index) }, String(c.index)),
         // 相邻片段的图标会叠在一起，上下两排交替放
         el("div", { class: `kills ${i % 2 ? "b" : "a"}${off ? " off" : ""}`, style: `left:${pct((c.start + c.end) / 2)}` },
           sceneWord(c) ? el("span", { class: "scene-word" }, sceneWord(c)) : null,
@@ -317,7 +317,7 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
       return el("div", { class: `clip-row${on ? "" : " off"}`, title: c.file_name + streak, onclick: () => toggle(c.index) },
         box,
         el("span", { class: "no" }, String(c.index)),
-        el("span", { class: "t" }, `${clock(c.start)}–${clock(c.end)}`, el("small", {}, length(c.duration))),
+        el("span", { class: "t" }, span(c.start, c.end), el("small", {}, length(c.duration))),
         // 抢盾片段没有被杀的英雄，写"肉山"
         el("span", { class: "hero-icons" }, c.victims.length ? c.victims.map((v) => heroIcon(v)) : el("span", { class: "muted" }, t("scene.roshan"))),
         el("span", { class: "end" },

@@ -7,6 +7,11 @@ export function clock(secs) {
   return `${sign}${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/** 起止时间："5:36–5:42"。结束也在号角前时两边加空格："-0:14 – -0:02"，不然连字符和负号挤成「--」 */
+export function span(start, end) {
+  return end < 0 ? `${clock(start)} – ${clock(end)}` : `${clock(start)}–${clock(end)}`;
+}
+
 /** 秒 → "12.3 秒" / "1:05" 这类时长 */
 export function length(secs) {
   return secs < 60 ? `${secs.toFixed(1)}s` : clock(secs);

@@ -322,12 +322,14 @@ pub fn product_files(match_id: u64) -> std::collections::HashSet<PathBuf> {
         .collect()
 }
 
-/// 删掉一场比赛的全部记录。`delete_files` 时把记录里的视频移到回收站，返回移走了几个
+/// 删掉一场比赛的记录：`player` 给了只删这个玩家（英雄）的（已录视频一个英雄一块，2026-11-19 起），没给删整场。
+/// `delete_files` 时把记录里的视频移到回收站，返回移走了几个
 #[tauri::command]
-pub fn delete_match_record(match_id: u64, delete_files: bool) -> Result<usize, String> {
+pub fn delete_match_record(match_id: u64, player: Option<usize>, delete_files: bool) -> Result<usize, String> {
     let _g = LOCK.lock().unwrap();
     let mut runs = load();
-    let (gone, keep): (Vec<Run>, Vec<Run>) = runs.drain(..).partition(|r| r.match_id == match_id);
+    let (gone, keep): (Vec<Run>, Vec<Run>) =
+        runs.drain(..).partition(|r| r.match_id == match_id && player.is_none_or(|p| r.player == p));
     let mut moved = 0;
     if delete_files {
         let mut files: Vec<PathBuf> = gone
