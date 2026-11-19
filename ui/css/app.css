@@ -465,6 +465,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .meta .tr { font: 600 14px var(--num); white-space: nowrap; }
 .vid .meta .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .meta .reveal:hover { color: var(--text); background: none; }
+.vid .meta .acts { display: inline-flex; gap: 2px; margin-left: auto; }
+.vid .meta .del:hover { color: var(--danger); }
 .vid.left { border-style: dashed; display: grid; place-items: center; text-align: center; color: var(--muted); font-size: 13px; padding: 14px; min-height: 140px; }
 
 /* 录制中 */
