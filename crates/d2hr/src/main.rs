@@ -202,6 +202,7 @@ fn run() -> Result<()> {
                 quit,
                 camera,
                 block_input: !allow_input,
+                return_focus: true,
             };
             record::run(&r, player, &selected, &ff, &o)
         }

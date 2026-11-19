@@ -24,18 +24,48 @@ pub struct Settings {
     pub ffmpeg: String,
     /// 片段规则
     pub rules: Rules,
-    /// 这台机器上次实测的录制速度（每秒墙钟录多少秒画面），估录制耗时用；没录过为 null
+    /// 旧版存的：上次实测的录制速度（每秒墙钟录多少秒画面）。`measured_speeds` 还空着时用它
     pub measured_speed: Option<f32>,
+    /// 最近几次实测的录制速度，旧的在前，最多 `KEEP_SPEEDS` 个。估录制耗时用（`speed`）
+    pub measured_speeds: Vec<f32>,
 }
+
+/// 记最近几次的录制速度
+const KEEP_SPEEDS: usize = 5;
 
 impl Settings {
     /// 片段规则参数，录制速度用这台机器实测的
     pub fn params(&self) -> clips::Params {
         let mut p = self.rules.params();
-        if let Some(speed) = self.measured_speed {
+        if let Some(speed) = self.speed() {
             p.speed = speed;
         }
         p
+    }
+
+    /// 估耗时用的录制速度：最近几次实测的中位数（偶数个取偏快的那个）。
+    /// 原来只用上一次的，一次反常的慢录制就把下一次的预计带偏：2026-11-18 有一次 Steam 刚打开、
+    /// 测出 0.17（平时 0.8 左右），下一次 4 分钟的录制预计成了 11 分多钟
+    fn speed(&self) -> Option<f32> {
+        if self.measured_speeds.is_empty() {
+            return self.measured_speed;
+        }
+        let mut s = self.measured_speeds.clone();
+        s.sort_by(f32::total_cmp);
+        Some(s[s.len() / 2])
+    }
+
+    /// 记下这次实测的录制速度，只留最近 `KEEP_SPEEDS` 次
+    pub fn add_speed(&mut self, speed: f32) {
+        if self.measured_speeds.is_empty()
+            && let Some(old) = self.measured_speed
+        {
+            self.measured_speeds.push(old);
+        }
+        self.measured_speeds.push(speed);
+        let extra = self.measured_speeds.len().saturating_sub(KEEP_SPEEDS);
+        self.measured_speeds.drain(..extra);
+        self.measured_speed = Some(speed);
     }
 
     /// 录制时用的游戏窗口大小；None = 跟游戏窗口一致
@@ -56,6 +86,7 @@ impl Default for Settings {
             ffmpeg: String::new(),
             rules: Rules::default(),
             measured_speed: None,
+            measured_speeds: Vec::new(),
         }
     }
 }
@@ -90,4 +121,32 @@ pub fn save_settings(settings: Settings) -> Result<(), String> {
 #[tauri::command]
 pub fn default_settings() -> Settings {
     Settings::default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_slow_run_does_not_skew_the_speed() {
+        // 旧设置只有上一次的速度：接着用，记新的时先把它放进列表
+        let mut s = Settings { measured_speed: Some(0.8), ..Settings::default() };
+        assert_eq!(s.speed(), Some(0.8));
+        s.add_speed(0.17);
+        assert_eq!(s.measured_speeds, vec![0.8, 0.17]);
+        assert_eq!(s.speed(), Some(0.8));
+        s.add_speed(0.78);
+        assert_eq!(s.speed(), Some(0.78));
+        for v in [0.82, 0.79, 0.81] {
+            s.add_speed(v);
+        }
+        // 只留最近 5 次：最早的 0.8 被挤掉
+        assert_eq!(s.measured_speeds, vec![0.17, 0.78, 0.82, 0.79, 0.81]);
+        assert_eq!(s.speed(), Some(0.79));
+    }
+
+    #[test]
+    fn no_speed_yet() {
+        assert_eq!(Settings::default().speed(), None);
+    }
 }

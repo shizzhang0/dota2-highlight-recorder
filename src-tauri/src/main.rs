@@ -28,8 +28,9 @@ fn main() {
         // 一键更新（只对安装版生效，见 updater.rs）
         .plugin(tauri_plugin_updater::Builder::new().build())
         // 应用日志（log.rs）：插件都起来后才记，第二次打开的那个进程在单实例插件里就退出了，不会多记一次启动
-        .setup(|_| {
+        .setup(|app| {
             log::init();
+            log::watch_main_thread(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -46,6 +47,7 @@ fn main() {
             record::stop_recording,
             record::answer_confirm,
             record::is_recording,
+            record::record_result,
             record::quit_game,
             record::game_open,
             account::accounts,
@@ -68,6 +70,12 @@ fn main() {
         // 关主窗口就退出：隐藏的置顶对话框也算窗口，不然进程会一直留着。
         // 录制中先不关，当作点了停止：等流程停下、恢复完游戏设置，用户再关
         .on_window_event(|window, event| {
+            // 显示设置变了（Dota 退出时把屏幕分辨率换回来之类）也记一笔
+            if let tauri::WindowEvent::ScaleFactorChanged { scale_factor, .. } = event
+                && window.label() == "main"
+            {
+                log::app(&format!("主窗口缩放变成 {scale_factor}"));
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == "main"
             {

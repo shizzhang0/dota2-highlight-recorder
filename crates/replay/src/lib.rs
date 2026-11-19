@@ -104,6 +104,13 @@ impl Replay {
         let back = ((s.game_time - t) * TICKS_PER_SECOND).round() as u32;
         Some(s.tick.saturating_sub(back))
     }
+
+    /// 录像里能跳到的最早游戏时间。时钟（`clock`）从号角起才采样，号角前的时间由 `tick_at` 按每秒 30 tick
+    /// 从第一个采样点往回推，最早推到录像开头（tick 0）。号角前的击杀（抢符之类）也在这个范围里，
+    /// 片段起点不能截到号角，不然结束点会比起点早（2026-11-18 比赛 9083016816 #2：-0:05 的击杀成了 0:00–-0:02）
+    pub fn earliest_time(&self) -> f32 {
+        self.clock.first().map_or(f32::MIN, |s| s.game_time - s.tick as f32 / TICKS_PER_SECOND)
+    }
 }
 
 const TICKS_PER_SECOND: f32 = 30.0;

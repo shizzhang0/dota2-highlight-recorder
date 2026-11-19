@@ -340,7 +340,8 @@ enum Event {
 /// 某个玩家的全部高光片段，按时间排序：他的击杀、有效助攻、抢盾，
 /// 时间上挨着（间隔不超过 `merge_gap`）的合成一个片段
 pub fn plan(r: &Replay, player: usize, p: &Params) -> Vec<Clip> {
-    let first = r.clock.first().map_or(f32::MIN, |s| s.game_time);
+    // 号角前的击杀（抢符之类）也要：起点最早截到录像开头，不是号角（见 `Replay::earliest_time`）
+    let first = r.earliest_time();
     let last = r.clock.last().map_or(f32::MAX, |s| s.game_time);
     let mut events: Vec<(f32, Event)> = Vec::new();
     for (i, k) in r.kills.iter().enumerate() {
@@ -372,6 +373,11 @@ pub fn plan(r: &Replay, player: usize, p: &Params) -> Vec<Clip> {
         };
         Span { start: start.max(first), end: (at + p.post).min(last) }
     };
+    // 截完起止后没有长度的（录像开头之前、结尾之后的事）不出片段，免得录出负时长的段
+    events.retain(|&(_, e)| {
+        let s = segment(e);
+        s.end > s.start
+    });
 
     // 时间上挨着的合成一个片段
     let mut groups: Vec<Vec<(f32, Event)>> = Vec::new();

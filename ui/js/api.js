@@ -1,5 +1,15 @@
 // 调用 Rust 侧的命令（src-tauri/src）。命令出错时 Rust 返回字符串，这里统一抛成 Error
-const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args).catch((e) => { throw new Error(e); });
+// 等了超过 SLOW_MS 才回来的调用记进日志（write_log 自己除外）：查录完后页面和后台之间的消息卡住（2026-11-19）
+const SLOW_MS = 3000;
+const invoke = (cmd, args) => {
+  const t0 = Date.now();
+  return window.__TAURI__.core.invoke(cmd, args)
+    .finally(() => {
+      const ms = Date.now() - t0;
+      if (ms > SLOW_MS && cmd !== "write_log") window.__TAURI__.core.invoke("write_log", { kind: "界面", text: `调用 ${cmd} 等了 ${(ms / 1000).toFixed(1)} 秒` }).catch(() => {});
+    })
+    .catch((e) => { throw new Error(e); });
+};
 
 export const listReplays = () => invoke("list_replays");
 // 失败时抛的是 Rust 侧的 DownloadError（{kind, message?}），不包成 Error，界面按 kind 提示
@@ -26,6 +36,8 @@ export const startRecording = (matchId, player, clips, products, camera, compile
 export const stopRecording = () => invoke("stop_recording");
 export const answerConfirm = (id, yes) => invoke("answer_confirm", { id, yes });
 export const isRecording = () => invoke("is_recording");
+// 上一次录制的结果（录完没收到 record-finished 时用）；还在录为 null
+export const recordResult = () => invoke("record_result");
 export const gameOpen = () => invoke("game_open");
 export const quitGame = () => invoke("quit_game");
 export const getSettings = () => invoke("get_settings");

@@ -74,8 +74,21 @@ const resultKind = (f) => (f.error ? "error" : f.cancelled ? "stopped" : "done")
 /** 开始录制：`clips` 是要录的片段（plan 返回的行），`camera` 是比赛页上选的镜头。
  * 录制结束调 `onFinished(结果)`；没能开始调 `onFailed(原因)` */
 export async function startRecording(dialog, { matchId, player, hero, clips, products = [], camera, compile, onFinished, onFailed }) {
-  rec = { matchId, hero, clips, current: null, done: new Set(), started: null, step: t("rec.starting"), bar: null, frames: null, log: [], stopping: false };
+  const mine = { matchId, hero, clips, current: null, done: new Set(), started: null, step: t("rec.starting"), bar: null, frames: null, log: [], stopping: false };
+  rec = mine;
   const update = () => page?.();
+  let poll = null;
+  // 录完：保留这次的状态，进度页原地改成结果。`record-finished` 和下面的查询谁先到用谁，只处理一次
+  const finish = (f, how) => {
+    if (mine.result) return;
+    clearInterval(poll);
+    unlisten.forEach((u) => u());
+    api.writeLog("界面", `${how}：比赛 ${f.match_id}`).catch(() => {});
+    mine.result = f;
+    mine.current = null;
+    update();
+    onFinished(f);
+  };
   const unlisten = await Promise.all([
     listen("record-event", (e) => {
       const text = describe(e);
@@ -100,18 +113,20 @@ export async function startRecording(dialog, { matchId, player, hero, clips, pro
       if (yes !== null) api.answerConfirm(q.id, yes);
     }),
     listen("record-confirm-done", (id) => { if (asking?.id === id) asking.close(); }),
-    // 录完：保留这次的状态，进度页原地改成结果
-    listen("record-finished", (f) => {
-      unlisten.forEach((u) => u());
-      rec.result = f;
-      rec.current = null;
-      update();
-      onFinished(f);
-    }),
+    listen("record-finished", (f) => finish(f, "收到录完")),
   ]);
 
   try {
     await api.startRecording(matchId, player, clips.map((c) => c.index), products, camera, compile, resolve(settings.language));
+    // 保底：每 3 秒问一次后台还在不在录，不录了就直接取结果，免得 `record-finished` 万一没送到就一直停在「录制中」。
+    // 2026-11-18/19 页面要点一下窗口才收到「录完了」：是录完后又切了一次前台，之后页面和后台之间的消息
+    // （包括这里的查询）都卡住，2026-11-19 起桌面应用录完不再切（`Options::return_focus`）
+    poll = setInterval(async () => {
+      if (mine.result || (await api.isRecording().catch(() => true))) return;
+      const f = await api.recordResult().catch(() => null);
+      if (f?.match_id === matchId) finish(f, "没收到录完的消息，查询后才知道录完了");
+    }, 3000);
+    if (mine.result) clearInterval(poll);
   } catch (e) {
     unlisten.forEach((u) => u());
     rec = null;
