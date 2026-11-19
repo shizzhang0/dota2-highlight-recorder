@@ -416,7 +416,8 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     backBar,
     el("div", { class: "page-head" },
       el("h1", {}, t("match.title", { id: info.match_id })),
-      el("span", { class: "meta" }, clock(info.duration), " · ", result, result ? " · " : "", t("match.build", { build: info.game_build })),
+      // 时长 · 胜负。原来最后还有「版本 6972」（录像的构建号），用户看不懂，2026-11-19 去掉
+      el("span", { class: "meta" }, clock(info.duration), result ? " · " : "", result),
     ),
     playersBox,
     highlight,
