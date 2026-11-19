@@ -54,6 +54,7 @@ fn main() {
             account::set_account,
             history::recorded_matches,
             history::delete_match_record,
+            history::delete_video,
             history::open_file,
             video::video_url,
             history::video_thumb,

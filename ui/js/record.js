@@ -4,7 +4,7 @@
 // Dota 放在最前面录，发给它的点击和按键被拦下；Dota 左上角有置顶的进度窗（overlay.js），那里和这里都能停止
 import * as api from "./api.js";
 import { resolve, t } from "./i18n.js";
-import { clock, el, heroIcon, heroName, heroPic, length } from "./format.js";
+import { clock, el, heroIcon, heroName, heroPic, length, span } from "./format.js";
 import { describe } from "./events.js";
 import { settings } from "./state.js";
 
@@ -225,7 +225,7 @@ export function showRecording(view, { onVideos }) {
     const c = rec.clips.find((x) => x.index === rec.current);
     if (c && !rec.stopping) {
       lbl.textContent = t("rec.nowClip", { n: c.index });
-      big.textContent = `${clock(c.start)}–${clock(c.end)}`;
+      big.textContent = span(c.start, c.end);
       victims.replaceChildren(el("span", { class: "lbl", style: "margin-right:6px" }, t("rec.kills")), ...c.victims.map((v) => heroIcon(v)));
     } else {
       // 启动游戏、加载录像、正在停下：没有正在录的片段，大字显示现在在做什么
@@ -251,7 +251,7 @@ export function showRecording(view, { onVideos }) {
     steps.replaceChildren(...rec.clips.map((x) => {
       const state = rec.done.has(x.index) ? "done" : x.index === rec.current ? "cur" : "";
       return el("div", { class: `rec-step ${state}` },
-        el("span", { class: "tr" }, `${clock(x.start)}–${clock(x.end)}`),
+        el("span", { class: "tr" }, span(x.start, x.end)),
         el("span", { class: "hero-icons" }, x.victims.map((v) => heroIcon(v, true))),
         el("span", { class: "st" }, t(state === "done" ? "rec.st.done" : state === "cur" ? "rec.st.cur" : waiting)),
       );

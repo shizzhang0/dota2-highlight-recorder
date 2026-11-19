@@ -30,7 +30,10 @@ export const openLogs = () => invoke("open_logs");
 export const accounts = () => invoke("accounts");
 export const setAccount = (id) => invoke("set_account", { id });
 export const recordedMatches = () => invoke("recorded_matches");
-export const deleteMatchRecord = (matchId, deleteFiles) => invoke("delete_match_record", { matchId, deleteFiles });
+// 删记录和视频（视频移到回收站）。`player`：只删这场比赛里这个玩家（英雄）的；null 删整场
+export const deleteMatchRecord = (matchId, player) => invoke("delete_match_record", { matchId, player });
+// 删一个视频：文件移到回收站，记录里去掉它
+export const deleteVideo = (matchId, player, path) => invoke("delete_video", { matchId, player, path });
 // `products`：「推荐」选的成品标识，不空时按成品录（`clips` 是它们用到的片段，进度页显示用）；空时录「自定义」勾的 `clips`
 export const startRecording = (matchId, player, clips, products, camera, compile, lang) => invoke("start_recording", { matchId, player, clips, products, camera, compile, lang });
 export const stopRecording = () => invoke("stop_recording");

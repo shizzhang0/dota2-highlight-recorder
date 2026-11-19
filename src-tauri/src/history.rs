@@ -322,26 +322,61 @@ pub fn product_files(match_id: u64) -> std::collections::HashSet<PathBuf> {
         .collect()
 }
 
-/// 删掉一场比赛的全部记录。`delete_files` 时把记录里的视频移到回收站，返回移走了几个
+/// 删掉一场比赛的记录和视频：`player` 给了只删这个玩家（英雄）的（已录视频一个英雄一块，2026-11-19 起），没给删整场。
+/// 视频文件移到回收站，返回移走了几个。原来可以只去掉记录、留着文件（确认框里的勾），2026-11-19 用户定不要这个选项
 #[tauri::command]
-pub fn delete_match_record(match_id: u64, delete_files: bool) -> Result<usize, String> {
+pub fn delete_match_record(match_id: u64, player: Option<usize>) -> Result<usize, String> {
     let _g = LOCK.lock().unwrap();
     let mut runs = load();
-    let (gone, keep): (Vec<Run>, Vec<Run>) = runs.drain(..).partition(|r| r.match_id == match_id);
-    let mut moved = 0;
-    if delete_files {
-        let mut files: Vec<PathBuf> = gone
-            .iter()
-            .flat_map(|r| r.clips.iter().filter_map(|c| c.path.clone()).chain(r.compilation.clone()).chain(r.products.iter().map(|x| x.file.clone())))
-            .filter(|p| p.is_file())
-            .collect();
-        files.sort();
-        files.dedup();
-        recycle(&files)?;
-        moved = files.len();
-    }
+    let (gone, keep): (Vec<Run>, Vec<Run>) =
+        runs.drain(..).partition(|r| r.match_id == match_id && player.is_none_or(|p| r.player == p));
+    let mut files: Vec<PathBuf> = gone
+        .iter()
+        .flat_map(|r| r.clips.iter().filter_map(|c| c.path.clone()).chain(r.compilation.clone()).chain(r.products.iter().map(|x| x.file.clone())))
+        .filter(|p| p.is_file())
+        .collect();
+    files.sort();
+    files.dedup();
+    recycle(&files)?;
     store(&keep)?;
-    Ok(moved)
+    Ok(files.len())
+}
+
+/// 删一个视频（已录视频卡片上的垃圾桶，2026-11-19 起）：文件移到回收站，记录里去掉它。
+/// - 成品或集锦：去掉这个成品。拼进它的单段（文件拼完已经删了）只在别的成品里没有时也去掉，
+///   不然它们没文件、又不在成品里，会显示成「还有 N 个片段没录」；
+/// - 单段：去掉这一段，当它没录过（不算没录完）；
+/// - 一次录制什么都不剩了，这次的记录也去掉。
+#[tauri::command]
+pub fn delete_video(match_id: u64, player: usize, path: PathBuf) -> Result<(), String> {
+    let _g = LOCK.lock().unwrap();
+    let mut runs = load();
+    if path.is_file() {
+        recycle(std::slice::from_ref(&path))?;
+    }
+    let mine = |r: &Run| r.match_id == match_id && r.player == player;
+    let mut orphaned = std::collections::HashSet::new();
+    for r in runs.iter_mut().filter(|r| mine(r)) {
+        if r.compilation.as_ref() == Some(&path) {
+            r.compilation = None;
+            r.compilation_kind = None;
+        }
+        r.products.retain(|x| {
+            let hit = x.file == path;
+            if hit {
+                orphaned.extend(x.clips.iter().cloned());
+            }
+            !hit
+        });
+        r.clips.retain(|c| c.path.as_ref() != Some(&path));
+    }
+    let still: std::collections::HashSet<String> =
+        runs.iter().filter(|r| mine(r)).flat_map(|r| r.products.iter().flat_map(|x| x.clips.iter().cloned())).collect();
+    for r in runs.iter_mut().filter(|r| mine(r)) {
+        r.clips.retain(|c| c.path.is_some() || !orphaned.contains(&c.file_name) || still.contains(&c.file_name));
+    }
+    runs.retain(|r| !(mine(r) && r.clips.is_empty() && r.products.is_empty() && r.compilation.is_none()));
+    store(&runs)
 }
 
 /// 把文件移到回收站（不是永久删除）
@@ -427,4 +462,79 @@ pub fn open_file(path: String) -> Result<(), String> {
         return Err(format!("文件不在了：{path}"));
     }
     std::process::Command::new("explorer").arg(&path).spawn().map(drop).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clip(name: &str, path: Option<&str>) -> RunClip {
+        RunClip {
+            index: 1,
+            file_name: name.into(),
+            start: 0.0,
+            end: 5.0,
+            victims: vec![],
+            multi_kill: 0,
+            kind: Some("kill".into()),
+            low_hp: false,
+            teamwork: false,
+            aegis_steal: false,
+            path: path.map(PathBuf::from),
+        }
+    }
+
+    fn run(player: usize, clips: Vec<RunClip>, products: Vec<RunProduct>) -> Run {
+        Run {
+            time: 1,
+            match_id: 7,
+            game_mode: None,
+            player,
+            hero: "slark".into(),
+            player_name: String::new(),
+            is_me: false,
+            clips,
+            compilation: None,
+            compilation_kind: None,
+            products,
+            cancelled: None,
+            error: None,
+            elapsed_secs: 1.0,
+        }
+    }
+
+    fn product(file: &str, clips: &[&str]) -> RunProduct {
+        RunProduct { kind: "kills".into(), file: file.into(), clips: clips.iter().map(|c| c.to_string()).collect(), start: None, end: None }
+    }
+
+    #[test]
+    fn delete_one_video_keeps_the_rest() {
+        // 假的 APPDATA，不碰真的录制记录；文件都不存在，不会去动回收站
+        let dir = std::env::temp_dir().join(format!("d2hr-history-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("dota2-highlight-recorder")).unwrap();
+        unsafe { std::env::set_var("APPDATA", &dir) };
+        store(&[
+            // 两个成品共用 b；c 只在要删的成品里；d 是没录成的
+            run(0, vec![clip("a", None), clip("b", None), clip("c", None), clip("d", None)], vec![product("kills.mp4", &["a", "b", "c"]), product("triple.mp4", &["b"])]),
+            run(0, vec![clip("e", Some("e.mp4"))], vec![]),
+            run(1, vec![clip("a", None)], vec![product("other.mp4", &["a"])]),
+        ])
+        .unwrap();
+
+        delete_video(7, 0, "kills.mp4".into()).unwrap();
+        let runs = load();
+        let names = |r: &Run| r.clips.iter().map(|c| c.file_name.clone()).collect::<Vec<_>>();
+        // a、c 跟着成品去掉；b 还在 triple 里；d 没录成，留着让用户接着录
+        assert_eq!(names(&runs[0]), ["b", "d"]);
+        assert_eq!(runs[0].products.len(), 1);
+        // 别的玩家不受影响
+        assert_eq!(names(&runs[2]), ["a"]);
+
+        // 删单段：这次录制什么都不剩了，整条记录也去掉
+        delete_video(7, 0, "e.mp4".into()).unwrap();
+        let runs = load();
+        assert_eq!(runs.len(), 2);
+        assert!(runs.iter().all(|r| r.clips.iter().all(|c| c.file_name != "e")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
