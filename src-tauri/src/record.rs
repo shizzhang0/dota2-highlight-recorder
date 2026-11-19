@@ -25,6 +25,8 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 /// 上次录完后游戏留着没退
 static GAME_OPEN: AtomicBool = AtomicBool::new(false);
 static NEXT_QUESTION: AtomicU64 = AtomicU64::new(1);
+/// 上一次录制的结果（`record_result`）：界面没收到 `record-finished` 时自己来问。开始新的一次时清掉
+static LAST_RESULT: Mutex<Option<Finished>> = Mutex::new(None);
 /// 正在等用户回答的确认请求
 static PENDING: Mutex<Option<(u64, Sender<bool>)>> = Mutex::new(None);
 
@@ -78,6 +80,9 @@ fn hide_prompt(app: &AppHandle) {
 
 /// 进度窗离 Dota 画面左上角多远（物理像素）
 const OVERLAY_MARGIN: i32 = 16;
+
+/// 这次一共录了不到这么多秒画面，就不记录制速度（2026-11-18 一次只录 6.9 秒的测出 0.17，平时 0.8 左右）
+const MIN_SPEED_SECS: f32 = 15.0;
 
 /// 把进度窗放到 Dota 画面左上角；只在 Dota（或进度窗自己，比如点了停止）在前台时显示，用户切到别的程序就收起——
 /// 它是置顶窗口，不收的话会一直浮在用户正在用的程序上面（2026-11-10 用户反馈）。
@@ -160,7 +165,7 @@ fn notify(app: &AppHandle, f: &Finished, lang: &str) {
 
 /// 录制结束（录完、停下或出错）时发给界面
 #[derive(Serialize, Clone)]
-struct Finished {
+pub struct Finished {
     match_id: u64,
     /// 写录制记录失败的原因（界面提示一下，不影响已经录好的文件）
     history_error: Option<String>,
@@ -195,6 +200,8 @@ fn options(s: &Settings, outputs: Vec<pipeline::Output>) -> Options {
         quit: true,
         camera: if s.camera == "player_view" { Camera::PlayerView } else { Camera::HeroChase },
         block_input: true,
+        // 录完不切前台：Dota 退出后应用窗口自己回到前台，再切会让页面收不到「录完了」（见 `Options::return_focus`）
+        return_focus: false,
     }
 }
 
@@ -228,6 +235,7 @@ pub async fn start_recording(
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Err("已经在录了".into());
     }
+    *LAST_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let custom = products.is_empty();
     let prepared = async {
         let mut settings = crate::settings::get_settings();
@@ -326,9 +334,10 @@ pub async fn start_recording(
         let time = crate::matches::now();
         let report = pipeline::run(&host, &r, player, &selected, &ff, &o);
         // 记下这台机器的录制速度，下次估耗时用（明显不合理的不要）
-        if let Some(speed) = report.speed.filter(|s| (0.05..5.0).contains(s)) {
+        // 录得太少（不到 `MIN_SPEED_SECS` 秒画面）时不记：只录几秒的话，一点卡顿就让速度差很多
+        if let Some(speed) = report.speed.filter(|s| (0.05..5.0).contains(s) && report.recorded_secs >= MIN_SPEED_SECS) {
             let mut settings = crate::settings::get_settings();
-            settings.measured_speed = Some(speed);
+            settings.add_speed(speed);
             let _ = crate::settings::save_settings(settings);
         }
         // 记进"已录视频"：files 和 completed 一一对应；拼完删掉的单段不记文件（拼在成品里，见 products）
@@ -401,12 +410,17 @@ pub async fn start_recording(
             game_open,
             speed: report.speed,
         };
+        *LAST_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = Some(finished.clone());
         RUNNING.store(false, Ordering::SeqCst);
+        // 主窗口显示这场比赛的录制详情；不抢前台（用户可能在用别的程序），点通知或任务栏图标就能看到。
+        // 先发给界面，再收进度窗、弹通知：2026-11-18 录完后历史记录写好了，界面却一直停在「录制中」，
+        // 不知道卡在哪一步，所以界面最要紧的这一步放最前面，前后都记进日志
+        pipeline::applog::write("录制", &format!("告诉界面录完了：比赛 {match_id}"));
+        let _ = app.emit("record-finished", finished.clone());
         // 进度窗录完立刻收起：结果在主窗口和系统通知里（留几秒的话会浮在用户正在用的程序上，2026-11-10 用户定）
         hide_overlay(&app);
         notify(&app, &finished, &lang);
-        // 主窗口显示这场比赛的录制详情；不抢前台（用户可能在用别的程序），点通知或任务栏图标就能看到
-        let _ = app.emit("record-finished", finished);
+        pipeline::applog::write("录制", "收起进度窗、弹完通知");
     });
     Ok(())
 }
@@ -442,4 +456,10 @@ pub fn stop_recording(app: AppHandle) {
 #[tauri::command]
 pub fn is_recording() -> bool {
     RUNNING.load(Ordering::SeqCst)
+}
+
+/// 上一次录制的结果；还在录或者这次启动后没录过为 None。界面录完没收到 `record-finished` 时用（record.js）
+#[tauri::command]
+pub fn record_result() -> Option<Finished> {
+    LAST_RESULT.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }

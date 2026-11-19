@@ -80,6 +80,10 @@ pub struct Options {
     pub camera: Camera,
     /// 录制期间拦下用户发给 Dota 的点击和按键（`game::input_guard`）
     pub block_input: bool,
+    /// 结束后把开始时的前台窗口切回前台（模拟按一下 Alt 再切）。命令行要（切回终端）；桌面应用不要：
+    /// Dota 退出后应用窗口自己就回到前台了，再切一次之后页面和后台之间的消息就卡住、要点一下窗口才通
+    /// （2026-11-18/19 三次录制都是这样，单独重放这一步又复现不了，原因没查清）
+    pub return_focus: bool,
 }
 
 /// 录制的进度每段每这么多秒记一行（游戏每 0.5 秒报一次，全记的话一次录制两三百行，挤掉应用日志里别的内容）
@@ -225,6 +229,8 @@ pub struct Report {
     pub game_quit: bool,
     /// 这台机器的录制速度：每秒墙钟录了多少秒画面（没录成一段时为 None）。桌面应用存下来估下次的耗时
     pub speed: Option<f32>,
+    /// 一共录了多少秒画面（算 `speed` 用的那些）。录得太少时速度不准，桌面应用就不存
+    pub recorded_secs: f32,
 }
 
 fn dota_running() -> bool {
@@ -379,12 +385,15 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
         o.keep_parts,
         o.quit
     ));
-    // 开始时的前台窗口（终端或应用）：不管怎么结束，最后都切回它，用户回来能直接看到结果
+    // 开始时的前台窗口（终端）：不管怎么结束，最后都切回它，用户回来能直接看到结果
     let origin = game::ui::foreground();
     let mut done = Done::default();
     let error = run_inner(&log, r, player, selected, ff, o, &mut done).err();
     blocked_watch.store(true, std::sync::atomic::Ordering::SeqCst);
-    game::ui::bring_to_front(origin);
+    if o.return_focus {
+        let back = game::ui::bring_to_front(origin);
+        line(&format!("切回开始时的前台窗口：{}", if back { "成功" } else { "没切成" }));
+    }
     // 停下的原因要在 hold 之外读（restore 期间读不到）
     let cancelled = cancel::reason();
     line(&format!(
@@ -408,6 +417,7 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
         elapsed: started.elapsed(),
         game_quit: done.game_quit,
         speed: done.speed,
+        recorded_secs: done.recorded_secs,
     }
 }
 
@@ -420,6 +430,7 @@ struct Done {
     removed: Vec<PathBuf>,
     game_quit: bool,
     speed: Option<f32>,
+    recorded_secs: f32,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -549,7 +560,8 @@ fn record_all(
         camera: o.camera,
         team,
         tmp,
-        first: r.clock.first().map_or(f32::MIN, |c| c.game_time),
+        // 号角前的片段也能录：最早跳到录像开头（`Replay::earliest_time`）
+        first: r.earliest_time(),
         last: r.clock.last().map_or(f32::MAX, |c| c.game_time),
         game_secs: 0.0,
         wall_secs: 0.0,
@@ -589,6 +601,7 @@ fn record_all(
     })();
     if rec.wall_secs > 0.0 {
         done.speed = Some(rec.game_secs / rec.wall_secs);
+        done.recorded_secs = rec.game_secs;
     }
     result?;
 

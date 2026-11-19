@@ -15,6 +15,19 @@ const logError = (text) => api.writeLog("界面", text).catch(() => {});
 window.addEventListener("error", (e) => logError(`报错：${e.message}（${e.filename}:${e.lineno}）`));
 window.addEventListener("unhandledrejection", (e) => logError(`没接住的错误：${e.reason?.stack || e.reason}`));
 
+// 页面被藏起、冻住、脚本停了多久也记下来：2026-11-18/19 录完后后台早就发了「录完了」，页面要点一下窗口才收到
+// （日志里差了 2 分多钟，每 3 秒的保底查询也没跑），查是哪一种。括号里是页面自己看到的时间，和日志行首的时间对照
+const jsTime = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
+document.addEventListener("visibilitychange", () => logError(`页面${document.visibilityState === "hidden" ? "被藏起" : "重新显示"}（${jsTime()}）`));
+document.addEventListener("freeze", () => logError(`页面被冻住（${jsTime()}）`));
+document.addEventListener("resume", () => logError(`页面解冻（${jsTime()}）`));
+let beat = Date.now();
+setInterval(() => {
+  const now = Date.now();
+  if (now - beat > 5000) logError(`页面的定时器停了 ${((now - beat) / 1000).toFixed(0)} 秒，现在恢复（${jsTime()}，${document.visibilityState}，${document.hasFocus() ? "有焦点" : "没焦点"}）`);
+  beat = now;
+}, 1000);
+
 const view = document.getElementById("view");
 const confirmDialog = document.getElementById("confirm");
 const navButtons = [...document.querySelectorAll("[data-nav]")];
