@@ -4,6 +4,7 @@
 import * as api from "./api.js";
 import { t } from "./i18n.js";
 import { clock, collectionName, date, el, heroIcon, heroName, modeName, productName, sceneTags } from "./format.js";
+import { endPlayback, watchPlayback } from "./playlog.js";
 
 // 没录成的片段；拼进了集锦的（2026-11-18 起单段文件拼完就删）不算
 const unfinished = (p) => p.clips.filter((c) => !c.file && !c.in_product);
@@ -52,6 +53,7 @@ function playerDialog() {
   dialog.addEventListener("click", (e) => e.target === dialog && dialog.close());
   // 关了就停下、放掉文件，不然声音还在、文件也被占着
   dialog.addEventListener("close", () => {
+    endPlayback();
     video.pause();
     video.removeAttribute("src");
     video.load();
@@ -79,6 +81,8 @@ export async function play(path, name) {
     api.openFile(path).catch((e) => alert(e.message));
   };
   p.video.src = url;
+  // 播放情况记进应用日志（playlog.js），查卡顿用
+  watchPlayback(p.video, path.split(/[\\/]/).pop());
   p.dialog.showModal();
 }
 

@@ -2,7 +2,7 @@
 // 保留「保存」按钮（用户定的），改了没保存就切走时先问（`leaveSettings`）
 import { LANGS, t } from "./i18n.js";
 import { el } from "./format.js";
-import { reveal } from "./api.js";
+import { openLogs, reveal } from "./api.js";
 import { replaceSettings, settings } from "./state.js";
 import { appVersion, checkUpdate, installUpdate, isInstalled, lastUpdate, onUpdate, openReleasePage } from "./update.js";
 import { recordingMatch } from "./record.js";
@@ -163,7 +163,10 @@ export function showSettings(view, { onSaved }) {
         el("button", { type: "button", onclick: () => reveal(out.value.trim() || settings.out_dir) }, t("settings.outDir.open"))], true)),
     group(t("settings.group.ui"),
       row(t("settings.language"), "", lang)),
-    group(t("settings.group.about"), aboutRow(row)),
+    group(t("settings.group.about"), aboutRow(row),
+      // 日志文件夹（d2hr.log）：平时用不到，出问题时找，所以放在「关于」里（2026-11-19 用户定）
+      row(t("settings.logs"), t("settings.logs.hint"),
+        el("button", { type: "button", onclick: () => openLogs().catch((e) => alert(e.message)) }, t("settings.logs.open")))),
   );
   card.addEventListener("input", sync);
   card.addEventListener("change", sync);

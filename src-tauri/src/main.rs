@@ -5,6 +5,7 @@
 
 mod account;
 mod history;
+mod log;
 mod matches;
 mod record;
 mod settings;
@@ -26,6 +27,11 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         // 一键更新（只对安装版生效，见 updater.rs）
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // 应用日志（log.rs）：插件都起来后才记，第二次打开的那个进程在单实例插件里就退出了，不会多记一次启动
+        .setup(|_| {
+            log::init();
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             matches::list_replays,
             matches::download_replay,
@@ -56,6 +62,8 @@ fn main() {
             updater::app_version,
             updater::open_release_page,
             updater::update_install,
+            log::write_log,
+            log::open_logs,
         ])
         // 关主窗口就退出：隐藏的置顶对话框也算窗口，不然进程会一直留着。
         // 录制中先不关，当作点了停止：等流程停下、恢复完游戏设置，用户再关
@@ -67,6 +75,7 @@ fn main() {
                     api.prevent_close();
                     record::stop_recording(window.app_handle().clone());
                 } else {
+                    log::app("退出");
                     window.app_handle().exit(0);
                 }
             }

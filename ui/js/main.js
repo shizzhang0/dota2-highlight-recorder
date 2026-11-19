@@ -10,6 +10,11 @@ import { showVideos } from "./videos.js";
 import { leaveSettings, showSettings } from "./settings.js";
 import { checkUpdate, onUpdate } from "./update.js";
 
+// 页面上没接住的报错记进应用日志（d2hr.log，类别「界面」），出问题时能看到前因后果
+const logError = (text) => api.writeLog("界面", text).catch(() => {});
+window.addEventListener("error", (e) => logError(`报错：${e.message}（${e.filename}:${e.lineno}）`));
+window.addEventListener("unhandledrejection", (e) => logError(`没接住的错误：${e.reason?.stack || e.reason}`));
+
 const view = document.getElementById("view");
 const confirmDialog = document.getElementById("confirm");
 const navButtons = [...document.querySelectorAll("[data-nav]")];

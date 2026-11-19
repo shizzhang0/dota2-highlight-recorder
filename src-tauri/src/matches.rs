@@ -203,6 +203,7 @@ pub async fn download_replay(app: AppHandle, match_id: u64) -> Result<(), Downlo
         }
         d.push((match_id, cancel.clone()));
     }
+    crate::log::app(&format!("下载录像 {match_id}"));
     let result = tauri::async_runtime::spawn_blocking(move || {
         let mut report = |p| {
             let _ = app.emit("download-progress", DownloadProgress::new(match_id, p));
@@ -213,6 +214,10 @@ pub async fn download_replay(app: AppHandle, match_id: u64) -> Result<(), Downlo
     .map_err(other)
     .and_then(|r| r.map_err(DownloadError::from));
     DOWNLOADING.lock().unwrap().retain(|(id, _)| *id != match_id);
+    crate::log::app(&match &result {
+        Ok(()) => format!("录像 {match_id} 下载好了"),
+        Err(e) => format!("录像 {match_id} 没下载成功：{}", serde_json::to_string(e).unwrap_or_default()),
+    });
     result
 }
 

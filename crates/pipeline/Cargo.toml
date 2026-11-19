@@ -13,3 +13,5 @@ media = { path = "../media" }
 replay = { path = "../replay" }
 serde.workspace = true
 serde_json.workspace = true
+# 应用日志的本地时间（GetLocalTime）
+windows.workspace = true

@@ -14,6 +14,9 @@ export const reveal = (path) => invoke("reveal", { path });
 export const videoThumb = (path) => invoke("video_thumb", { path });
 export const openFile = (path) => invoke("open_file", { path });
 export const videoUrl = (path) => invoke("video_url", { path });
+// 应用日志（d2hr.log）：界面只能写「播放」「界面」两类
+export const writeLog = (kind, text) => invoke("write_log", { kind, text });
+export const openLogs = () => invoke("open_logs");
 export const accounts = () => invoke("accounts");
 export const setAccount = (id) => invoke("set_account", { id });
 export const recordedMatches = () => invoke("recorded_matches");

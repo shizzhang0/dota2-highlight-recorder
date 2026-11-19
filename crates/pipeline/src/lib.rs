@@ -8,6 +8,8 @@
 //!
 //! 和外界只通过 `Host` 打交道：进度用事件报告，需要用户拍板的事（例如重启游戏）用确认请求。
 
+pub mod applog;
+
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
@@ -78,82 +80,76 @@ pub struct Options {
     pub camera: Camera,
     /// 录制期间拦下用户发给 Dota 的点击和按键（`game::input_guard`）
     pub block_input: bool,
-    /// 运行日志放在这里（每次录制一个文件，只留最近 20 个）；None 不写。命令行的进度已经打在终端上，不用
-    pub log_dir: Option<PathBuf>,
 }
 
-/// 把每个事件、每次问答、最后的结果记进日志文件，再转给真正的调用方。出问题时用来还原经过
+/// 录制的进度每段每这么多秒记一行（游戏每 0.5 秒报一次，全记的话一次录制两三百行，挤掉应用日志里别的内容）
+const PROGRESS_LOG_EVERY: Duration = Duration::from_secs(5);
+
+/// 把每个事件、每次问答、最后的结果记进应用日志（`applog`，类别「录制」），再转给真正的调用方。出问题时用来还原经过
 struct Logged<'a> {
     inner: &'a dyn Host,
-    file: Option<std::sync::Arc<std::sync::Mutex<std::fs::File>>>,
-    started: Instant,
+    /// 这一段上次记进度的时间；None = 这一段还没记过
+    last_progress: std::sync::Mutex<Option<Instant>>,
 }
 
-fn write_line(f: &std::sync::Mutex<std::fs::File>, started: Instant, text: &str) {
-    use std::io::Write;
-    let _ = writeln!(f.lock().unwrap(), "{:8.1}  {text}", started.elapsed().as_secs_f32());
+fn line(text: &str) {
+    applog::write("录制", text);
 }
 
 impl Logged<'_> {
-    fn line(&self, text: &str) {
-        if let Some(f) = &self.file {
-            write_line(f, self.started, text);
-        }
-    }
-
     /// 用户的操作随时可能被拦下（流程不发事件），单开一个线程盯着，把拦下的时间点记下来，排查"录到的画面被动过"用。
     /// 返回的标记设成 true 时线程退出
     fn watch_blocked(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        if let Some(f) = self.file.clone() {
-            let (stop, started) = (stop.clone(), self.started);
-            std::thread::spawn(move || {
-                let mut was = game::input_guard::blocked();
-                while !stop.load(std::sync::atomic::Ordering::SeqCst) {
-                    let now = game::input_guard::blocked();
-                    if now != was {
-                        was = now;
-                        write_line(&f, started, &format!("拦下了发给 Dota 的点击或按键（共 {now} 次）"));
-                    }
-                    std::thread::sleep(Duration::from_millis(200));
+        let stop2 = stop.clone();
+        std::thread::spawn(move || {
+            let mut was = game::input_guard::blocked();
+            while !stop2.load(std::sync::atomic::Ordering::SeqCst) {
+                let now = game::input_guard::blocked();
+                if now != was {
+                    was = now;
+                    line(&format!("拦下了发给 Dota 的点击或按键（共 {now} 次）"));
                 }
-            });
-        }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        });
         stop
+    }
+
+    /// 这个事件要不要记：进度每段每 `PROGRESS_LOG_EVERY` 记一次，别的都记
+    fn worth_logging(&self, e: &Event) -> bool {
+        let mut last = self.last_progress.lock().unwrap_or_else(|e| e.into_inner());
+        match e {
+            Event::SegmentStarted { .. } => {
+                *last = None;
+                true
+            }
+            Event::SegmentProgress { .. } => {
+                let due = last.is_none_or(|t| t.elapsed() >= PROGRESS_LOG_EVERY);
+                if due {
+                    *last = Some(Instant::now());
+                }
+                due
+            }
+            _ => true,
+        }
     }
 }
 
 impl Host for Logged<'_> {
     fn event(&self, e: Event) {
-        self.line(&serde_json::to_string(&e).unwrap_or_default());
+        if self.worth_logging(&e) {
+            line(&serde_json::to_string(&e).unwrap_or_default());
+        }
         self.inner.event(e);
     }
 
     fn confirm(&self, question: &str) -> bool {
-        self.line(&format!("问：{question}"));
+        line(&format!("问：{question}"));
         let yes = self.inner.confirm(question);
-        self.line(&format!("答：{}", if yes { "同意" } else { "不同意" }));
+        line(&format!("答：{}", if yes { "同意" } else { "不同意" }));
         yes
     }
-}
-
-const KEEP_LOGS: usize = 20;
-
-/// 新建这次的日志文件，删掉多出来的旧日志
-fn open_log(dir: &Path) -> Option<std::fs::File> {
-    std::fs::create_dir_all(dir).ok()?;
-    let mut old: Vec<PathBuf> = std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "log"))
-        .collect();
-    old.sort();
-    while old.len() >= KEEP_LOGS {
-        let _ = std::fs::remove_file(old.remove(0));
-    }
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    std::fs::File::create(dir.join(format!("record-{stamp}.log"))).ok()
 }
 
 /// 选定的片段和它在 `plan` 里的序号（从 1 开始）
@@ -370,10 +366,10 @@ fn restore_window_size(host: &dyn Host, account: Option<u32>, original: Option<(
 /// 录制。调用方负责在开始前清掉上一轮的取消标记（`game::cancel::reset`），命令行另外负责接管 Ctrl+C
 pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options) -> Report {
     let started = Instant::now();
-    let log = Logged { inner: host, file: o.log_dir.as_deref().and_then(open_log).map(|f| std::sync::Arc::new(std::sync::Mutex::new(f))), started };
+    let log = Logged { inner: host, last_progress: std::sync::Mutex::new(None) };
     let blocked_watch = log.watch_blocked();
     let indices: Vec<usize> = selected.iter().map(|s| s.index).collect();
-    log.line(&format!(
+    line(&format!(
         "开始：比赛 {}，玩家 #{player}，片段 {indices:?}，输出到 {}，分辨率 {:?}，镜头 {:?}，成品 {:?}，留单段 {}，录完退出 {}",
         r.match_id,
         o.out.display(),
@@ -391,7 +387,7 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
     game::ui::bring_to_front(origin);
     // 停下的原因要在 hold 之外读（restore 期间读不到）
     let cancelled = cancel::reason();
-    log.line(&format!(
+    line(&format!(
         "结束：完成 {:?}，文件 {:?}，成品 {:?}，删掉的单段 {:?}，停下 {:?}，出错 {}，退出游戏 {}，录制速度 {:?}",
         done.completed,
         done.files,
@@ -436,7 +432,7 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     let diag = o.out.join("diag");
     std::fs::create_dir_all(&tmp)?;
     std::fs::create_dir_all(&diag)?;
-    // 上一轮出错时留下的控制台日志，清掉（排查用的运行日志另存在 log_dir）
+    // 上一轮出错时留下的控制台日志，清掉（排查用的运行日志在应用日志里，见 `applog`）
     for e in std::fs::read_dir(&diag)?.flatten() {
         let _ = std::fs::remove_file(e.path());
     }
