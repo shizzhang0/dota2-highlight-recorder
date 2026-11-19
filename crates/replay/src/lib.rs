@@ -19,10 +19,16 @@ use source2_demo::proto::{CDotaUserMsgChatEvent, DotaChatMessage, DotaCombatlogT
 /// Steam64 ID 与 32 位账号 ID（OpenDota、比赛记录里用的那个）之间的差值
 const STEAM_ID64_BASE: u64 = 76561197960265728;
 
-/// 验证过的最新游戏版本（录像里服务器信息给的版本号，如 `dota_v6960` 里的 6960）。
-/// 解析出错或合理性检查不通过时，录像比这个还新，就提示"格式比较新，请更新软件"。
-/// 升级 source2-demo 并跑完回归检查后，把它改成新录像的版本号。
-pub const VERIFIED_GAME_BUILD: u32 = 6965;
+/// 验证过的最新游戏版本（录像里服务器信息给的构建号，如 `dota_v6975` 里的 6975）。
+/// 解析出错或合理性检查不通过时，录像比这个还新，就提示"来自更新的 Dota 2 版本，请更新软件"。
+/// 录像里只有构建号、没有补丁名，新旧只能拿它比；给人看的是 [`VERIFIED_PATCH`]。
+/// 在新补丁上验证过（必要时升级 source2-demo，用本地录像跑一遍）后，把这两个一起改成新的，
+/// README（中英两份）顶上的「Dota 2」徽章也跟着改
+pub const VERIFIED_GAME_BUILD: u32 = 6975;
+
+/// [`VERIFIED_GAME_BUILD`] 所在的补丁，给人看的版本号（提示、README 徽章）。
+/// 2026-11-19：本地 6968–6975 的 16 场录像都解析正常，游戏是 7.42
+pub const VERIFIED_PATCH: &str = "7.42";
 
 #[derive(Debug, Serialize)]
 pub struct Replay {
@@ -179,7 +185,7 @@ fn players_of(dota: &source2_demo::proto::c_game_info::CDotaGameInfo) -> Vec<Pla
 }
 
 /// 解析录像。出错或数据不合理时，如果录像的游戏版本比 [`VERIFIED_GAME_BUILD`] 新，
-/// 返回"格式比较新，请更新软件"的提示，而不是底层错误
+/// 返回"来自更新的 Dota 2 版本，请更新软件"的提示，而不是底层错误
 pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
     let path = path.as_ref();
     let file = File::open(path).with_context(|| format!("打不开录像 {}", path.display()))?;
@@ -188,7 +194,7 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
     let build = parser.context().game_build();
     result.map_err(|e| {
         if build > VERIFIED_GAME_BUILD {
-            anyhow!("这场录像的格式比较新（游戏版本 {build}，本程序验证到 {VERIFIED_GAME_BUILD}），请更新软件。原始错误：{e:#}")
+            anyhow!("这场录像来自更新的 Dota 2 版本，本程序目前验证到 {VERIFIED_PATCH}，请更新软件。原始错误（录像构建号 {build}）：{e:#}")
         } else {
             e.context(format!("解析录像失败：{}", path.display()))
         }

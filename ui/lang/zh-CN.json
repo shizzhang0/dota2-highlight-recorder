@@ -223,7 +223,6 @@
   "match.selectNone": "全不选",
   "match.radiantWon": "天辉胜利",
   "match.direWon": "夜魇胜利",
-  "match.build": "版本 {build}",
   "match.clipsHint": "点一行勾选或取消",
   "videos.count": "{matches} 场比赛 · {videos} 个视频",
   "videos.leftN": "还有 {n} 个片段没录",

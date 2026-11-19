@@ -285,7 +285,6 @@ pub struct PlayerRow {
 #[derive(Serialize)]
 pub struct MatchInfo {
     match_id: u64,
-    game_build: u32,
     /// 游戏时长（秒，号角起算）
     duration: f32,
     radiant_won: Option<bool>,
@@ -327,7 +326,6 @@ pub async fn open_match(match_id: u64) -> Result<MatchInfo, String> {
     let winner = replay::peek(replays_dir()?.join(format!("{match_id}.dem"))).ok().map(|s| s.winner);
     Ok(MatchInfo {
         match_id,
-        game_build: r.game_build,
         duration: r.clock.last().map_or(0.0, |c| c.game_time),
         radiant_won: winner.map(|w| w == 2),
         me: players.iter().find(|p| p.is_me).map(|p| p.id),

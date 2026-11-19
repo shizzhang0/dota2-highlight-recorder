@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/shizzhang0/dota2-highlight-recorder/actions/workflows/ci.yml"><img src="https://github.com/shizzhang0/dota2-highlight-recorder/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/github/v/release/shizzhang0/dota2-highlight-recorder?label=release&color=c8432f" alt="Release">
+  <img src="https://img.shields.io/badge/Dota%202-7.42-c8432f.svg" alt="Dota 2 7.42">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue.svg" alt="License: PolyForm Noncommercial"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey.svg" alt="Platform: Windows 10/11">
 </p>

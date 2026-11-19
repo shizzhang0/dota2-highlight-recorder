@@ -223,7 +223,6 @@
   "match.selectNone": "Select none",
   "match.radiantWon": "Radiant victory",
   "match.direWon": "Dire victory",
-  "match.build": "Build {build}",
   "match.clipsHint": "Click a row to tick or untick it",
   "videos.count": "{matches} matches · {videos} videos",
   "videos.leftN": "{n} clips not recorded yet",
