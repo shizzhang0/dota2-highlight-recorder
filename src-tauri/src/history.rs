@@ -187,6 +187,8 @@ pub struct MatchRecord {
     match_id: u64,
     /// 游戏模式；记录里没有（2026-11-16 之前录的）就读本地录像，录像也没了为 None
     game_mode: Option<i32>,
+    /// 录像还在本地（已录视频里没了的标「录像已删除」，2026-11-20 起）
+    replay: bool,
     /// 最近一次录制的时间
     last_time: u64,
     players: Vec<PlayerRecord>,
@@ -282,13 +284,16 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
         }
     }
     // 按第一次录的先后（不再把"我"排前面：已录视频页不分你我，2026-11-15 用户定）
+    let dem = game::launch::replays_dir().ok().map(|d| d.join(format!("{match_id}.dem")));
+    let replay = dem.as_deref().is_some_and(Path::is_file);
     let game_mode = runs.iter().rev().find_map(|r| r.game_mode).or_else(|| {
-        let dem = game::launch::replays_dir().ok()?.join(format!("{match_id}.dem"));
-        dem.is_file().then(|| replay::peek(&dem).ok().map(|s| s.game_mode)).flatten()
+        let dem = dem.as_deref().filter(|_| replay)?;
+        replay::peek(dem).ok().map(|s| s.game_mode)
     });
     MatchRecord {
         match_id,
         game_mode,
+        replay,
         last_time: runs.iter().map(|r| r.time).max().unwrap_or(0),
         players,
         runs: runs

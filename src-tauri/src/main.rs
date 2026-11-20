@@ -39,6 +39,7 @@ fn main() {
             matches::cancel_download,
             matches::delete_replays,
             matches::open_match,
+            matches::has_replay,
             matches::plan,
             matches::default_rules,
             matches::hero_names,

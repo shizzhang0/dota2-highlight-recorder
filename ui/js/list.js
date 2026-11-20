@@ -13,8 +13,8 @@ function saveView(v) {
   try { localStorage.setItem(VIEW_KEY, v); } catch { /* 存不了就算了 */ }
 }
 
-/** 下载失败（Rust 侧 DownloadError）→ 一句话 */
-function downloadError(e, id) {
+/** 下载失败（Rust 侧 DownloadError）→ 一句话。比赛页「重新下载录像」也用 */
+export function downloadError(e, id) {
   switch (e?.kind) {
     case "no_match": return t("home.err.noMatch", { id });
     case "no_url": return t("home.err.noUrl");

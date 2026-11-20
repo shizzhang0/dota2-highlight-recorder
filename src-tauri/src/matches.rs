@@ -229,6 +229,14 @@ pub fn cancel_download(match_id: u64) {
     }
 }
 
+/// 这场的录像还在不在本地（解析过、还在缓存里也算）。比赛页打开前先问：不在就说明情况、给「重新下载录像」，
+/// 不再只报一句"本地没有这场录像：路径"（2026-11-20 用户：已录视频里的比赛，录像已经删了）
+#[tauri::command]
+pub fn has_replay(match_id: u64) -> bool {
+    PARSED.lock().unwrap().iter().any(|(id, _)| *id == match_id)
+        || replays_dir().is_ok_and(|d| d.join(format!("{match_id}.dem")).is_file())
+}
+
 /// 解析一场录像（有缓存）。解析器递归较深，放到大栈线程里跑
 pub(crate) async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
     if let Some((_, r)) = PARSED.lock().unwrap().iter().find(|(id, _)| *id == match_id) {

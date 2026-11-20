@@ -197,7 +197,9 @@ function heroSection({ m, p, last }, nav) {
         el("span", { class: "text" },
           el("span", { class: "t" }, `${heroName(p.hero)} · ${m.match_id}`),
           // 模式 · 最近录制，模式是纯文字（2026-11-16 用户定，标签放这里显得怪）
-          el("span", { class: "who" }, [modeName(m.game_mode), t("videos.lastTime", { time: date(last) })].filter(Boolean).join(" · ")),
+          el("span", { class: "who" }, [modeName(m.game_mode), t("videos.lastTime", { time: date(last) })].filter(Boolean).join(" · "),
+            // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
+            m.replay ? "" : el("span", { class: "replay-gone" }, ` · ${t("videos.replayGone")}`)),
         ),
       ),
       el("div", { class: "act" },
