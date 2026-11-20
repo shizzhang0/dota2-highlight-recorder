@@ -100,7 +100,7 @@
   "nav.videos": "Recorded",
   "nav.recording": "Recording",
   "nav.gameOpen": "Game running (recording mode)",
-  "nav.quitGame": "Quit",
+  "nav.quitGame": "Close game",
   "home.col.time": "Started",
   "home.col.result": "Result",
   "home.dl.finding": "Asking OpenDota for the replay address of match {id}…",
