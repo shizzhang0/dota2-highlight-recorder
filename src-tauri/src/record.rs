@@ -390,7 +390,9 @@ pub async fn start_recording(
             error: report.error.as_ref().map(|e| format!("{e:#}")),
             elapsed_secs: report.elapsed.as_secs_f32(),
         };
-        let history_error = crate::history::add(run).err();
+        // 一个视频都没录成（启动中途停了、第一段就出错）不记：已录视频只放录好的视频（2026-11-20 用户定）。
+        // 结果在录制页和通知里照样说，要再录点录制页上的「重新录」
+        let history_error = if run.has_videos() { crate::history::add(run).err() } else { None };
         if let Some(e) = &history_error {
             pipeline::applog::write("录制", &format!("记进已录视频失败：{e}"));
         }

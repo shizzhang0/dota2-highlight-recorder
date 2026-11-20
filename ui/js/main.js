@@ -35,7 +35,7 @@ const badge = document.getElementById("recording-badge");
 const gameStatus = document.getElementById("game-status");
 const quitBtn = document.getElementById("quit-game");
 
-/** 当前页：home / match {id, from?（"videos" = 从已录视频进来）, player?, preselect?} / videos / settings / recording */
+/** 当前页：home / match {id, from?（"videos" = 从已录视频进来）, player?, preselect?, preselectProducts?} / videos / settings / recording */
 let current = { name: "home" };
 
 const nav = {
@@ -57,7 +57,7 @@ function render() {
   // 内容区自己滚（导航栏不动），换页时回到顶上
   view.scrollTop = 0;
   switch (current.name) {
-    case "recording": return showRecording(view, { onVideos: nav.videos });
+    case "recording": return showRecording(view, { onVideos: nav.videos, onRetry: retry });
     case "settings": return showSettings(view, { onSaved: settingsSaved });
     case "match": {
       const fromVideos = current.from === "videos";
@@ -65,6 +65,7 @@ function render() {
         ...nav,
         player: current.player,
         preselect: current.preselect,
+        preselectProducts: current.preselectProducts,
         back: fromVideos ? nav.videos : nav.home,
         backLabel: t(fromVideos ? "nav.backVideos" : "nav.backMatches"),
       });
@@ -94,16 +95,31 @@ function setRecording(on) {
   if (on) gameStatus.hidden = true;
 }
 
+/** 上一次开始的录制（`record` 的参数），停止或出错后录制页上「重新录」用 */
+let lastRequest = null;
+
+/** 「重新录」（2026-11-20 起，录制已停止、录制出错的结果页上）：去比赛页，选好这个英雄、勾好上次录的成品（「推荐」）
+ * 或片段（「自定义」），镜头本来就记着上次的。可以直接开始，也可以先改（用户定：不要原样一键重录，停下来常常就是想改点什么） */
+function retry() {
+  if (!lastRequest) return;
+  const { matchId, player, products, clips } = lastRequest;
+  go(products?.length
+    ? { name: "match", id: matchId, player, preselectProducts: products }
+    : { name: "match", id: matchId, player, preselect: clips.map((c) => c.file_name) });
+}
+
 /** 比赛页点了开始录制（`clips` 是 plan 返回的片段行）：确认后进入进度页。
  * 录完不换页：进度页原地显示结果（record.js），点「查看视频」去"已录视频"；在别的页面就不打扰（系统通知会提示），
  * 正看着"已录视频"就刷新一下。2026-11-17 前录完会自动跳到"已录视频"、顶上显示结果，用户觉得不好 */
-async function record({ matchId, player, hero, clips, products, camera, compile, secs, minutes, overwrite }) {
+async function record(request) {
+  const { matchId, player, hero, clips, products, camera, compile, secs, minutes, overwrite } = request;
   const busy = recordingMatch();
   if (busy !== null) {
     if (await confirmBusy(confirmDialog, busy)) go({ name: "recording" });
     return;
   }
   if (!(await confirmStart(confirmDialog, { count: clips.length, secs, minutes, overwrite }))) return;
+  lastRequest = request;
   setRecording(true);
   const started = startRecording(confirmDialog, {
     matchId,

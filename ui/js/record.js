@@ -149,7 +149,7 @@ export async function startRecording(dialog, { matchId, player, hero, clips, pro
  * 下面一排小卡片是全部片段的状态，详细记录折叠起来。按 `rec` 画，录制状态变了就重画会变的部分。
  * 录完原地改文字：标题、中间大字换成结果，「停止录制」收起，左上角出现「← 已录视频」（`onVideos`）——
  * 和比赛页的返回一样固定在顶部，鼠标侧键也能用（2026-11-17 用户定：原来右上的蓝色「查看视频」按钮位置和说法都怪） */
-export function showRecording(view, { onVideos }) {
+export function showRecording(view, { onVideos, onRetry }) {
   const title = el("h1", {}, t("rec.title"));
   const meta = el("span", { class: "meta" });
   const stopBtn = el("button", {
@@ -225,6 +225,8 @@ export function showRecording(view, { onVideos }) {
       f.error ? el("p", { class: "error" }, f.error) : "",
       f.history_error ? el("p", { class: "error" }, t("rec.result.historyError", { error: f.history_error })) : "",
       ...unrestored.map((text) => el("p", { class: "error" }, text)),
+      // 停止或出错了：去比赛页，上次选的都勾好，改不改都行（已录视频里不再提示没录成的，2026-11-20 用户定）
+      kind !== "done" && onRetry ? el("div", { class: "retry" }, el("button", { type: "button", class: "primary", onclick: onRetry }, t("rec.result.retry"))) : "",
     );
   };
   // 录制中：标题旁的进度、正在录的片段和这一段的进度条

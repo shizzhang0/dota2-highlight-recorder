@@ -77,6 +77,13 @@ pub struct RunProduct {
     pub end: Option<f32>,
 }
 
+impl Run {
+    /// 这次录成了视频（单段、集锦或成品）。都没有的不记进已录视频
+    pub fn has_videos(&self) -> bool {
+        self.clips.iter().any(|c| c.path.is_some()) || self.compilation.is_some() || !self.products.is_empty()
+    }
+}
+
 fn path() -> Option<PathBuf> {
     std::env::var("APPDATA").ok().map(|d| PathBuf::from(d).join(r"dota2-highlight-recorder\history.json"))
 }
@@ -190,9 +197,10 @@ pub struct MatchRecord {
 /// 按比赛汇总的录制记录，最近录过的比赛在前
 #[tauri::command]
 pub fn recorded_matches() -> Vec<MatchRecord> {
-    let runs = {
+    // 一个视频都没录成的旧记录（2026-11-20 前也记）跳过
+    let runs: Vec<Run> = {
         let _g = LOCK.lock().unwrap();
-        load()
+        load().into_iter().filter(Run::has_videos).collect()
     };
     let mut by_match: Vec<(u64, Vec<&Run>)> = Vec::new();
     for r in &runs {
@@ -266,6 +274,11 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
         p.clips.sort_by(|a, b| a.start.total_cmp(&b.start));
         for c in &mut p.clips {
             c.in_product = inside.contains(&c.file_name);
+            // 单段文件拼进成品后就删了（2026-11-18 起）：以前停下时留着的单段，重新录拼完后文件没了，
+            // 那条旧记录还指着它，会显示成「文件不在了」（2026-11-20）。拼在还在的成品里的，就当没有单段文件
+            if c.in_product && c.file.as_ref().is_some_and(|f| !f.exists) {
+                c.file = None;
+            }
         }
     }
     // 按第一次录的先后（不再把"我"排前面：已录视频页不分你我，2026-11-15 用户定）
@@ -373,7 +386,8 @@ pub fn delete_video(match_id: u64, player: usize, path: PathBuf) -> Result<(), S
     let still: std::collections::HashSet<String> =
         runs.iter().filter(|r| mine(r)).flat_map(|r| r.products.iter().flat_map(|x| x.clips.iter().cloned())).collect();
     for r in runs.iter_mut().filter(|r| mine(r)) {
-        r.clips.retain(|c| c.path.is_some() || !orphaned.contains(&c.file_name) || still.contains(&c.file_name));
+        // 文件已经不在的单段（以前停下时留的，后来拼进这个成品就删了）也算没文件
+        r.clips.retain(|c| c.path.as_deref().is_some_and(Path::is_file) || !orphaned.contains(&c.file_name) || still.contains(&c.file_name));
     }
     runs.retain(|r| !(mine(r) && r.clips.is_empty() && r.products.is_empty() && r.compilation.is_none()));
     store(&runs)
