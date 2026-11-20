@@ -322,6 +322,10 @@ export async function showHome(view, dialog, { openMatch }) {
       // 勾选框悬停才出现，点它不打开比赛；勾了任意一个之后全都显示，方便连着勾
       const box = el("input", { type: "checkbox", class: "pick", title: t("home.pick") });
       box.checked = picked.has(r.match_id);
+      // 勾选框外面包一圈能点的区域（列表里是行最左边整条，卡片里是右上角一块），点到那里也算勾选、不打开比赛：
+      // 框本身只有 16px，2026-11-20 用户说点前面的勾选框很容易点进比赛
+      const pickCell = el("label", { class: "pick-cell", title: t("home.pick") }, box);
+      pickCell.addEventListener("click", (e) => e.stopPropagation());
       const result = mine ? el("span", { class: `res ${r.my_won ? "win" : "lose"}` }, t(r.my_won ? "list.win" : "list.lose")) : null;
       const heroLine = mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe");
       // 我的击杀 / 死亡 / 助攻（终场计分板）；不在这场就空着
@@ -329,7 +333,6 @@ export async function showHome(view, dialog, { openMatch }) {
       // 列表：一行一场，小图标
       const card = viewMode === "list"
         ? el("div", { class: `match-row${box.checked ? " picked" : ""}`, onclick: () => openMatch(r.match_id) },
-          box,
           mine ? heroIcon(r.my_hero) : el("span", { class: "hero-icon hero-fallback" }, "?"),
           el("span", { class: "id" }, String(r.match_id)),
           el("span", {}, modeTag(r.game_mode)),
@@ -355,9 +358,10 @@ export async function showHome(view, dialog, { openMatch }) {
           ),
           el("div", { class: "stats" }, r.duration == null ? "—" : clock(r.duration), el("br"), r.start_time ? date(r.start_time) : ""),
         ),
-        box,
+        pickCell,
       );
-      if (viewMode === "list") card.prepend(box);
+      // 列表里勾选区放在行最前面（不占网格的列，见 app.css .match-row .pick-cell）
+      if (viewMode === "list") card.prepend(pickCell);
       box.addEventListener("click", (e) => e.stopPropagation());
       box.addEventListener("change", () => {
         box.checked ? picked.add(r.match_id) : picked.delete(r.match_id);
