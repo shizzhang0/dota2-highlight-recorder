@@ -91,7 +91,7 @@
   "settings.unsaved.what": "Your changes to the settings haven't been saved and will be lost if you leave this page.",
   "settings.unsaved.stay": "Stay",
   "settings.unsaved.discard": "Don't save",
-  "rec.result.progress": "{done} of {total} clips done in {minutes} min.",
+  "rec.result.progress": "{done} of {total} clips done.",
   "rec.result.restored": "Game settings restored.",
   "rec.result.gameOpen": "The game is still open in recording mode (no matchmaking). Quit it from the top right when you're done.",
   "rec.result.gameKept": "Dota is kept open, so resuming doesn't need a restart.",

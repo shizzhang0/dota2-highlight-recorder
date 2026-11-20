@@ -213,7 +213,8 @@ export function showRecording(view, { onVideos }) {
     victims.replaceChildren();
     barBox.hidden = true;
     pct.replaceChildren();
-    const sub = [t("rec.result.progress", { done: f.completed.length, total: f.selected.length, minutes: (f.elapsed_secs / 60).toFixed(1) })];
+    // 用时只在标题旁写一次（「用时 0:21」）；这里原来还写「用时 0.4 分钟」，两处格式不一样，2026-11-20 去掉
+    const sub = [t("rec.result.progress", { done: f.completed.length, total: f.selected.length })];
     // 恢复没成功就不说「游戏设置已恢复」，下面单独说哪里没恢复、要怎么改（2026-11-20 启动中途停止时窗口大小没改回去，却写着已恢复）
     const unrestored = [rec.sizeNotRestored, rec.restoreFailed].filter(Boolean);
     if (kind !== "done" && !unrestored.length) sub.push(t("rec.result.restored"));

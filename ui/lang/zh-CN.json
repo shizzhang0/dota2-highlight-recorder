@@ -91,7 +91,7 @@
   "settings.unsaved.what": "刚才改的设置还没保存，离开这一页就会丢掉。",
   "settings.unsaved.stay": "留在这里",
   "settings.unsaved.discard": "不保存",
-  "rec.result.progress": "已完成 {done}/{total} 个片段，用时 {minutes} 分钟。",
+  "rec.result.progress": "已完成 {done}/{total} 个片段。",
   "rec.result.restored": "游戏设置已恢复。",
   "rec.result.gameOpen": "游戏还以录制模式开着（进不了匹配），用完可以在右上角退出。",
   "rec.result.gameKept": "Dota 保留着，继续录时不用重新启动。",
