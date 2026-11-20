@@ -346,14 +346,18 @@ export async function showHome(view, dialog, { openMatch }) {
           mine ? el("span", { class: `res ${r.my_won ? "win" : "lose"}` }, t(r.my_won ? "list.win" : "list.lose")) : null,
           recorded.has(r.match_id) ? el("span", { class: "rec" }, t("home.recorded", { n: recorded.get(r.match_id) })) : null,
         ),
+        // 下面两行，每行左右对齐、按中线对齐（2026-11-20 用户定）：第一行比赛 ID、游戏模式、时长；第二行英雄、KDA、MVP，右边日期。
+        // 原来左边 ID 和英雄、右边时长和日期各成一列，模式标签贴在 ID 后面比数字高、往上翘；试过挪到图片左上，用户说还是放下面好
         el("div", { class: "info" },
-          el("div", {},
-            el("div", { class: "id" }, String(r.match_id), modeTag(r.game_mode)),
-            el("div", { class: "hero" }, mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe"),
+          el("div", { class: "line" },
+            el("span", { class: "id" }, String(r.match_id)),
+            modeTag(r.game_mode),
+            el("span", { class: "stats" }, r.duration == null ? "—" : clock(r.duration))),
+          el("div", { class: "line" },
+            el("span", { class: "hero" }, mine ? heroName(r.my_hero) : r.error ? el("span", { class: "error", title: r.error }, t("list.unreadable")) : t("home.notMe"),
               kda ? el("span", { class: "kda", title: t("home.kda") }, kda) : null,
               mine ? awardTag(r.my_award) : null),
-          ),
-          el("div", { class: "stats" }, r.duration == null ? "—" : clock(r.duration), el("br"), r.start_time ? date(r.start_time) : ""),
+            el("span", { class: "stats" }, r.start_time ? date(r.start_time) : "")),
         ),
         box,
       );

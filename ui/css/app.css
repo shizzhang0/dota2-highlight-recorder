@@ -59,6 +59,8 @@ button {
   border-radius: 8px;
   padding: 6px 14px;
   cursor: pointer;
+  /* 连点按钮会把上面的字选中变蓝（2026-11-20 用户截图里「卡片」的「片」） */
+  user-select: none;
 }
 button:hover:not(:disabled) { background: var(--hover); }
 button:disabled { opacity: .5; cursor: default; }
@@ -322,17 +324,20 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 
 /* 首页：录像卡片 */
 .match-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
-.match-card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
+.match-card { user-select: none; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; cursor: pointer; }
 .match-card:hover { border-color: var(--line-hover); }
 .match-card .pic { position: relative; }
 .match-card .pic .hero-pic { aspect-ratio: 16 / 7; object-position: center 25%; }
 .match-card .res { position: absolute; top: 8px; left: 8px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 3px; background: rgba(0, 0, 0, .65); }
 /* 已录 N 个视频：原来是红底白字，像警告；2026-11-18 改成绿框 */
 .match-card .rec { position: absolute; top: 8px; right: 38px; font-size: 12px; background: var(--panel); padding: 1px 8px; border-radius: 3px; border: 1px solid rgba(91, 176, 127, .55); color: var(--radiant); }
-.match-card .info { padding: 10px 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
+/* 卡片下面两行：每行左边内容、右边时长或日期，按中线对齐 */
+.match-card .info { padding: 10px 12px; display: grid; gap: 4px; }
+.match-card .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.match-card .line .stats { margin-left: auto; }
 .match-card .id { font: 600 16px var(--num); letter-spacing: .3px; }
-.match-card .hero { color: var(--muted); font-size: 13px; }
-.match-card .stats { color: var(--muted); font: 13px var(--num); text-align: right; white-space: nowrap; }
+.match-card .hero { display: flex; align-items: center; gap: 10px; min-width: 0; white-space: nowrap; color: var(--muted); font-size: 13px; }
+.match-card .stats { color: var(--muted); font: 13px var(--num); white-space: nowrap; }
 .match-card .pick { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; margin: 0; opacity: 0; accent-color: var(--accent); cursor: pointer; }
 .match-card:hover .pick, .match-card .pick:checked, .match-grid.picking .pick { opacity: 1; }
 .match-card.picked { border-color: var(--accent); }
@@ -348,18 +353,18 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .match-row .res { font-size: 13px; font-weight: 600; }
 .match-row .kda { color: var(--text); }
 .match-card .hero-fallback.unknown { font: 600 44px var(--num); }
-.match-card .hero .kda { margin-left: 10px; font-family: var(--num); color: var(--text); }
+.match-card .hero .kda { font-family: var(--num); color: var(--text); }
 .match-row .rec { font-size: 12px; padding: 1px 8px; border-radius: 3px; border: 1px solid rgba(91, 176, 127, .55); color: var(--radiant); white-space: nowrap; }
 /* 游戏模式标签：加速模式琥珀色，全英雄选择蓝色，其他灰色（2026-11-16） */
 .mode { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; font: 400 12px/18px "Segoe UI", sans-serif; letter-spacing: 0; padding: 0 7px; border-radius: 3px; border: 1px solid var(--line-hover); color: var(--muted); white-space: nowrap; }
 .mode.turbo { border-color: #6b4a1c; background: #2a2014; color: #e5b267; }
 .mode.all-pick { border-color: #24476b; background: #141f2b; color: #86b6e6; }
-.match-card .id .mode { margin-left: 8px; vertical-align: 2px; }
+.match-card .line .mode { flex: none; }
 /* 赛后评选：图标加文字，不要底色。MVP 金色，荣誉提名银色（2026-11-16） */
 .award { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .award.mvp { color: #f0c35a; }
 .award.honorable { color: #b9c3cf; }
-.match-card .hero .award { margin-left: 10px; vertical-align: -2px; }
+.match-card .hero .award { display: inline-flex; align-items: center; }
 
 /* 子页面左上角的返回：从哪进来回哪 */
 button.back { border: 0; background: none; color: var(--muted); padding: 0; margin-bottom: 10px; }
