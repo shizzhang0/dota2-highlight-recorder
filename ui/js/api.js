@@ -1,3 +1,5 @@
+import { uiText } from "./i18n.js";
+
 // 调用 Rust 侧的命令（src-tauri/src）。命令出错时 Rust 返回字符串，这里统一抛成 Error
 // 等了超过 SLOW_MS 才回来的调用记进日志（write_log 自己除外）：查录完后页面和后台之间的消息卡住（2026-11-19）
 const SLOW_MS = 3000;
@@ -8,7 +10,8 @@ const invoke = (cmd, args) => {
       const ms = Date.now() - t0;
       if (ms > SLOW_MS && cmd !== "write_log") window.__TAURI__.core.invoke("write_log", { kind: "界面", text: `调用 ${cmd} 等了 ${(ms / 1000).toFixed(1)} 秒` }).catch(() => {});
     })
-    .catch((e) => { throw new Error(e); });
+    // Rust 侧的报错是「@键名 {参数}」（src-tauri/src/uierr.rs），这里翻译成当前语言
+    .catch((e) => { throw new Error(uiText(e)); });
 };
 
 export const listReplays = () => invoke("list_replays");

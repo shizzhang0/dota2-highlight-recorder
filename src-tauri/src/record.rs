@@ -45,11 +45,13 @@ impl Host for AppHost {
         let _ = self.app.emit("record-event", e);
     }
 
-    fn confirm(&self, question: &str) -> bool {
+    fn confirm(&self, ask: &pipeline::Ask) -> bool {
         let id = NEXT_QUESTION.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::channel();
         *PENDING.lock().unwrap() = Some((id, tx));
-        let q = Question { id, question: question.to_owned() };
+        // 界面按语言翻译（ui/js/i18n.js 的 uiText）；原句只进日志
+        let question = if ask.params.is_null() { crate::uierr::key(ask.key) } else { crate::uierr::with(ask.key, ask.params.clone()) };
+        let q = Question { id, question };
         let _ = self.app.emit("record-confirm", q.clone());
         show_prompt(&self.app, Prompt::Confirm(q));
         rx.recv().unwrap_or(false)
@@ -144,10 +146,12 @@ struct Started {
 fn notify(app: &AppHandle, f: &Finished, lang: &str) {
     let en = lang.starts_with("en");
     let (title, body) = match (&f.error, &f.cancelled) {
-        (Some(e), _) => (if en { "Recording failed" } else { "录制出错了" }.to_owned(), e.clone()),
+        // 出错原因是中文原文（来自录制流程），英文界面只说去应用里看
+        (Some(_), _) if en => ("Recording failed".to_owned(), "Open the app to see what went wrong.".to_owned()),
+        (Some(e), _) => ("录制出错".to_owned(), e.clone()),
         (None, Some(reason)) => (
             if en { "Recording stopped" } else { "录制已停止" }.to_owned(),
-            if en { format!("{} of {} clips done ({reason})", f.completed.len(), f.selected.len()) } else { format!("完成 {}/{} 个片段（{reason}）", f.completed.len(), f.selected.len()) },
+            if en { format!("{} of {} clips done, stopped by you", f.completed.len(), f.selected.len()) } else { format!("已完成 {}/{} 个片段（{reason}）", f.completed.len(), f.selected.len()) },
         ),
         (None, None) => {
             let mins = f.elapsed_secs / 60.0;
@@ -157,7 +161,7 @@ fn notify(app: &AppHandle, f: &Finished, lang: &str) {
                 (false, 0) => format!("{} 个片段，用时 {mins:.1} 分钟", f.completed.len()),
                 (false, n) => format!("生成 {n} 个视频，用时 {mins:.1} 分钟"),
             };
-            (if en { "Recording finished" } else { "录完了" }.to_owned(), body)
+            (if en { "Recording finished" } else { "录制完成" }.to_owned(), body)
         }
     };
     let _ = app.notification().builder().title(title).body(body).show();
@@ -177,6 +181,8 @@ pub struct Finished {
     /// 停下的原因（文字）；正常录完或出错是 null
     cancelled: Option<String>,
     error: Option<String>,
+    /// 认得出的失败种类（`pipeline::fail_kind`，语言文件里的 `rec.fail.{种类}`）；认不出为 None，界面说"录制出错"再附原文
+    error_kind: Option<&'static str>,
     elapsed_secs: f32,
     out_dir: String,
     /// 录制用的游戏还开着（停下或出错时保留；全部录完会退出，退出失败时也是 true）
@@ -230,10 +236,10 @@ pub async fn start_recording(
     lang: String,
 ) -> Result<(), String> {
     if clips.is_empty() && products.is_empty() {
-        return Err("没有选片段".into());
+        return Err(crate::uierr::key("err.noClips"));
     }
     if RUNNING.swap(true, Ordering::SeqCst) {
-        return Err("已经在录了".into());
+        return Err(crate::uierr::key("err.alreadyRecording"));
     }
     *LAST_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let custom = products.is_empty();
@@ -250,14 +256,14 @@ pub async fn start_recording(
         // settings.json 里的 ffmpeg 字段和环境变量 D2HR_FFMPEG 还认，只给开发用
         let ffmpeg = settings.ffmpeg.trim();
         let ff = Ffmpeg::locate((!ffmpeg.is_empty()).then(|| std::path::Path::new(ffmpeg)))
-            .map_err(|_| "找不到录制要用的 ffmpeg：安装可能不完整，请重新安装。".to_string())?;
+            .map_err(|_| crate::uierr::key("err.noFfmpeg"))?;
         let r = crate::matches::parsed(match_id).await?;
         let p = settings.params();
         let plan = clips::plan(&r, player, &p);
         let (selected, outputs, metas) = if custom {
             let selected: Vec<Selected> = clips
                 .iter()
-                .map(|&i| plan.get(i.wrapping_sub(1)).map(|c| Selected { index: i, clip: c.clone() }).ok_or(format!("没有第 {i} 个片段")))
+                .map(|&i| plan.get(i.wrapping_sub(1)).map(|c| Selected { index: i, clip: c.clone() }).ok_or_else(|| crate::uierr::with("err.noClip", serde_json::json!({ "n": i }))))
                 .collect::<Result<_, _>>()?;
             let (outputs, metas) = if compile && selected.len() > 1 {
                 let name = clips::custom_file_name(&r, player);
@@ -270,7 +276,7 @@ pub async fn start_recording(
             let all = clips::products(&r, &plan);
             let chosen: Vec<&clips::Product> = products
                 .iter()
-                .map(|id| all.iter().find(|x| x.id() == *id).ok_or(format!("这场没有「{id}」（规则改过？）")))
+                .map(|id| all.iter().find(|x| x.id() == *id).ok_or_else(|| crate::uierr::with("err.noProduct", serde_json::json!({ "id": id }))))
                 .collect::<Result<_, _>>()?;
             // 用到的片段合起来按时间排，共用的只录一次
             let mut used: Vec<usize> = chosen.iter().flat_map(|x| x.clips.iter().copied()).collect();
@@ -406,6 +412,7 @@ pub async fn start_recording(
             selected: selected.iter().map(|s| s.index).collect(),
             products: report.products.len(),
             cancelled: report.cancelled.map(|c| c.describe().to_owned()),
+            error_kind: report.error.as_ref().and_then(pipeline::fail_kind),
             error: report.error.map(|e| format!("{e:#}")),
             elapsed_secs: report.elapsed.as_secs_f32(),
             out_dir: o.out.to_string_lossy().into_owned(),

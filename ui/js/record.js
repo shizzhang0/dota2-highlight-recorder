@@ -3,7 +3,7 @@
 // 录制中可以切到别的页面，回到进度页时按保存的状态重画
 // Dota 放在最前面录，发给它的点击和按键被拦下；Dota 左上角有置顶的进度窗（overlay.js），那里和这里都能停止
 import * as api from "./api.js";
-import { resolve, t } from "./i18n.js";
+import { resolve, t, uiText } from "./i18n.js";
 import { clock, el, heroIcon, heroName, heroPic, length, span } from "./format.js";
 import { describe } from "./events.js";
 import { settings } from "./state.js";
@@ -45,7 +45,8 @@ function ask(dialog, question, id) {
     asking = { id, close: () => close(null) };
     dialog.replaceChildren(
       el("h2", {}, t("rec.ask.title")),
-      el("p", {}, question),
+      // 问题是「@键名 {参数}」（Rust 侧 pipeline::Ask），按当前语言翻译
+      el("p", {}, uiText(question)),
       el("div", { class: "dialog-actions" },
         el("button", { type: "button", onclick: () => close(false) }, t("rec.ask.no")),
         el("button", { type: "button", class: "primary", onclick: () => close(true) }, t("rec.ask.yes")),
@@ -115,7 +116,7 @@ export async function startRecording(dialog, { matchId, player, hero, clips, pro
     }),
     listen("record-stopping", (reason) => {
       rec.stopping = true;
-      rec.step = t("rec.stopping", { reason });
+      rec.step = t("rec.stopping");
       update();
     }),
     listen("record-confirm", async (q) => {
@@ -222,7 +223,9 @@ export function showRecording(view, { onVideos, onRetry }) {
     note.hidden = false;
     note.replaceChildren(
       el("p", { class: "muted" }, sub.join(" ")),
-      f.error ? el("p", { class: "error" }, f.error) : "",
+      // 出错：先说翻译好的原因（认得出的几类，pipeline::Fail），录制流程给的原文（中文、偏技术）收在「详细信息」里
+      f.error ? el("p", { class: "error" }, t(`rec.fail.${f.error_kind ?? "other"}`)) : "",
+      f.error ? el("details", { class: "fail-detail" }, el("summary", {}, t("rec.fail.detail")), el("p", { class: "muted" }, f.error)) : "",
       f.history_error ? el("p", { class: "error" }, t("rec.result.historyError", { error: f.history_error })) : "",
       ...unrestored.map((text) => el("p", { class: "error" }, text)),
       // 停止或出错了：去比赛页，上次选的都勾好，改不改都行（已录视频里不再提示没录成的，2026-11-20 用户定）

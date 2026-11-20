@@ -68,7 +68,7 @@ pub fn accounts() -> Accounts {
 #[tauri::command]
 pub fn set_account(id: u32) -> Result<(), String> {
     if !game::steam::dota_accounts().iter().any(|(a, _)| *a == id) {
-        return Err(format!("这台电脑上没有账号 {id} 玩过 Dota"));
+        return Err(crate::uierr::with("err.noAccount", serde_json::json!({ "id": id })));
     }
     *CHOSEN.lock().unwrap() = (default_me() != Some(id)).then_some(id);
     Ok(())

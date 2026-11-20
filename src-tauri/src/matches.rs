@@ -23,7 +23,7 @@ fn hero(name: &str) -> String {
 }
 
 fn replays_dir() -> Result<PathBuf, String> {
-    game::launch::replays_dir().map_err(|e| format!("找不到 Dota 2 的录像目录：{e:#}"))
+    game::launch::replays_dir().map_err(|e| crate::uierr::detail("err.noReplaysDir", format!("{e:#}")))
 }
 
 #[derive(Serialize)]
@@ -244,7 +244,7 @@ pub(crate) async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
     }
     let path = replays_dir()?.join(format!("{match_id}.dem"));
     if !path.is_file() {
-        return Err(format!("本地没有这场录像：{}", path.display()));
+        return Err(crate::uierr::with("err.noReplay", serde_json::json!({ "id": match_id })));
     }
     let handle = std::thread::Builder::new()
         .stack_size(64 << 20)
@@ -253,8 +253,11 @@ pub(crate) async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
     let r = tauri::async_runtime::spawn_blocking(move || handle.join())
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|_| "解析录像时程序出错了".to_string())?
-        .map_err(|e| format!("{e:#}"))?;
+        .map_err(|_| crate::uierr::key("err.parseCrash"))?
+        .map_err(|e| match e.downcast_ref::<replay::NewerReplay>() {
+            Some(_) => crate::uierr::with("err.newerReplay", serde_json::json!({ "patch": replay::VERIFIED_PATCH })),
+            None => crate::uierr::detail("err.parseFailed", format!("{e:#}")),
+        })?;
     let r = Arc::new(r);
     let mut cache = PARSED.lock().unwrap();
     cache.retain(|(id, _)| *id != match_id);
@@ -268,7 +271,7 @@ pub(crate) async fn parsed(match_id: u64) -> Result<Arc<Replay>, String> {
 #[tauri::command]
 pub fn delete_replays(match_ids: Vec<u64>) -> Result<(), String> {
     if crate::record::is_recording() {
-        return Err("正在录制，录完再删".into());
+        return Err(crate::uierr::key("err.busyDelete"));
     }
     let dir = replays_dir()?;
     let paths: Vec<PathBuf> = match_ids.iter().map(|id| dir.join(format!("{id}.dem"))).filter(|p| p.is_file()).collect();
@@ -456,7 +459,7 @@ pub struct PlanInfo {
 pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo, String> {
     let r = parsed(match_id).await?;
     if player >= r.players.len() {
-        return Err(format!("没有 {player} 号玩家"));
+        return Err(crate::uierr::with("err.noPlayer", serde_json::json!({ "n": player })));
     }
     let settings = crate::settings::get_settings();
     // 规则用界面上正在调的；录制速度用这台机器实测的

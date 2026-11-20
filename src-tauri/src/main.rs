@@ -9,6 +9,7 @@ mod log;
 mod matches;
 mod record;
 mod settings;
+mod uierr;
 mod updater;
 mod video;
 

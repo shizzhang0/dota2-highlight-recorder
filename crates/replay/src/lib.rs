@@ -11,7 +11,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::{Context as _, Result, bail};
 use serde::Serialize;
 use source2_demo::prelude::*;
 use source2_demo::proto::{CDotaUserMsgChatEvent, DotaChatMessage, DotaCombatlogTypes};
@@ -194,11 +194,24 @@ pub fn parse(path: impl AsRef<Path>) -> Result<Replay> {
     let build = parser.context().game_build();
     result.map_err(|e| {
         if build > VERIFIED_GAME_BUILD {
-            anyhow!("这场录像来自更新的 Dota 2 版本，本程序目前验证到 {VERIFIED_PATCH}，请更新软件。原始错误（录像构建号 {build}）：{e:#}")
+            e.context(NewerReplay { build })
         } else {
             e.context(format!("解析录像失败：{}", path.display()))
         }
     })
+}
+
+/// 解析出错、而且录像比 [`VERIFIED_GAME_BUILD`] 新：多半是 Dota 更新改了格式，要更新软件。
+/// 桌面应用认出它（`downcast_ref`）给出按语言翻译的提示；命令行直接打印
+#[derive(Debug)]
+pub struct NewerReplay {
+    pub build: u32,
+}
+
+impl std::fmt::Display for NewerReplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "这场录像来自更新的 Dota 2 版本（构建号 {}），本程序目前验证到 {VERIFIED_PATCH}，请更新软件", self.build)
+    }
 }
 
 /// 格式变化不一定报错（比如验证 5 里 m_fGameTime 悄悄消失），解析完做几项检查

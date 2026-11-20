@@ -32,7 +32,7 @@ impl Host for Console {
             Event::SegmentDone { from, to, secs, wall_secs } => {
                 println!("  录 {}–{}：{secs:.1} 秒，用了 {wall_secs:.0} 秒", clips::mmss(from), clips::mmss(to))
             }
-            Event::Retrying { reason } => println!("  第一次没录好（{reason}），重来一次"),
+            Event::Retrying { reason, .. } => println!("  第一次没录好（{reason}），重来一次"),
             Event::ClipDone { path, secs, .. } => println!("  → {}（{secs:.1} 秒）", path.display()),
             Event::CompilationDone { path, secs } => println!("合集 → {}（{secs:.1} 秒）", path.display()),
             Event::RestoringWindowSize { width, height } => println!("让游戏退出，把显示设置里的窗口大小改回 {width}×{height}…"),
@@ -45,8 +45,8 @@ impl Host for Console {
         }
     }
 
-    fn confirm(&self, question: &str) -> bool {
-        print!("{question} [y/N] ");
+    fn confirm(&self, ask: &pipeline::Ask) -> bool {
+        print!("{} [y/N] ", ask.text);
         let _ = std::io::stdout().flush();
         let mut line = String::new();
         std::io::stdin().lock().read_line(&mut line).is_ok() && line.trim().eq_ignore_ascii_case("y")

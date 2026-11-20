@@ -13,7 +13,8 @@ export function describe(e) {
     case "clip_started": return t("ev.clip", { n: e.n, total: e.total, name: e.name });
     case "segment_started": return t("ev.segment", { from: clock(e.from), to: clock(e.to) });
     case "segment_done": return t("ev.segmentDone", { from: clock(e.from), to: clock(e.to), secs: e.secs.toFixed(1), wall: Math.round(e.wall_secs) });
-    case "retrying": return t("ev.retry", { reason: e.reason });
+    // 认得出种类就用翻译好的说法，不然附原文（录制流程给的中文）
+    case "retrying": return t("ev.retry", { reason: e.fail ? t(`rec.fail.${e.fail}`) : e.reason });
     case "clip_done": return t("ev.clipDone", { path: e.path, secs: e.secs.toFixed(1) });
     case "compilation_done": return t("ev.compiled", { path: e.path, secs: e.secs.toFixed(1) });
     case "restoring_window_size": return t("ev.restoringSize", { w: e.width, h: e.height });

@@ -71,7 +71,7 @@ pub fn write_log(kind: String, text: String) -> Result<(), String> {
 /// 在资源管理器里打开日志文件夹（还没有就先建好）
 #[tauri::command]
 pub fn open_logs() -> Result<(), String> {
-    let dir = crate::settings::logs_dir().ok_or("找不到 APPDATA 目录")?;
+    let dir = crate::settings::logs_dir().ok_or_else(|| crate::uierr::key("err.noAppData"))?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::process::Command::new("explorer").arg(&dir).spawn().map(drop).map_err(|e| e.to_string())
 }

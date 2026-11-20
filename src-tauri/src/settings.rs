@@ -110,12 +110,12 @@ pub fn get_settings() -> Settings {
 
 #[tauri::command]
 pub fn save_settings(settings: Settings) -> Result<(), String> {
-    let p = path().ok_or("找不到 APPDATA 目录")?;
+    let p = path().ok_or_else(|| crate::uierr::key("err.noAppData"))?;
     if let Some(dir) = p.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let text = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-    std::fs::write(&p, text).map_err(|e| format!("写不了 {}：{e}", p.display()))
+    std::fs::write(&p, text).map_err(|e| crate::uierr::detail("err.saveSettings", format!("{}: {e}", p.display())))
 }
 
 #[tauri::command]
