@@ -468,11 +468,13 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 
 /* 已录视频：按比赛分组的缩略图 */
 .rec-match { margin-bottom: 26px; }
-.rec-match .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+/* 标题行：鼠标在标题上时整行（连右边的删除按钮）一起铺浅底，原来只铺左边标题，删除按钮露在外面（2026-11-20 用户：很怪） */
+.rec-match .head { display: flex; align-items: center; gap: 12px; margin: -6px -8px 6px; padding: 6px 8px; border-radius: var(--radius); flex-wrap: wrap; }
+.rec-match .head:has(.open:hover) { background: var(--hover); }
 .rec-match .head .hero-icon { width: 40px; height: 40px; border-radius: 6px; }
-/* 头像、比赛 ID、英雄和时间整块是一个按钮，点了去比赛页；悬停时整块微亮（比赛 ID 不变色、不弹提示、不要箭头，用户定） */
-.rec-match .head .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; margin: -6px -8px; padding: 6px 8px; border: 0; border-radius: var(--radius); background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-.rec-match .head .open:hover:not(:disabled) { background: var(--hover); }
+/* 头像、比赛 ID、英雄和时间整块是一个按钮，点了去比赛页；悬停时整行微亮（见上面 .head，比赛 ID 不变色、不弹提示、不要箭头，用户定） */
+.rec-match .head .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.rec-match .head .open:hover:not(:disabled) { background: none; }
 .rec-match .head .open .text { display: flex; flex-direction: column; min-width: 0; }
 .rec-match .head .t { color: var(--text); font: 600 17px var(--num); }
 .rec-match .head .who { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
