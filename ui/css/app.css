@@ -247,6 +247,11 @@ button.busy:disabled { opacity: 1; cursor: progress; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .stale { opacity: .45; transition: opacity .15s; pointer-events: none; }
 
+/* 开始录制的确认框：一句录多少、多久，下面几条要点，第一条（录制时先别用电脑）标红 */
+.confirm-what { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
+.confirm-points { margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.7; }
+.confirm-points li.key { color: var(--tag-text); font-weight: 600; }
+
 /* 录制 */
 .warn {
   padding: 10px 12px;

@@ -11,8 +11,10 @@ const listen = (name, fn) => window.__TAURI__.event.listen(name, (e) => fn(e.pay
 
 let estimated = 0, t0 = 0, timer = null, stopping = false;
 
+/** 还剩多久（2026-11-20 起；原来是"已用 / 约总共"，要自己减）。超过预计了就写"马上录完" */
 function tick() {
-  $("time").textContent = t("ov.time", { elapsed: clock((Date.now() - t0) / 1000), total: clock(estimated) });
+  const left = estimated - (Date.now() - t0) / 1000;
+  $("time").textContent = left < 5 ? t("ov.timeSoon") : t("ov.time", { left: clock(left) });
 }
 
 /** 状态：recording（红）/ stopping（黄） */
