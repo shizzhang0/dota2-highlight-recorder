@@ -15,14 +15,16 @@ export function confirmStart(dialog, { count, secs, minutes, overwrite }) {
   return new Promise((done) => {
     const close = (ok) => { dialog.close(); done(ok); };
     const native = settings.capture === "native";
+    // 2026-11-20 起：一句录多少、多久，下面几条短要点。原来是四段话，最要紧的「录制时先别用电脑」埋在中间
     dialog.replaceChildren(
       el("h2", {}, t("rec.confirm.title")),
-      el("p", {}, t("rec.confirm.what", { n: count, secs: length(secs), minutes })),
+      el("p", { class: "confirm-what" }, t("rec.confirm.what", { n: count, secs: length(secs), minutes })),
+      el("ul", { class: "confirm-points" },
+        el("li", { class: "key" }, t("rec.confirm.window")),
+        el("li", {}, t("rec.confirm.block")),
+        el("li", {}, t(native ? "rec.confirm.restartNative" : "rec.confirm.restart1080"))),
       // replaceChildren 会把 null 写成文字 "null"，没有就放空字符串
       overwrite ? el("p", { class: "muted" }, t("rec.confirm.overwrite", { n: overwrite })) : "",
-      el("p", { class: "warn" }, t("rec.confirm.window")),
-      el("p", { class: "muted" }, t("rec.confirm.block")),
-      el("p", { class: "muted" }, t(native ? "rec.confirm.restartNative" : "rec.confirm.restart1080")),
       el("div", { class: "dialog-actions" },
         el("button", { type: "button", onclick: () => close(false) }, t("settings.cancel")),
         el("button", { type: "button", class: "primary", onclick: () => close(true) }, t("rec.confirm.start")),
@@ -90,6 +92,11 @@ export async function startRecording(dialog, { matchId, player, hero, clips, pro
     onFinished(f);
   };
   const unlisten = await Promise.all([
+    // 预计要录多久（秒，从开始录算，不含启动游戏），横幅上算还要多久用
+    listen("record-started", (s) => {
+      rec.estimated = s.estimated_secs;
+      update();
+    }),
     listen("record-event", (e) => {
       const text = describe(e);
       if (text) rec.log.push(text);
@@ -160,7 +167,7 @@ export function showRecording(view, { onVideos }) {
     }
   };
   document.addEventListener("mouseup", onMouseBack);
-  const warn = el("p", { class: "warn" }, t("rec.window"));
+  const warn = el("p", { class: "warn" });
   const lbl = el("span", { class: "lbl" });
   const big = el("span", { class: "big" });
   const victims = el("span", { class: "hero-icons" });
@@ -221,6 +228,8 @@ export function showRecording(view, { onVideos }) {
     if (rec.started) parts.push(t("rec.elapsed", { time: clock((Date.now() - rec.started) / 1000) }));
     meta.textContent = parts.join(" · ");
     stopBtn.disabled = rec.stopping;
+    // 预计时长还没报来（刚点开始的一瞬间）就先不写还要多久
+    warn.textContent = rec.estimated == null ? t("rec.windowNoTime") : t("rec.window", { left: timeLeft() });
 
     const c = rec.clips.find((x) => x.index === rec.current);
     if (c && !rec.stopping) {
@@ -242,6 +251,16 @@ export function showRecording(view, { onVideos }) {
       el("span", {}, t("rec.frames", { done: rec.frames[0], total: rec.frames[1] })),
     ] : []));
   };
+  // 横幅上的"还要多久"：预计录制时长减去已经录了多久（还没开始录就是整个预计时长，不含启动游戏），按分钟往上取整
+  const timeLeft = () => {
+    const left = rec.estimated - (rec.started ? (Date.now() - rec.started) / 1000 : 0);
+    return left < 30 ? t("rec.left.soon") : t("rec.left.min", { n: Math.max(1, Math.ceil(left / 60)) });
+  };
+  // 跳转、切镜头的十几秒里没有进度事件，每秒自己刷新一次，"已用"和"还要多久"才会走；录完或切走就停
+  const tick = setInterval(() => {
+    if (!big.isConnected || !rec || rec.result) clearInterval(tick);
+    else progress();
+  }, 1000);
   page = () => {
     if (!rec || !big.isConnected) return;
     if (rec.result) finished(rec.result);
