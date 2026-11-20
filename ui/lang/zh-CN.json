@@ -41,7 +41,7 @@
   "rec.starting": "准备中…",
   "rec.log": "记录",
   "rec.result.done": "录完了：{n} 个片段",
-  "rec.result.stopped": "已停止：{reason}",
+  "rec.result.stoppedManual": "手动停止",
   "rec.result.error": "出错了",
   "ev.waitQuit": "Dota 正以普通模式运行，录制要带控制台端口重新启动。请先退出 Dota（主菜单 → 退出游戏），退出后会自动继续。",
   "ev.launch": "启动游戏：{args}",

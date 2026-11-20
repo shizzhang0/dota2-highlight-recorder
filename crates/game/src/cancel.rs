@@ -21,7 +21,8 @@ impl Reason {
     pub fn describe(self) -> &'static str {
         match self {
             Reason::CtrlC => "按了 Ctrl+C",
-            Reason::Stop => "点了停止",
+            // 2026-11-20 用户定的叫法；原来是"点了停止"
+            Reason::Stop => "手动停止",
         }
     }
 }

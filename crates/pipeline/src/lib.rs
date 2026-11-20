@@ -252,6 +252,21 @@ fn wait_dota_gone(timeout: Duration) -> Result<()> {
     Ok(())
 }
 
+/// 让还在启动的游戏退出：每隔几秒连一次控制台发 `quit`，直到游戏窗口没了，返回它退没退。
+/// 启动中途（还在加载）收到的 `quit` 游戏不理：2026-11-20 启动 7 秒时点了停止，发了一次 `quit`，
+/// 游戏一直没退，60 秒后放弃，显示设置也没改回去；加载完再发一次 2 秒就退了
+fn quit_until_gone(timeout: Duration) -> bool {
+    let started = Instant::now();
+    while dota_running() {
+        if started.elapsed() > timeout {
+            return false;
+        }
+        let _ = Netcon::connect(NETCON_PORT).and_then(|mut c| c.send("quit"));
+        std::thread::sleep(Duration::from_secs(5));
+    }
+    true
+}
+
 /// 让带 netcon 的游戏退出（先征得同意）
 fn restart_needed(host: &dyn Host, reason: &str) -> Result<()> {
     if !host.confirm(&format!("{reason}现在让游戏退出，再重新启动？")) {
@@ -469,10 +484,7 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
             // 2026-11-10 实测：启动中点了停止，游戏留着，之后它退出时写进了 1920×1080，下一轮还把它当成了"原来的大小"
             if sized {
                 let _hold = cancel::hold();
-                let quit = game::launch::wait_netcon(NETCON_PORT, Duration::from_secs(180))
-                    .and_then(|()| Netcon::connect(NETCON_PORT))
-                    .and_then(|mut c| c.send("quit"));
-                done.game_quit = quit.is_ok();
+                done.game_quit = quit_until_gone(Duration::from_secs(180));
                 restore_window_size(host, account, original_size);
             }
             return Err(e);

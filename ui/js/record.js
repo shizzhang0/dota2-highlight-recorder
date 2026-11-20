@@ -101,6 +101,9 @@ export async function startRecording(dialog, { matchId, player, hero, clips, pro
       const text = describe(e);
       if (text) rec.log.push(text);
       if (e.kind === "recording") rec.started = Date.now();
+      // 收尾时没恢复成功的，结果里要告诉用户
+      else if (e.kind === "window_size_not_restored") rec.sizeNotRestored = text;
+      else if (e.kind === "restore_failed") rec.restoreFailed = text;
       else if (e.kind === "clip_started") { rec.current = e.index; rec.bar = null; rec.frames = null; }
       else if (e.kind === "clip_done") rec.done.add(e.index);
       // 这一段的进度：按游戏报来的帧数走
@@ -203,20 +206,24 @@ export function showRecording(view, { onVideos }) {
     big.textContent = {
       // 做了成品（集锦、时刻）就说生成了几个视频，单段拼完已经删了
       done: f.products ? t("rec.result.doneProducts", { n: f.products }) : t("rec.result.done", { n: f.completed.length }),
-      stopped: t("rec.result.stopped", { reason: f.cancelled }),
+      // 桌面应用只有一种停法（点了停止），不再写原因（原来是「已停止：点了停止」），2026-11-20 用户定叫「手动停止」
+      stopped: t("rec.result.stoppedManual"),
       error: t("rec.result.error"),
     }[kind];
     victims.replaceChildren();
     barBox.hidden = true;
     pct.replaceChildren();
     const sub = [t("rec.result.progress", { done: f.completed.length, total: f.selected.length, minutes: (f.elapsed_secs / 60).toFixed(1) })];
-    if (kind !== "done") sub.push(t("rec.result.restored"));
+    // 恢复没成功就不说「游戏设置已恢复」，下面单独说哪里没恢复、要怎么改（2026-11-20 启动中途停止时窗口大小没改回去，却写着已恢复）
+    const unrestored = [rec.sizeNotRestored, rec.restoreFailed].filter(Boolean);
+    if (kind !== "done" && !unrestored.length) sub.push(t("rec.result.restored"));
     if (f.game_open) sub.push(t(kind === "done" ? "rec.result.gameOpen" : "rec.result.gameKept"));
     note.hidden = false;
     note.replaceChildren(
       el("p", { class: "muted" }, sub.join(" ")),
       f.error ? el("p", { class: "error" }, f.error) : "",
       f.history_error ? el("p", { class: "error" }, t("rec.result.historyError", { error: f.history_error })) : "",
+      ...unrestored.map((text) => el("p", { class: "error" }, text)),
     );
   };
   // 录制中：标题旁的进度、正在录的片段和这一段的进度条

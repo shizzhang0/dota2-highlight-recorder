@@ -41,7 +41,7 @@
   "rec.starting": "Getting ready…",
   "rec.log": "Log",
   "rec.result.done": "Done: {n} clips",
-  "rec.result.stopped": "Stopped: {reason}",
+  "rec.result.stoppedManual": "Stopped by you",
   "rec.result.error": "Something went wrong",
   "ev.waitQuit": "Dota is running normally; recording needs it restarted with the console port. Please quit Dota (main menu → Exit); recording continues once it has closed.",
   "ev.launch": "Starting the game: {args}",
