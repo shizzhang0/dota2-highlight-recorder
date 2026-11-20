@@ -252,6 +252,15 @@ button.busy:disabled { opacity: 1; cursor: progress; }
 .confirm-points { margin: 0; padding-left: 20px; color: var(--muted); line-height: 1.7; }
 .confirm-points li.key { color: var(--tag-text); font-weight: 600; }
 
+/* 已录视频标题下的「录像已删除」：提醒色，不是红色（视频本身没事） */
+.replay-gone { color: #e5b267; }
+
+/* 比赛页：录像不在本地了，说明 + 重新下载（2026-11-20） */
+.missing { display: flex; align-items: center; gap: 16px; }
+.missing-text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.missing-title { font-size: 15px; font-weight: 600; }
+.missing-acts { display: flex; gap: 8px; }
+
 /* 录制结果页的「重新录」 */
 .rec-now .retry { margin-top: 12px; }
 

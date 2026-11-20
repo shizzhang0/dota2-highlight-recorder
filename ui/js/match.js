@@ -7,15 +7,74 @@ import { t } from "./i18n.js";
 import { clock, el, heroIcon, heroName, heroPic, length, productName, sceneTags, span } from "./format.js";
 import { settings, persist } from "./state.js";
 import { play, revealButton } from "./videos.js";
+import { downloadError } from "./list.js";
 
 const MODES = ["rec", "custom"];
+
+/** 录像不在本地时的比赛页（2026-11-20 起；原来只有一行红字「本地没有这场录像：路径」）：
+ * 说明一下、给「重新下载录像」，边下边显示进度（和本地录像页同一套下载），下好了 `reopen` 打开比赛页；下不了说清楚原因 */
+function showMissing(view, matchId, { back, backLabel, reopen }) {
+  const title = el("div", { class: "missing-title" }, t("match.missing.title"));
+  const what = el("div", { class: "muted" }, t("match.missing.what"));
+  const fill = el("div", { class: "bar-fill" });
+  const bar = el("div", { class: "bar", hidden: true }, fill);
+  const dl = el("button", { type: "button" }, t("match.missing.download"));
+  const cancel = el("button", { type: "button", hidden: true, onclick: () => api.cancelDownload(matchId) }, t("home.dl.cancel"));
+  const idle = (text) => {
+    title.textContent = t("match.missing.title");
+    what.className = text ? "error" : "muted";
+    what.textContent = text ?? t("match.missing.what");
+    dl.hidden = false;
+    cancel.hidden = true;
+    bar.hidden = true;
+  };
+  dl.addEventListener("click", async () => {
+    dl.hidden = true;
+    cancel.hidden = false;
+    what.className = "muted";
+    title.textContent = t("match.missing.downloading");
+    what.textContent = t("home.dl.finding", { id: matchId });
+    const off = await window.__TAURI__.event.listen("download-progress", ({ payload: p }) => {
+      if (String(p.match_id) !== String(matchId)) return;
+      const mb = (n) => (n / 1e6).toFixed(1);
+      if (p.stage === "finding_url") what.textContent = t("home.dl.finding", { id: matchId });
+      else if (p.stage === "waiting_for_url") what.textContent = t("home.dl.waiting", { secs: p.waited_secs, max: p.max_secs });
+      else if (p.stage === "saving") what.textContent = t("home.dl.saving");
+      else if (p.stage === "downloading") {
+        what.textContent = t(p.total ? "match.missing.progress" : "match.missing.progressNoTotal", { done: mb(p.done), total: p.total ? mb(p.total) : "" });
+        bar.hidden = !p.total;
+        if (p.total) fill.style.width = `${Math.min(100, (p.done / p.total) * 100)}%`;
+      }
+    });
+    try {
+      await api.downloadReplay(matchId);
+      off();
+      reopen();
+    } catch (e) {
+      off();
+      idle(e?.kind === "cancelled" ? undefined : downloadError(e, matchId));
+    }
+  });
+  view.replaceChildren(
+    el("div", { class: "back-bar" }, el("button", { type: "button", class: "back", onclick: back }, backLabel)),
+    el("div", { class: "card missing" },
+      el("div", { class: "missing-text" }, title, what, bar),
+      el("div", { class: "missing-acts" }, dl, cancel)),
+  );
+}
 /** 已生成卡片上的播放按钮图标（实心三角，往右挪一点看着才居中） */
 const PLAY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>';
 
 /** `player` / `preselect`（片段文件名）/ `preselectProducts`（「推荐」的成品标识）从录制结果页的「重新录」带过来：
  * 选好玩家，勾上上次录的片段（到「自定义」）或成品（到「推荐」）。镜头、拼成集锦本来就记着上次的 */
 /** `back` / `backLabel`：左上角的返回，从哪进来回哪（本地录像或已录视频） */
-export async function showMatch(view, matchId, { back, backLabel, record, player: wanted, preselect, preselectProducts }) {
+export async function showMatch(view, matchId, opts) {
+  const { back, backLabel, record, player: wanted, preselect, preselectProducts } = opts;
+  // 录像不在本地了（已录视频、重新录点进来，录像已经删了）：说明情况，给「重新下载录像」，下好了再打开
+  if (!(await api.hasReplay(matchId).catch(() => true))) {
+    showMissing(view, matchId, { back, backLabel, reopen: () => showMatch(view, matchId, opts) });
+    return;
+  }
   view.replaceChildren(el("div", { class: "loading" }, t("match.parsing")));
   let info;
   try {
