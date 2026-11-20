@@ -324,16 +324,22 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .match-card .id { font: 600 16px var(--num); letter-spacing: .3px; }
 .match-card .hero { color: var(--muted); font-size: 13px; }
 .match-card .stats { color: var(--muted); font: 13px var(--num); text-align: right; white-space: nowrap; }
-.match-card .pick { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; margin: 0; opacity: 0; accent-color: var(--accent); cursor: pointer; }
+/* 勾选框外的可点区域：右上角 44×44，点到也算勾选、不打开比赛（2026-11-20） */
+.match-card .pick-cell { position: absolute; top: 0; right: 0; width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer; }
+.match-card .pick { width: 20px; height: 20px; margin: 0; opacity: 0; accent-color: var(--accent); cursor: pointer; }
 .match-card:hover .pick, .match-card .pick:checked, .match-grid.picking .pick { opacity: 1; }
 .match-card.picked { border-color: var(--accent); }
 
 /* 首页的列表看法：一行一场 */
 .match-rows { display: grid; gap: 4px; }
-.match-row { display: grid; grid-template-columns: 20px 28px 130px 96px minmax(0, 1fr) 90px 56px 40px 64px 110px 96px; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+.match-row { display: grid; grid-template-columns: 28px 130px 96px minmax(0, 1fr) 90px 56px 40px 64px 110px 96px; align-items: center; gap: 12px; padding: 8px 12px 8px 44px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
 .match-row:hover { border-color: var(--line-hover); }
 .match-row.picked { border-color: var(--accent); }
-.match-row .pick { position: static; opacity: 1; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+/* 列表里勾选框外的可点区域：行最左边 44px 整条、整行高，看不出来，框还在原来的位置（2026-11-20：框只有 16px，点偏一点就打开了比赛；
+   先做过鼠标移上去整条变亮，用户嫌丑）。它不占网格的列，行左边留出 44px 给它 */
+.match-row { position: relative; }
+.match-row .pick-cell { position: absolute; left: 0; top: 0; bottom: 0; width: 44px; display: flex; align-items: center; padding-left: 12px; box-sizing: border-box; cursor: pointer; }
+.match-row .pick { position: static; opacity: 1; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .match-row .id { font: 600 15px var(--num); }
 .match-row .hero { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .match-row .res { font-size: 13px; font-weight: 600; }
