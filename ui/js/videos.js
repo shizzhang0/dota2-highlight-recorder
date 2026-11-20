@@ -1,13 +1,10 @@
-// 已录视频：按比赛汇总的录制记录（Rust 侧 history.rs）。2026-11-11 改版：每个视频一张缩略图，点缩略图在应用里播放；
-// 没录完的片段显示成虚线框"接着录"。只有一层（2026-11-11 用户试用后去掉了详情页）：每场比赛一块，
-// 比赛 ID 点了去比赛页，右上角「删除记录」，下面折叠的录制记录；刚录完回到这里，顶上显示这次的结果
+// 已录视频：按比赛汇总的录制记录（Rust 侧 history.rs）。每个视频一张缩略图，点缩略图在应用里播放。
+// 一场比赛的一个英雄一块（2026-11-19 起），标题点了去比赛页，右上角删除整块。
+// 只放录好的视频（2026-11-20 用户定）：没录成的不记、也不提示「接着录」，要再录在录制结果页点「重新录」，或者去比赛页勾
 import * as api from "./api.js";
 import { t } from "./i18n.js";
 import { clock, collectionName, date, el, heroIcon, heroName, modeName, productName, sceneTags, span } from "./format.js";
 import { endPlayback, watchPlayback } from "./playlog.js";
-
-// 没录成的片段；拼进了集锦的（2026-11-18 起单段文件拼完就删）不算
-const unfinished = (p) => p.clips.filter((c) => !c.file && !c.in_product);
 
 // 缩略图一张一张取：第一次要 ffmpeg 现取一帧，同时开十几个 ffmpeg 会卡；取过的有缓存，很快
 const thumbQueue = [];
@@ -123,7 +120,7 @@ function videoCard(file, { range, secs, victims = [], clip, label, title, onDele
 }
 
 /** 一场比赛里一个英雄的所有视频（片段、成品、集锦），加上没录完的"接着录" */
-function videoGrid(m, p, { openMatch, dialog, videos }) {
+function videoGrid(m, p, { dialog, videos }) {
   const cards = [];
   // 删一个视频：问一句，文件移到回收站、记录里去掉，然后刷新
   const remove = (file, name) => async () => {
@@ -150,14 +147,6 @@ function videoGrid(m, p, { openMatch, dialog, videos }) {
     const extra = !moment && comp.clips ? t("videos.partsN", { n: comp.clips }) : "";
     const label = extra ? `${name} · ${extra}` : name;
     cards.push(videoCard(comp.file, { label, secs: moment ? comp.end - comp.start : 0, title: `${m.match_id} · ${heroName(p.hero)} · ${label}`, onDelete: remove(comp.file, label) }));
-  }
-  const left = unfinished(p);
-  if (left.length) {
-    cards.push(el("div", { class: "vid left" }, el("div", {},
-      t("videos.leftN", { n: left.length }), el("br"),
-      // 走正常的录制流程：到比赛页、选好这名玩家、勾上没录完的片段，用户确认后开始
-      el("button", { type: "button", style: "margin-top:10px", onclick: () => openMatch(m.match_id, { from: "videos", player: p.player, preselect: left.map((c) => c.file_name) }) }, t("videos.resumeShort")),
-    )));
   }
   return el("div", { class: "vid-grid" }, cards);
 }
@@ -235,8 +224,8 @@ export async function showVideos(view, nav) {
   }
   const videos = list.reduce((a, m) => a + m.players.reduce((b, p) => b + videoCount(p), 0), 0);
   // 拆成一场比赛的一个英雄一块，按这个英雄最近一次录制排，最近的在前（同一场的几块不一定挨着）。
-  // 视频都删光、也没有没录完的片段的，不显示
-  const blocks = list.flatMap((m) => m.players.filter((p) => videoCount(p) || unfinished(p).length).map((p) => ({
+  // 视频都删光了的不显示
+  const blocks = list.flatMap((m) => m.players.filter((p) => videoCount(p)).map((p) => ({
     m, p, last: Math.max(0, ...m.runs.filter((r) => r.player === p.player).map((r) => r.time)) || m.last_time,
   })));
   blocks.sort((a, b) => b.last - a.last);

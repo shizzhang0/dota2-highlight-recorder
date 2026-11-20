@@ -12,9 +12,10 @@ const MODES = ["rec", "custom"];
 /** 已生成卡片上的播放按钮图标（实心三角，往右挪一点看着才居中） */
 const PLAY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>';
 
-/** `player` / `preselect`（片段文件名）从"已录视频"的"继续录未完成的"带过来：选好玩家、勾上这些片段 */
+/** `player` / `preselect`（片段文件名）/ `preselectProducts`（「推荐」的成品标识）从录制结果页的「重新录」带过来：
+ * 选好玩家，勾上上次录的片段（到「自定义」）或成品（到「推荐」）。镜头、拼成集锦本来就记着上次的 */
 /** `back` / `backLabel`：左上角的返回，从哪进来回哪（本地录像或已录视频） */
-export async function showMatch(view, matchId, { back, backLabel, record, player: wanted, preselect }) {
+export async function showMatch(view, matchId, { back, backLabel, record, player: wanted, preselect, preselectProducts }) {
   view.replaceChildren(el("div", { class: "loading" }, t("match.parsing")));
   let info;
   try {
@@ -27,6 +28,7 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
   let player = info.players.some((p) => p.id === wanted) ? wanted : info.me ?? info.players[0].id;
   // 带过来的片段只在第一次算计划时用；规则改过的话可能对不上，提示一句
   let pending = preselect ? new Set(preselect) : null;
+  let pendingProducts = preselectProducts?.length ? new Set(preselectProducts) : null;
   const preselectNote = el("p", { class: "warn", hidden: true });
   let clips = [];
   let picked = new Set();
@@ -34,7 +36,7 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
   let products = [];
   let chosen = new Set();
   // 带着"继续录未完成的"进来时直接到「自定义」，那些片段在那里勾着
-  let mode = preselect ? "custom" : "rec";
+  let mode = preselect && !pendingProducts ? "custom" : "rec";
   const current = () => info.players.find((p) => p.id === player);
   /** 勾了的成品用到的片段序号（同一段只录一次） */
   const usedClips = () => new Set(products.filter((x) => chosen.has(x.id)).flatMap((x) => x.clips));
@@ -341,7 +343,14 @@ export async function showMatch(view, matchId, { back, backLabel, record, player
     // 默认一个都不勾，用户自己挑
     picked = new Set();
     chosen = new Set();
-    if (pending) {
+    if (pendingProducts) {
+      const found = products.filter((x) => pendingProducts.has(x.id));
+      chosen = new Set(found.map((x) => x.id));
+      preselectNote.hidden = found.length === pendingProducts.size;
+      preselectNote.textContent = t("match.preselectMissing", { n: pendingProducts.size - found.length });
+      pendingProducts = null;
+      pending = null;
+    } else if (pending) {
       const found = clips.filter((c) => pending.has(c.file_name));
       picked = new Set(found.map((c) => c.index));
       preselectNote.hidden = found.length === pending.size;
