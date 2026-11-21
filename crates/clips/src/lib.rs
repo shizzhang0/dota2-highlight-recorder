@@ -191,6 +191,9 @@ pub const LOW_HP_RATIO: f32 = 0.10;
 const COUNTER_WINDOW: f32 = 20.0;
 /// 残血反杀要求被杀者在击杀前这么多秒内打过他
 const COUNTER_RECENT: f32 = 10.0;
+/// 击杀前这么多秒内（含击杀那一刻）他自己死过，就是死后靠持续伤害、延迟技能拿的人头，不算。
+/// 复活最快也要几秒，这段时间里死过就说明击杀时他是死的
+const DEAD_BEFORE: f32 = 5.0;
 /// 有效助攻看击杀前多少秒
 pub const ASSIST_WINDOW: f32 = 10.0;
 /// 有效助攻：他打出被杀者这段时间受到的英雄伤害的至少这么多（或者控过被杀者）
@@ -235,28 +238,29 @@ pub fn effective_assist(r: &Replay, player: usize, k: &Kill) -> bool {
     share >= ASSIST_SHARE || disabled
 }
 
-/// 残血反杀（2026-11-16 用户定）：击杀者
-/// 1. 击杀时还活着（同归于尽不算）；
-/// 2. 这波是对方先动手：击杀前 `COUNTER_WINDOW` 秒里两人之间的第一下伤害是被杀者打的；
-/// 3. 被杀者在击杀前 `COUNTER_RECENT` 秒内打过他；
-/// 4. 从两人交手起，他最低到过的血量不超过最大血量的 `LOW_HP_RATIO`（看最低点，不看击杀那一刻：吸血回上来的也算）
+/// 残血反杀：击杀者
+/// 1. 击杀那一刻还活着：击杀前 `DEAD_BEFORE` 秒内（含同一刻）没死过。杀完马上被别人收掉也算；
+/// 2. 被杀者在击杀前 `COUNTER_RECENT` 秒内打过他（两人真打起来了，不是被别人打残后路过收人头）；
+/// 3. 从两人交手起（击杀前 `COUNTER_WINDOW` 秒内两人之间的第一下伤害，谁打的都行），他最低到过的血量
+///    不超过最大血量的 `LOW_HP_RATIO`（看最低点，不看击杀那一刻：吸血回上来的也算）。
+///
+/// 2026-11-16 用户定的版本还要求「对方先动手」，同归于尽按击杀前后 1 秒内死了算。2026-11-21 对照完美时刻的 4 局
+/// （小仙女杀完 0.5 秒被杀、Sven 0.9 秒、斧王先手、痛苦女王先手，完美都算残血反杀），用户定和完美一致，
+/// 这两条去掉。本地 518 次击杀里从 14 次变成 25 次；原来有 2 次是死后靠持续伤害拿的人头，也排除了
 pub fn low_hp_counter(r: &Replay, k: &Kill) -> bool {
     let Some(killer) = k.killer else { return false };
     let (t, victim) = (k.game_time, k.victim);
-    if r.kills.iter().any(|o| o.victim == killer && (o.game_time - t).abs() <= 1.0) {
+    if r.kills.iter().any(|o| o.victim == killer && o.tick <= k.tick && o.game_time >= t - DEAD_BEFORE) {
         return false;
     }
     let w = damage_between(r, t - COUNTER_WINDOW, t);
-    let Some(first_v) = w.iter().find(|d| d.attacker == victim && d.target == killer).map(|d| d.game_time) else {
+    let Some(first) = w.iter().find(|d| (d.attacker == victim && d.target == killer) || (d.attacker == killer && d.target == victim)).map(|d| d.game_time) else {
         return false;
     };
-    if w.iter().any(|d| d.attacker == killer && d.target == victim && d.game_time <= first_v) {
-        return false;
-    }
     if !w.iter().any(|d| d.attacker == victim && d.target == killer && d.game_time >= t - COUNTER_RECENT) {
         return false;
     }
-    let Some(low) = w.iter().filter(|d| d.target == killer && d.game_time >= first_v && d.target_health > 0).min_by_key(|d| d.target_health) else {
+    let Some(low) = w.iter().filter(|d| d.target == killer && d.game_time >= first && d.target_health > 0).min_by_key(|d| d.target_health) else {
         return false;
     };
     r.max_health_at(killer, low.tick).is_some_and(|max| low.target_health as f32 <= max as f32 * LOW_HP_RATIO)
