@@ -45,7 +45,7 @@ Runs on Windows 10/11 (64-bit).
 | --- | --- |
 | ![Local replays](docs/images/matches-en.jpg) | ![Recorded videos](docs/images/videos-en.jpg) |
 
-File names look like `9052676196_7_phantom_assassin_31-57_32-13_三杀.mp4`: match ID, player slot, hero, start and end time, and the multi-kill if there is one.
+File names follow the UI language and look like `9096983180_Sven_Kill_highlights.mp4`: match ID, hero, then what the video is. A second custom compilation of the same hero gets `_2`, then `_3`, and so on.
 
 ## What happens while recording
 

@@ -8,7 +8,44 @@
 //!
 //! 时间都是游戏时钟（秒，开局号角为 0）。
 
+use std::collections::HashMap;
+
 use replay::{Kill, Replay};
+
+/// 文件名用哪种语言的叫法（2026-11-22 起跟着界面语言，原来固定中文）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lang {
+    Zh,
+    En,
+}
+
+impl Lang {
+    /// 界面语言 "zh-CN" / "en" → 文件名语言
+    pub fn of_ui(lang: &str) -> Lang {
+        if lang.starts_with("zh") { Lang::Zh } else { Lang::En }
+    }
+}
+
+/// 起文件名用的：语言和英雄显示名（英雄内部名，不带 `npc_dota_hero_` → 显示名，读游戏的本地化文件）。
+/// 显示名表里没有的英雄用内部名
+#[derive(Debug, Clone)]
+pub struct Naming {
+    pub lang: Lang,
+    pub heroes: HashMap<String, String>,
+}
+
+impl Naming {
+    /// 文件名里这名玩家的英雄
+    pub fn hero(&self, r: &Replay, player: usize) -> String {
+        let id = r.players[player].hero.trim_start_matches("npc_dota_hero_");
+        part(self.heroes.get(id).map_or(id, String::as_str))
+    }
+}
+
+/// 文件名里的一段：空白换成下划线（英文名「Queen of Pain」「Kill highlights」），Windows 文件名不允许的字符也换掉
+fn part(s: &str) -> String {
+    s.trim().chars().map(|c| if c.is_whitespace() || r#"\/:*?"<>|"#.contains(c) { '_' } else { c }).collect()
+}
 
 /// "开打"看谁和谁之间的伤害
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -534,17 +571,25 @@ impl ProductKind {
         }
     }
 
-    /// 文件名里用的叫法（和完美时刻一样：三杀、四杀、暴走、残血反杀、抢盾时刻、默契时刻）
-    pub fn file_label(self) -> &'static str {
-        match self {
-            ProductKind::Kills => "击杀集锦",
-            ProductKind::Assists => "助攻集锦",
-            ProductKind::Rampage => "暴走",
-            ProductKind::Ultra => "四杀",
-            ProductKind::Triple => "三杀",
-            ProductKind::Aegis => "抢盾时刻",
-            ProductKind::LowHp => "残血反杀",
-            ProductKind::Teamwork => "默契时刻",
+    /// 文件名里用的叫法，和比赛页卡片上的一样（ui/lang 的 `product.*`；中文和完美时刻一样：三杀、四杀、暴走……）
+    pub fn file_label(self, lang: Lang) -> &'static str {
+        match (self, lang) {
+            (ProductKind::Kills, Lang::Zh) => "击杀集锦",
+            (ProductKind::Assists, Lang::Zh) => "助攻集锦",
+            (ProductKind::Rampage, Lang::Zh) => "暴走",
+            (ProductKind::Ultra, Lang::Zh) => "四杀",
+            (ProductKind::Triple, Lang::Zh) => "三杀",
+            (ProductKind::Aegis, Lang::Zh) => "抢盾时刻",
+            (ProductKind::LowHp, Lang::Zh) => "残血反杀",
+            (ProductKind::Teamwork, Lang::Zh) => "默契时刻",
+            (ProductKind::Kills, Lang::En) => "Kill_highlights",
+            (ProductKind::Assists, Lang::En) => "Assist_highlights",
+            (ProductKind::Rampage, Lang::En) => "Rampage",
+            (ProductKind::Ultra, Lang::En) => "Ultra_kill",
+            (ProductKind::Triple, Lang::En) => "Triple_kill",
+            (ProductKind::Aegis, Lang::En) => "Aegis_steals",
+            (ProductKind::LowHp, Lang::En) => "Low-HP_turnaround",
+            (ProductKind::Teamwork, Lang::En) => "Teamwork_moments",
         }
     }
 
@@ -594,18 +639,21 @@ impl Product {
         self.clips.iter().map(|&i| clips[i].duration()).sum()
     }
 
-    /// 文件名（不含扩展名）：`比赛ID_玩家序号_英雄_击杀集锦`、`…_默契时刻`（一种一个，不带时间）
-    pub fn file_name(&self, r: &Replay, clips: &[Clip]) -> String {
+    /// 文件名（不含扩展名）：`比赛ID_英雄_击杀集锦`、`9096983180_Sven_Kill_highlights`（一种一个，不带时间）
+    pub fn file_name(&self, r: &Replay, clips: &[Clip], n: &Naming) -> String {
         let player = clips[self.clips[0]].player;
-        let hero = r.players[player].hero.trim_start_matches("npc_dota_hero_");
-        format!("{}_{}_{}_{}", r.match_id, player, hero, self.kind.file_label())
+        format!("{}_{}_{}", r.match_id, n.hero(r, player), self.kind.file_label(n.lang))
     }
 }
 
-/// 「自定义」里勾的片段拼成的集锦叫什么（不含扩展名）：`比赛ID_玩家序号_英雄_自定义集锦`
-pub fn custom_file_name(r: &Replay, player: usize) -> String {
-    let hero = r.players[player].hero.trim_start_matches("npc_dota_hero_");
-    format!("{}_{}_{}_自定义集锦", r.match_id, player, hero)
+/// 「自定义」里勾的片段拼成的集锦叫什么（不含扩展名）：`比赛ID_英雄_自定义集锦`、`…_Custom_highlights`。
+/// 同一场同一个英雄可以有好几个，第二个起由调用方加 `_2`、`_3`……
+pub fn custom_file_name(r: &Replay, player: usize, n: &Naming) -> String {
+    let label = match n.lang {
+        Lang::Zh => "自定义集锦",
+        Lang::En => "Custom_highlights",
+    };
+    format!("{}_{}_{label}", r.match_id, n.hero(r, player))
 }
 
 /// 多杀的分（2026-11-18 用户定）：双杀 3、三杀 6、四杀 10、暴走 15
@@ -737,18 +785,49 @@ pub fn mmss(t: f32) -> String {
     format!("{sign}{:02}-{:02}", s / 60, s % 60)
 }
 
-/// 文件名（不含扩展名）：`比赛ID_玩家序号_英雄_起点_终点[_多杀|_助攻|_抢盾]`
-pub fn file_name(r: &Replay, clip: &Clip) -> String {
-    let hero = r.players[clip.player].hero.trim_start_matches("npc_dota_hero_");
-    // 击杀片段的名字和以前一样；助攻、抢盾片段加上类别（2026-11-16）
-    let tag = match (clip.kind, clip.multi_kill) {
-        (Kind::Assist, _) => "_助攻",
-        (Kind::Aegis, _) => "_抢盾",
-        (_, 2) => "_双杀",
-        (_, 3) => "_三杀",
-        (_, 4) => "_四杀",
-        (_, n) if n >= 5 => "_暴走",
+/// 文件名（不含扩展名）：`比赛ID_英雄_起点_终点[_多杀|_助攻|_抢盾]`，例如 `9096983180_斯温_15-44_16-09_双杀`。
+/// 2026-11-22 起英雄和标签跟着界面语言、去掉了玩家序号（原来是 `比赛ID_玩家序号_内部英雄名_…`）
+pub fn file_name(r: &Replay, clip: &Clip, n: &Naming) -> String {
+    let tag = match (clip.kind, clip.multi_kill, n.lang) {
+        (Kind::Assist, _, Lang::Zh) => "_助攻",
+        (Kind::Assist, _, Lang::En) => "_Assist",
+        (Kind::Aegis, _, Lang::Zh) => "_抢盾",
+        (Kind::Aegis, _, Lang::En) => "_Aegis_steal",
+        (_, 2, Lang::Zh) => "_双杀",
+        (_, 2, Lang::En) => "_Double_kill",
+        (_, 3, Lang::Zh) => "_三杀",
+        (_, 3, Lang::En) => "_Triple_kill",
+        (_, 4, Lang::Zh) => "_四杀",
+        (_, 4, Lang::En) => "_Ultra_kill",
+        (_, m, Lang::Zh) if m >= 5 => "_暴走",
+        (_, m, Lang::En) if m >= 5 => "_Rampage",
         _ => "",
     };
-    format!("{}_{}_{}_{}_{}{}", r.match_id, clip.player, hero, mmss(clip.start()), mmss(clip.end()), tag)
+    format!("{}_{}_{}_{}{}", r.match_id, n.hero(r, clip.player), mmss(clip.start()), mmss(clip.end()), tag)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_name_parts() {
+        // 英文名里的空格换成下划线，撇号、连字符保留；文件名不允许的字符也换掉
+        assert_eq!(part("Queen of Pain"), "Queen_of_Pain");
+        assert_eq!(part("Nature's Prophet"), "Nature's_Prophet");
+        assert_eq!(part("Anti-Mage"), "Anti-Mage");
+        assert_eq!(part("斯温"), "斯温");
+        assert_eq!(part("a/b:c?"), "a_b_c_");
+        for kind in ProductKind::MOMENTS.into_iter().chain([ProductKind::Kills, ProductKind::Assists]) {
+            for lang in [Lang::Zh, Lang::En] {
+                assert_eq!(part(kind.file_label(lang)), kind.file_label(lang), "{kind:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn ui_language() {
+        assert_eq!(Lang::of_ui("zh-CN"), Lang::Zh);
+        assert_eq!(Lang::of_ui("en"), Lang::En);
+    }
 }

@@ -327,17 +327,28 @@ fn in_products(runs: &[&Run]) -> std::collections::HashSet<String> {
     out
 }
 
-/// 这场比赛「推荐」做出来、文件还在的成品（比赛页标"已生成"用）。以前「拼成集锦」拼的击杀集锦和新的同名，
-/// 但内容是当时勾的那几段，不算
-pub fn product_files(match_id: u64) -> std::collections::HashSet<PathBuf> {
+/// 这场比赛这名玩家「推荐」做出来、文件还在的某种成品（`kind` 是 `clips::ProductKind::key`），最近做的那个
+/// （比赛页标"已生成"、点卡片播放用）。按种类找、不按文件名：文件名跟着界面语言变（2026-11-22 起）。
+/// 以前「拼成集锦」拼的合集记在 `compilation` 里，内容是当时勾的那几段，不算
+pub fn product_file(match_id: u64, player: usize, kind: &str) -> Option<PathBuf> {
     let _g = LOCK.lock().unwrap();
     load()
         .into_iter()
-        .filter(|r| r.match_id == match_id)
+        .rev()
+        .filter(|r| r.match_id == match_id && r.player == player)
         .flat_map(|r| r.products)
-        .filter(|x| x.kind != "custom" && x.file.is_file())
+        .find(|x| x.kind == kind && x.file.is_file())
         .map(|x| x.file)
-        .collect()
+}
+
+/// 输出目录里还没被占用的自定义集锦名（不含扩展名）：`base`，有了就 `base_2`、`base_3`……（2026-11-22 起；
+/// 原来同一场同一个英雄的自定义集锦都同名，后录的覆盖先录的，两条记录指着同一个文件）
+pub fn free_custom_name(out_dir: &Path, base: &str) -> String {
+    let taken = |name: &str| out_dir.join(format!("{name}.mp4")).exists();
+    if !taken(base) {
+        return base.to_owned();
+    }
+    (2..).map(|k| format!("{base}_{k}")).find(|name| !taken(name)).expect("总有空号")
 }
 
 /// 删掉一场比赛的记录和视频：`player` 给了只删这个玩家（英雄）的（已录视频一个英雄一块，2026-11-19 起），没给删整场。
@@ -554,6 +565,23 @@ mod tests {
         let runs = load();
         assert_eq!(runs.len(), 2);
         assert!(runs.iter().all(|r| r.clips.iter().all(|c| c.file_name != "e")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn custom_compilations_get_numbers() {
+        let dir = std::env::temp_dir().join(format!("d2hr-custom-name-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = "1_斯温_自定义集锦";
+        assert_eq!(free_custom_name(&dir, base), base);
+        std::fs::write(dir.join(format!("{base}.mp4")), b"").unwrap();
+        assert_eq!(free_custom_name(&dir, base), format!("{base}_2"));
+        std::fs::write(dir.join(format!("{base}_2.mp4")), b"").unwrap();
+        std::fs::write(dir.join(format!("{base}_4.mp4")), b"").unwrap();
+        assert_eq!(free_custom_name(&dir, base), format!("{base}_3"));
+        // 删掉的号空出来，下次用它
+        std::fs::remove_file(dir.join(format!("{base}.mp4"))).unwrap();
+        assert_eq!(free_custom_name(&dir, base), base);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

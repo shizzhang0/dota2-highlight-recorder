@@ -213,12 +213,12 @@ fn parts(a: &Args, r: &Replay, player: usize) -> Result<Option<Vec<Part>>> {
         for (i, c) in plan.iter().enumerate() {
             let exports: Vec<String> =
                 c.exports.iter().map(|e| format!("{}–{}", clips::mmss(e.span.start), clips::mmss(e.span.end))).collect();
-            println!("{:>2}. {}  导出段 {}", i + 1, clips::file_name(r, c), exports.join("、"));
+            println!("{:>2}. {}  导出段 {}", i + 1, clips::file_name(r, c, &clips::Naming { lang: clips::Lang::Zh, heroes: Default::default() }), exports.join("、"));
         }
         return Ok(None);
     };
     let clip = plan.get(k.wrapping_sub(1)).with_context(|| format!("只有 {} 个片段", plan.len()))?;
-    let base = clips::file_name(r, clip);
+    let base = clips::file_name(r, clip, &clips::Naming { lang: clips::Lang::Zh, heroes: Default::default() });
     let last = r.clock.last().map_or(f32::MAX, |c| c.game_time);
     let parts = clip
         .exports

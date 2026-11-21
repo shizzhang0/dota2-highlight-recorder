@@ -222,6 +222,8 @@ impl Host for Logged<'_> {
 pub struct Selected {
     pub index: usize,
     pub clip: Clip,
+    /// 录成的文件叫什么（不含扩展名，`clips::file_name`；语言、英雄显示名由调用方定）
+    pub name: String,
 }
 
 /// 录制过程中的进度
@@ -676,7 +678,7 @@ fn record_all(
     let result = (|| -> Result<()> {
         for (n, sel) in selected.iter().enumerate() {
             let clip = &sel.clip;
-            let name = clips::file_name(r, clip);
+            let name = &sel.name;
             host.event(Event::ClipStarted { n: n + 1, total: selected.len(), index: sel.index, name: name.clone() });
             let mut parts = Vec::new();
             for span in &clip.spans {

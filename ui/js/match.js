@@ -3,7 +3,7 @@
 // 2026-11-18 用户定（参考完美时刻）：默认是「推荐」，直接列这局能生成的成品（击杀集锦、助攻集锦、三杀……），勾成品就行；
 // 原来逐个勾片段的那套挪到「自定义」
 import * as api from "./api.js";
-import { t } from "./i18n.js";
+import { resolve, t } from "./i18n.js";
 import { clock, el, heroIcon, heroName, heroPic, length, productName, sceneTags, span } from "./format.js";
 import { settings, persist } from "./state.js";
 import { play, revealButton } from "./videos.js";
@@ -393,7 +393,7 @@ export async function showMatch(view, matchId, opts) {
 
   async function replan() {
     try {
-      ({ clips, products } = await api.plan(matchId, player, settings.rules));
+      ({ clips, products } = await api.plan(matchId, player, settings.rules, resolve(settings.language)));
     } catch (e) {
       clipsBox.replaceChildren(el("p", { class: "error" }, e.message));
       clips = [];
