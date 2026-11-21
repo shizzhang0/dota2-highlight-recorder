@@ -263,6 +263,11 @@ button.busy:disabled { opacity: 1; cursor: progress; }
 .missing-title { font-size: 15px; font-weight: 600; }
 .missing-acts { display: flex; gap: 8px; }
 
+/* 录制出错的原文：收在「详细信息」里，字小一点 */
+.fail-detail { margin-top: 4px; font-size: 13px; }
+.fail-detail summary { cursor: pointer; color: var(--muted); }
+.fail-detail p { margin: 4px 0 0; word-break: break-all; }
+
 /* 录制结果页的「重新录」 */
 .rec-now .retry { margin-top: 12px; }
 

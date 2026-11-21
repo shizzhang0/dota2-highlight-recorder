@@ -1,5 +1,5 @@
 // 录制中盖在游戏上的置顶小对话框：录制流程要问的是/否问题（例如要不要重启游戏）
-import { loadLang, resolve, t } from "./i18n.js";
+import { loadLang, resolve, t, uiText } from "./i18n.js";
 
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 const $ = (id) => document.getElementById(id);
@@ -8,7 +8,7 @@ let current = null;
 function show(p) {
   current = p;
   $("title").textContent = t("rec.ask.title");
-  $("text").textContent = p.question;
+  $("text").textContent = uiText(p.question);
   $("yes").textContent = t("rec.ask.yes");
   $("no").textContent = t("rec.ask.no");
   $("yes").focus();

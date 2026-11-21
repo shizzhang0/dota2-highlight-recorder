@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clips::{Clip, LEAD};
 use game::cancel::{self, Reason};
 use game::clip_builder;
@@ -56,6 +56,68 @@ impl std::fmt::Display for BlackWorld {
 }
 
 impl std::error::Error for BlackWorld {}
+
+/// 录制失败的几类常见原因（2026-11-21 起）：挂在出错的那一步上（`.context(Fail::X)`），桌面应用按它显示翻译好的说明，
+/// 原始报错留在详细信息和日志里。只挂在最里面出错的地方：外层再挂一个的话，认出来的是外层那个
+#[derive(Debug, Clone, Copy)]
+pub enum Fail {
+    /// Steam 没开、没登录，或者用户不让打开
+    Steam,
+    /// 要重启游戏，用户没同意
+    RestartDeclined,
+    /// 游戏没能启动、控制台连不上
+    GameStart,
+    /// 录像没加载起来
+    ReplayLoad,
+    /// 跳转、出帧时游戏没反应
+    GameStuck,
+    /// 编码、合成视频出错
+    Encode,
+    /// 输出目录写不了
+    Disk,
+}
+
+impl Fail {
+    /// 语言文件里的 `rec.fail.{key}`
+    pub fn key(self) -> &'static str {
+        match self {
+            Fail::Steam => "steam",
+            Fail::RestartDeclined => "restart_declined",
+            Fail::GameStart => "game_start",
+            Fail::ReplayLoad => "replay_load",
+            Fail::GameStuck => "game_stuck",
+            Fail::Encode => "encode",
+            Fail::Disk => "disk",
+        }
+    }
+}
+
+impl std::fmt::Display for Fail {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            Fail::Steam => "Steam 没有登录",
+            Fail::RestartDeclined => "没有同意重启游戏",
+            Fail::GameStart => "游戏没能启动",
+            Fail::ReplayLoad => "录像没能加载",
+            Fail::GameStuck => "游戏没有反应",
+            Fail::Encode => "视频编码出错",
+            Fail::Disk => "输出目录无法写入",
+        })
+    }
+}
+
+/// 这个错误属于哪一类（`Fail::key`，录到黑画面是 "black_screen"）；认不出来是 None
+pub fn fail_kind(e: &anyhow::Error) -> Option<&'static str> {
+    e.downcast_ref::<Fail>().map(|f| f.key()).or_else(|| e.downcast_ref::<BlackWorld>().map(|_| "black_screen"))
+}
+
+/// 要用户拍板的问题（2026-11-21 起）：`text` 是中文原句（命令行、日志用），
+/// `key` / `params` 给桌面应用按语言翻译（语言文件里的键和 `{占位符}`）
+pub struct Ask {
+    pub key: &'static str,
+    pub params: Value,
+    pub text: String,
+}
 
 /// 录完后要做的一个成品：用哪几段（`selected` 里的位置），文件名（不含扩展名）。
 /// 只有一段的直接用那段的文件（名字不同就复制一份），两段以上按顺序拼起来
@@ -148,9 +210,9 @@ impl Host for Logged<'_> {
         self.inner.event(e);
     }
 
-    fn confirm(&self, question: &str) -> bool {
-        line(&format!("问：{question}"));
-        let yes = self.inner.confirm(question);
+    fn confirm(&self, ask: &Ask) -> bool {
+        line(&format!("问：{}", ask.text));
+        let yes = self.inner.confirm(ask);
         line(&format!("答：{}", if yes { "同意" } else { "不同意" }));
         yes
     }
@@ -186,7 +248,8 @@ pub enum Event {
     /// 一段录完：视频时长、用了多少秒墙钟
     SegmentDone { from: f32, to: f32, secs: f64, wall_secs: f32 },
     /// 录得不对，重来一次
-    Retrying { reason: String },
+    /// `fail`：认得出的失败种类（`fail_kind`），界面按它翻译；认不出就显示 `reason` 原文
+    Retrying { reason: String, fail: Option<&'static str> },
     /// 游戏窗口的状态（排查用，界面不显示）：`at` 是在哪一步记的
     GameWindow { at: String, minimized: bool, foreground: bool },
     /// 一个片段做好了
@@ -207,7 +270,7 @@ pub enum Event {
 pub trait Host {
     fn event(&self, e: Event);
     /// 问用户一个是/否的问题
-    fn confirm(&self, question: &str) -> bool;
+    fn confirm(&self, ask: &Ask) -> bool;
 }
 
 /// 录制结果。出错或停下时也会给出已经做好的部分，方便从没录完的片段继续
@@ -267,10 +330,10 @@ fn quit_until_gone(timeout: Duration) -> bool {
     true
 }
 
-/// 让带 netcon 的游戏退出（先征得同意）
-fn restart_needed(host: &dyn Host, reason: &str) -> Result<()> {
-    if !host.confirm(&format!("{reason}现在让游戏退出，再重新启动？")) {
-        bail!("用户没同意重启游戏");
+/// 让带 netcon 的游戏退出（先征得同意）。`ask` 里说为什么要重启
+fn restart_needed(host: &dyn Host, ask: Ask) -> Result<()> {
+    if !host.confirm(&ask) {
+        return Err(anyhow!("用户没同意重启游戏").context(Fail::RestartDeclined));
     }
     Netcon::connect(NETCON_PORT)?.send("quit")?;
     wait_dota_gone(Duration::from_secs(60))
@@ -289,29 +352,44 @@ fn client_size() -> Option<(u32, u32)> {
 /// 启动、加载录像那一两分钟里按键照样进游戏，用户按了打开控制台的键，控制台被录进了视频。
 /// 游戏自己弹窗的话会点不掉，但 Dota 左上角的进度窗不在拦截范围里，那里的「停止录制」照样能点
 fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Result<(Netcon, gsi::Listener, Option<game::input_guard::Guard>)> {
-    gsi::check_port(o.gsi_port)?;
-    let changed = gsi::install(o.gsi_port)?;
-    let rx = gsi::listen(o.gsi_port)?;
+    gsi::check_port(o.gsi_port).context(Fail::GameStart)?;
+    let changed = gsi::install(o.gsi_port).context(Fail::GameStart)?;
+    let rx = gsi::listen(o.gsi_port).context(Fail::GameStart)?;
 
     if dota_running() && !game::launch::netcon_ready(NETCON_PORT) {
         host.event(Event::WaitingForDotaToQuit);
-        wait_dota_gone(Duration::from_secs(600))?;
+        wait_dota_gone(Duration::from_secs(600)).context(Fail::GameStart)?;
     }
     if dota_running() {
         // 配置刚写入：除非游戏启动时就有同样的配置（上一轮写过、结束时删了），否则收不到包。
         // 暂停、尤其是游戏在后台时几秒才一个包，等久一点
         if changed && gsi::wait_for(&rx, Duration::from_secs(15), "GSI 包", |_| true).is_err() {
-            restart_needed(host, "游戏开着，但没读到我们的 GSI 配置（配置只在游戏启动时读）。")?;
+            restart_needed(
+                host,
+                Ask {
+                    key: "confirm.restartGsi",
+                    params: Value::Null,
+                    text: "游戏开着，但没读到我们的 GSI 配置（配置只在游戏启动时读）。现在让游戏退出，再重新启动？".into(),
+                },
+            )?;
         } else if let (Some(want), Some(now)) = (o.resolution, client_size())
             && want != now
         {
-            restart_needed(host, &format!("游戏窗口现在是 {}×{}，要录 {}×{} 得重新启动游戏。", now.0, now.1, want.0, want.1))?;
+            let (now, want) = (format!("{}×{}", now.0, now.1), format!("{}×{}", want.0, want.1));
+            restart_needed(
+                host,
+                Ask {
+                    key: "confirm.restartSize",
+                    text: format!("游戏窗口现在是 {now}，要录 {want} 得重新启动游戏。现在让游戏退出，再重新启动？"),
+                    params: serde_json::json!({ "now": now, "want": want }),
+                },
+            )?;
         }
     }
     let mut guard = None;
     if !dota_running() {
         ensure_steam(host)?;
-        let account = game::steam::me().context("认不出 Steam 账号（Steam 没登录？）")?;
+        let account = game::steam::me().context("认不出 Steam 账号（Steam 没登录？）").context(Fail::Steam)?;
         // 带上用户在 Steam 里设的启动选项（例如国服的 -perfectworld），再加分辨率
         let mut extra = game::steam::launch_options(account).unwrap_or_default();
         if let Some((w, h)) = o.resolution {
@@ -319,16 +397,16 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Resul
             *sized = true;
         }
         host.event(Event::LaunchingGame { args: extra.clone() });
-        game::launch::launch(NETCON_PORT, &extra)?;
-        guard = guard_when_window(o, Duration::from_secs(180))?;
-        game::launch::wait_netcon(NETCON_PORT, Duration::from_secs(180))?;
+        game::launch::launch(NETCON_PORT, &extra).context(Fail::GameStart)?;
+        guard = guard_when_window(o, Duration::from_secs(180)).context(Fail::GameStart)?;
+        game::launch::wait_netcon(NETCON_PORT, Duration::from_secs(180)).context(Fail::GameStart)?;
     }
     // 游戏本来就开着（上一轮停下后留着的）：现在就拦
     if guard.is_none() {
-        guard = guard_when_window(o, Duration::from_secs(10))?;
+        guard = guard_when_window(o, Duration::from_secs(10)).context(Fail::GameStart)?;
     }
-    let mut con = Netcon::connect_logged(NETCON_PORT, &diag.join("console.log"))?;
-    con.wait_responsive(Duration::from_secs(120))?;
+    let mut con = Netcon::connect_logged(NETCON_PORT, &diag.join("console.log")).context(Fail::GameStart)?;
+    con.wait_responsive(Duration::from_secs(120)).context(Fail::GameStart)?;
     con.drain(Duration::from_millis(300), Duration::from_secs(2));
     Ok((con, rx, guard))
 }
@@ -339,16 +417,21 @@ fn ensure_steam(host: &dyn Host) -> Result<()> {
     if game::steam::signed_in() {
         return Ok(());
     }
-    if !host.confirm("Steam 没在运行（或者没登录）。录制要 Steam 登录着才能读到比赛数据，要现在打开 Steam 吗？") {
-        bail!("Steam 没在运行，请先打开 Steam 并登录，再开始录制");
+    let ask = Ask {
+        key: "confirm.steam",
+        params: Value::Null,
+        text: "Steam 没在运行（或者没登录）。录制要 Steam 登录着才能读到比赛数据，要现在打开 Steam 吗？".into(),
+    };
+    if !host.confirm(&ask) {
+        return Err(anyhow!("Steam 没在运行，请先打开 Steam 并登录，再开始录制").context(Fail::Steam));
     }
-    game::steam::start()?;
+    game::steam::start().context(Fail::Steam)?;
     host.event(Event::WaitingForSteam);
     let started = Instant::now();
     while !game::steam::signed_in() {
         cancel::check()?;
         if started.elapsed() > Duration::from_secs(300) {
-            bail!("等了 5 分钟 Steam 还没登录好，请登录 Steam 后再开始录制");
+            return Err(anyhow!("等了 5 分钟 Steam 还没登录好，请登录 Steam 后再开始录制").context(Fail::Steam));
         }
         std::thread::sleep(Duration::from_secs(1));
     }
@@ -456,8 +539,8 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     let team = Team::from_id(r.players[player].team).context("玩家阵营不是天辉也不是夜魇")?;
     let tmp = o.out.join("tmp");
     let diag = o.out.join("diag");
-    std::fs::create_dir_all(&tmp)?;
-    std::fs::create_dir_all(&diag)?;
+    std::fs::create_dir_all(&tmp).context(Fail::Disk)?;
+    std::fs::create_dir_all(&diag).context(Fail::Disk)?;
     // 上一轮出错时留下的控制台日志，清掉（排查用的运行日志在应用日志里，见 `applog`）
     for e in std::fs::read_dir(&diag)?.flatten() {
         let _ = std::fs::remove_file(e.path());
@@ -617,7 +700,7 @@ fn record_all(
     }
     result?;
 
-    make_outputs(host, ff, o, &outputs, done)
+    make_outputs(host, ff, o, &outputs, done).context(Fail::Encode)
 }
 
 /// 全部段录完后做成品（2026-11-18 起：比赛页「推荐」的集锦和单个时刻，「自定义」的自定义集锦）。
@@ -653,10 +736,11 @@ fn load_replay(host: &dyn Host, r: &Replay, s: &mut Session, rx: &Receiver<Value
     s.con().send(&format!("playdemo replays/{}", r.match_id))?;
     s.con()
         .wait_for(Duration::from_secs(120), |l| l.contains("OnSwitchLoopModeFinished( game : success )"))
-        .context("录像没有加载起来（游戏里有这场录像吗？）")?;
+        .context("录像没有加载起来（游戏里有这场录像吗？）")
+        .context(Fail::ReplayLoad)?;
     // 跳转太早会让游戏崩溃（CopyNewEntity），等到这场的 GSI 时钟再动
     let id = r.match_id;
-    gsi::wait_for(rx, Duration::from_secs(60), "这场比赛的 GSI 时钟", |st| st.match_id == Some(id) && st.clock.is_some())?;
+    gsi::wait_for(rx, Duration::from_secs(60), "这场比赛的 GSI 时钟", |st| st.match_id == Some(id) && st.clock.is_some()).context(Fail::ReplayLoad)?;
     host.event(Event::ReplayLoaded);
     Ok(())
 }
@@ -711,7 +795,7 @@ fn wait_window_settled(want: Option<(u32, u32)>) {
 /// 跳到游戏时钟 `at` 并暂停，重新追踪玩家：跳转会取消选中英雄，底部技能栏、装备栏就空了，
 /// 要补按追踪热键（PostMessage，游戏最小化也行；2026-11-07 实测）
 fn seek(rec: &Rec, s: &mut Session, at: f32) -> Result<()> {
-    clip_builder::goto(s.con(), rec.rx, rec.r.tick_at(at).context("超出录像范围")?, at)?;
+    clip_builder::goto(s.con(), rec.rx, rec.r.tick_at(at).context("超出录像范围")?, at).context(Fail::GameStuck)?;
     s.con().send(&format!("dota_spectator_hero_index {}", rec.player))?;
     s.con().send(&format!("dota_camera_focus_player {}", rec.player))?;
     spectator::focus(rec.player, rec.rx)
@@ -734,7 +818,7 @@ fn record_span(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<Pat
         if failures >= 2 {
             return Err(err);
         }
-        rec.host.event(Event::Retrying { reason: format!("{err:#}") });
+        rec.host.event(Event::Retrying { reason: format!("{err:#}"), fail: fail_kind(&err) });
     }
 }
 
@@ -771,7 +855,7 @@ fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf
             cancel::check()?;
             let Some(frame) = movie.take()? else {
                 if started.elapsed() > timeout {
-                    bail!("等了 {timeout:?} 只录了 {} 帧（共 {expected} 帧），游戏卡住了？", movie.taken());
+                    return Err(anyhow!("等了 {timeout:?} 只录了 {} 帧（共 {expected} 帧），游戏卡住了？", movie.taken()).context(Fail::GameStuck));
                 }
                 std::thread::sleep(Duration::from_millis(2));
                 continue;
@@ -792,10 +876,10 @@ fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf
                 Some(e) => e,
                 None => {
                     let f = Format { width: frame.width, height: frame.height, fps: FPS, bottom_up: frame.bottom_up };
-                    enc.insert(rec.ff.encoder(rec.codec, f, &video, EncodeHow::default())?)
+                    enc.insert(rec.ff.encoder(rec.codec, f, &video, EncodeHow::default()).context(Fail::Encode)?)
                 }
             };
-            e.write(&frame.bgra)?;
+            e.write(&frame.bgra).context(Fail::Encode)?;
             if reported.elapsed() > Duration::from_millis(500) {
                 rec.host.event(Event::SegmentProgress { frames: n + 1 - skip, total: expected - skip });
                 reported = Instant::now();
@@ -806,9 +890,9 @@ fn capture(rec: &mut Rec, s: &mut Session, from: f32, to: f32) -> Result<PathBuf
         s.con().send("demo_pause")?;
         // 数够了之后、endmovie 之前多出的帧不要
         while movie.take()?.is_some() {}
-        enc.context("一帧都没录到")?.finish()?;
+        enc.context("一帧都没录到").context(Fail::GameStuck)?.finish().context(Fail::Encode)?;
         let part = rec.tmp.join(format!("{prefix}_av.mp4"));
-        rec.ff.mux_audio(&video, &movie.wav(), skip as f32 / FPS as f32, &part)?;
+        rec.ff.mux_audio(&video, &movie.wav(), skip as f32 / FPS as f32, &part).context(Fail::Encode)?;
         let secs = media::mp4_duration(&part)?;
         let planned = (end - from) as f64;
         if (secs - planned).abs() > DURATION_TOLERANCE {

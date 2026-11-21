@@ -29,8 +29,8 @@ fn server() -> Result<&'static VideoServer, String> {
     if let Some(s) = SERVER.get() {
         return Ok(s);
     }
-    let http = Server::http("127.0.0.1:0").map_err(|e| format!("开不了本机播放服务：{e}"))?;
-    let port = http.server_addr().to_ip().map(|a| a.port()).ok_or("本机播放服务没有端口")?;
+    let http = Server::http("127.0.0.1:0").map_err(|e| crate::uierr::detail("err.playServer", e))?;
+    let port = http.server_addr().to_ip().map(|a| a.port()).ok_or_else(|| crate::uierr::detail("err.playServer", "no port"))?;
     let current: Current = Arc::new(Mutex::new(None));
     let shared = current.clone();
     std::thread::spawn(move || {
@@ -55,10 +55,10 @@ fn token() -> String {
 pub fn video_url(path: String) -> Result<String, String> {
     let p = Path::new(&path);
     if !p.is_file() {
-        return Err(format!("文件不在了：{path}"));
+        return Err(crate::uierr::with("err.fileMissing", serde_json::json!({ "path": path })));
     }
     if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp4")) {
-        return Err(format!("不是 mp4 视频：{path}"));
+        return Err(crate::uierr::with("err.notMp4", serde_json::json!({ "path": path })));
     }
     let s = server()?;
     let t = token();

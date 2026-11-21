@@ -26,6 +26,20 @@ export function t(key, vars = {}) {
   return s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
 }
 
+/** Rust 侧给界面看的文字（报错、录制中的询问，src-tauri/src/uierr.rs）：「@键名」或「@键名 {JSON 参数}」，
+ * 按当前语言翻译；不是这种格式的原样返回（2026-11-21 起，原来是写死的中文） */
+export function uiText(msg) {
+  const m = /^@([\w.]+)(?: (\{.*\}))?$/s.exec(String(msg));
+  if (!m) return String(msg);
+  let vars = {};
+  try {
+    vars = m[2] ? JSON.parse(m[2]) : {};
+  } catch {
+    // 参数坏了就不带参数
+  }
+  return t(m[1], vars);
+}
+
 /** 给带 data-t 的静态元素填字 */
 export function applyStatic(root = document) {
   for (const el of root.querySelectorAll("[data-t]")) el.textContent = t(el.dataset.t);

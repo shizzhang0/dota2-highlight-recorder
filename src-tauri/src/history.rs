@@ -93,15 +93,15 @@ fn load() -> Vec<Run> {
 }
 
 fn store(runs: &[Run]) -> Result<(), String> {
-    let p = path().ok_or("找不到 APPDATA 目录")?;
+    let p = path().ok_or_else(|| crate::uierr::key("err.noAppData"))?;
     if let Some(dir) = p.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(dir).map_err(|e| crate::uierr::detail("err.saveHistory", e))?;
     }
-    let text = serde_json::to_string_pretty(runs).map_err(|e| e.to_string())?;
+    let text = serde_json::to_string_pretty(runs).map_err(|e| crate::uierr::detail("err.saveHistory", e))?;
     // 先写临时文件再改名，写到一半退出也不会把整个记录弄坏
     let tmp = p.with_extension("json.tmp");
-    std::fs::write(&tmp, text).map_err(|e| format!("写不了 {}：{e}", tmp.display()))?;
-    std::fs::rename(&tmp, &p).map_err(|e| format!("写不了 {}：{e}", p.display()))
+    std::fs::write(&tmp, text).map_err(|e| crate::uierr::detail("err.saveHistory", format!("{}: {e}", tmp.display())))?;
+    std::fs::rename(&tmp, &p).map_err(|e| crate::uierr::detail("err.saveHistory", format!("{}: {e}", p.display())))
 }
 
 /// 记一笔（录制线程结束时调用）
@@ -423,7 +423,7 @@ pub(crate) fn recycle(files: &[PathBuf]) -> Result<(), String> {
     };
     let code = unsafe { SHFileOperationW(&mut op) };
     if code != 0 || op.fAnyOperationsAborted.as_bool() {
-        return Err(format!("移到回收站失败（错误码 {code}），文件可能正被别的程序占用（播放器、正在放这场录像的游戏）"));
+        return Err(crate::uierr::with("err.recycle", serde_json::json!({ "code": code })));
     }
     Ok(())
 }
@@ -440,10 +440,10 @@ pub async fn video_thumb(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         use std::hash::{Hash, Hasher};
         let video = PathBuf::from(&path);
-        let meta = std::fs::metadata(&video).map_err(|e| format!("读不了 {path}：{e}"))?;
+        let meta = std::fs::metadata(&video).map_err(|_| crate::uierr::with("err.fileMissing", serde_json::json!({ "path": path })))?;
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (&path, meta.len(), meta.modified().ok()).hash(&mut h);
-        let dir = thumbs_dir().ok_or("找不到缓存目录")?;
+        let dir = thumbs_dir().ok_or_else(|| crate::uierr::key("err.noAppData"))?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let jpg = dir.join(format!("{:016x}.jpg", h.finish()));
         if !jpg.is_file() {
@@ -478,7 +478,7 @@ fn base64(data: &[u8]) -> String {
 #[tauri::command]
 pub fn open_file(path: String) -> Result<(), String> {
     if !Path::new(&path).is_file() {
-        return Err(format!("文件不在了：{path}"));
+        return Err(crate::uierr::with("err.fileMissing", serde_json::json!({ "path": path })));
     }
     std::process::Command::new("explorer").arg(&path).spawn().map(drop).map_err(|e| e.to_string())
 }
