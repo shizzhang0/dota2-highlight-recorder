@@ -222,7 +222,7 @@ struct ProductMeta {
 /// - `products` 不空：比赛页「推荐」选的成品（`clips::Product::id`），要录的段是它们用到的片段合起来，同一段只录一次；
 /// - 否则录「自定义」里勾的 `clips`（计划里的序号），`compile` 时两段以上拼成「自定义集锦」（勾没勾存进设置）。
 ///
-/// `camera` 是比赛页上选的镜头（存进设置），`lang` 是界面语言（通知用）。其他设置读当前保存的
+/// `camera` 是比赛页上选的镜头（存进设置），`lang` 是界面语言（通知和文件名用）。其他设置读当前保存的
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn start_recording(
@@ -260,13 +260,16 @@ pub async fn start_recording(
         let r = crate::matches::parsed(match_id).await?;
         let p = settings.params();
         let plan = clips::plan(&r, player, &p);
+        // 文件名跟着界面语言（2026-11-22 起）
+        let n = crate::matches::naming(&lang);
+        let pick = |i: usize, clip: &clips::Clip| Selected { index: i, clip: clip.clone(), name: clips::file_name(&r, clip, &n) };
         let (selected, outputs, metas) = if custom {
             let selected: Vec<Selected> = clips
                 .iter()
-                .map(|&i| plan.get(i.wrapping_sub(1)).map(|c| Selected { index: i, clip: c.clone() }).ok_or_else(|| crate::uierr::with("err.noClip", serde_json::json!({ "n": i }))))
+                .map(|&i| plan.get(i.wrapping_sub(1)).map(|c| pick(i, c)).ok_or_else(|| crate::uierr::with("err.noClip", serde_json::json!({ "n": i }))))
                 .collect::<Result<_, _>>()?;
             let (outputs, metas) = if compile && selected.len() > 1 {
-                let name = clips::custom_file_name(&r, player);
+                let name = crate::history::free_custom_name(std::path::Path::new(&settings.out_dir), &clips::custom_file_name(&r, player, &n));
                 (vec![pipeline::Output { name, parts: (0..selected.len()).collect() }], vec![ProductMeta { kind: "custom".into(), start: None, end: None }])
             } else {
                 (Vec::new(), Vec::new())
@@ -282,11 +285,11 @@ pub async fn start_recording(
             let mut used: Vec<usize> = chosen.iter().flat_map(|x| x.clips.iter().copied()).collect();
             used.sort_unstable();
             used.dedup();
-            let selected = used.iter().map(|&i| Selected { index: i + 1, clip: plan[i].clone() }).collect();
+            let selected = used.iter().map(|&i| pick(i + 1, &plan[i])).collect();
             let outputs = chosen
                 .iter()
                 .map(|x| pipeline::Output {
-                    name: x.file_name(&r, &plan),
+                    name: x.file_name(&r, &plan, &n),
                     parts: x.clips.iter().map(|c| used.iter().position(|u| u == c).expect("在 used 里")).collect(),
                 })
                 .collect();
@@ -356,7 +359,7 @@ pub async fn start_recording(
             .map(|(k, file)| crate::history::RunProduct {
                 kind: metas[*k].kind.clone(),
                 file: file.clone(),
-                clips: o.outputs[*k].parts.iter().map(|&i| clips::file_name(&r, &selected[i].clip)).collect(),
+                clips: o.outputs[*k].parts.iter().map(|&i| selected[i].name.clone()).collect(),
                 start: metas[*k].start,
                 end: metas[*k].end,
             })
@@ -373,7 +376,7 @@ pub async fn start_recording(
                 .iter()
                 .map(|s| crate::history::RunClip {
                     index: s.index,
-                    file_name: clips::file_name(&r, &s.clip),
+                    file_name: s.name.clone(),
                     start: s.clip.start(),
                     end: s.clip.end(),
                     victims: if s.clip.kind == clips::Kind::Kill { &s.clip.kills } else { &s.clip.assists }

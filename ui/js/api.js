@@ -22,7 +22,8 @@ export const deleteReplays = (matchIds) => invoke("delete_replays", { matchIds }
 export const openMatch = (matchId) => invoke("open_match", { matchId });
 // 这场的录像还在不在本地
 export const hasReplay = (matchId) => invoke("has_replay", { matchId });
-export const plan = (matchId, player, rules) => invoke("plan", { matchId, player, rules });
+// lang：界面语言，成品和片段的文件名跟着它（2026-11-22 起）
+export const plan = (matchId, player, rules, lang) => invoke("plan", { matchId, player, rules, lang });
 export const defaultRules = () => invoke("default_rules");
 export const heroNames = (language) => invoke("hero_names", { language });
 export const reveal = (path) => invoke("reveal", { path });

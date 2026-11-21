@@ -455,8 +455,9 @@ pub struct PlanInfo {
     products: Vec<ProductRow>,
 }
 
+/// `lang` 是界面语言（文件名跟着它）
 #[tauri::command]
-pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo, String> {
+pub async fn plan(match_id: u64, player: usize, rules: Rules, lang: String) -> Result<PlanInfo, String> {
     let r = parsed(match_id).await?;
     if player >= r.players.len() {
         return Err(crate::uierr::with("err.noPlayer", serde_json::json!({ "n": player })));
@@ -467,13 +468,15 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
     p.speed = settings.params().speed;
     let out_dir = PathBuf::from(&settings.out_dir);
     let exists = |name: &str| out_dir.join(format!("{name}.mp4")).is_file();
-    let made = crate::history::product_files(match_id);
+    let n = naming(&lang);
     let plan = clips::plan(&r, player, &p);
     let products = clips::products(&r, &plan)
         .iter()
         .map(|x| {
-            let file_name = x.file_name(&r, &plan);
+            let file_name = x.file_name(&r, &plan, &n);
             let one = (!x.kind.is_collection() && x.clips.len() == 1).then(|| &plan[x.clips[0]]);
+            // 做过没有看录制记录里有没有这种成品（文件还在），不看文件名：文件名跟着界面语言变，换了语言也要认得出来
+            let made = crate::history::product_file(match_id, player, x.kind.key());
             ProductRow {
                 id: x.id(),
                 kind: x.kind.key(),
@@ -483,8 +486,8 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
                 duration: x.duration(&plan),
                 start: one.map(|c| c.start()),
                 end: one.map(|c| c.end()),
-                generated: made.contains(&out_dir.join(format!("{file_name}.mp4"))),
-                path: out_dir.join(format!("{file_name}.mp4")),
+                generated: made.is_some(),
+                path: made.unwrap_or_else(|| out_dir.join(format!("{file_name}.mp4"))),
                 file_name,
             }
         })
@@ -508,19 +511,39 @@ pub async fn plan(match_id: u64, player: usize, rules: Rules) -> Result<PlanInfo
             low_hp: c.low_hp,
             teamwork: c.teamwork,
             aegis_steal: c.aegis_steal,
-            file_name: clips::file_name(&r, c),
+            file_name: clips::file_name(&r, c, &n),
             estimated_secs: c.estimated_seconds(&p),
-            recorded: exists(&clips::file_name(&r, c)),
+            recorded: exists(&clips::file_name(&r, c, &n)),
         })
         .collect();
     Ok(PlanInfo { clips, products })
 }
 
+/// 读过的英雄显示名，按游戏语言名。读不到（游戏不在）的不记，下次再试
+static HERO_NAMES: Mutex<Vec<(&'static str, HashMap<String, String>)>> = Mutex::new(Vec::new());
+
+/// 英雄显示名表，`language` 是界面语言 "zh-CN" / "en"。读不到返回空表
+fn hero_names_for(language: &str) -> HashMap<String, String> {
+    let game_lang = if language.starts_with("zh") { "schinese" } else { "english" };
+    if let Some((_, m)) = HERO_NAMES.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(l, _)| *l == game_lang) {
+        return m.clone();
+    }
+    let names = game::heroes::names(game_lang).unwrap_or_default();
+    if !names.is_empty() {
+        HERO_NAMES.lock().unwrap_or_else(|e| e.into_inner()).push((game_lang, names.clone()));
+    }
+    names
+}
+
+/// 起文件名用的（2026-11-22 起跟着界面语言，英雄用显示名，和界面上的一样）
+pub fn naming(language: &str) -> clips::Naming {
+    clips::Naming { lang: clips::Lang::of_ui(language), heroes: hero_names_for(language) }
+}
+
 /// 英雄显示名（读游戏的本地化文件）。`language` 是界面语言 "zh-CN" / "en"；读不到返回空表，前端退回内部名
 #[tauri::command]
 pub fn hero_names(language: String) -> HashMap<String, String> {
-    let game_lang = if language.starts_with("zh") { "schinese" } else { "english" };
-    game::heroes::names(game_lang).unwrap_or_default()
+    hero_names_for(&language)
 }
 
 /// 现在的 Unix 秒（录制记录的时间）

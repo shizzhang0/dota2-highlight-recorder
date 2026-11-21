@@ -169,10 +169,11 @@ fn run() -> Result<()> {
                 bail!("这名玩家整场没有击杀，没有可录的片段");
             }
             let wanted: Vec<usize> = if clips.is_empty() { (1..=plan.len()).collect() } else { clips };
+            let n = naming();
             let mut selected = Vec::new();
             for i in wanted {
                 let clip = plan.get(i.wrapping_sub(1)).with_context(|| format!("没有第 {i} 个片段（共 {} 个）", plan.len()))?;
-                selected.push(pipeline::Selected { index: i, clip: clip.clone() });
+                selected.push(pipeline::Selected { index: i, clip: clip.clone(), name: clips::file_name(&r, clip, &n) });
             }
             let secs: f32 = selected.iter().map(|s| s.clip.estimated_seconds(&p)).sum();
             let hero_name = hero(&r.players[player].hero);
@@ -188,7 +189,7 @@ fn run() -> Result<()> {
             // 合集和以前一样：两段以上才拼，按内容起名（击杀集锦……），单段照样留着
             let outputs = if compile && selected.len() > 1 {
                 let label = clips::Collection::of(selected.iter().map(|s| &s.clip)).file_label();
-                let name = format!("{}_{player}_{}_{label}", r.match_id, r.players[player].hero.trim_start_matches("npc_dota_hero_"));
+                let name = format!("{}_{}_{label}", r.match_id, n.hero(&r, player));
                 vec![pipeline::Output { name, parts: (0..selected.len()).collect() }]
             } else {
                 Vec::new()
@@ -211,6 +212,11 @@ fn run() -> Result<()> {
 
 fn hero(name: &str) -> &str {
     name.trim_start_matches("npc_dota_hero_")
+}
+
+/// 命令行没有界面语言，文件名用中文；英雄用游戏里的中文名，读不到用内部名
+fn naming() -> clips::Naming {
+    clips::Naming { lang: clips::Lang::Zh, heroes: game::heroes::names("schinese").unwrap_or_default() }
 }
 
 /// 秒 → `mm:ss`（号角前为负）
@@ -315,6 +321,7 @@ fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> 
         return Ok(());
     }
     println!("\n{:>3}  {:<13} {:>6}  {:<28} {:>4}  文件名", "#", "时间", "时长", "击杀", "段数");
+    let n = naming();
     for (i, c) in clips.iter().enumerate() {
         let victims: Vec<&str> = c.kills.iter().map(|&k| hero(&r.players[r.kills[k].victim].hero)).collect();
         let range = format!("{}–{}", clock(c.start()), clock(c.end()));
@@ -324,7 +331,7 @@ fn plan(dir: &std::path::Path, which: &str, player: Option<u64>, p: &Params) -> 
             c.duration(),
             victims.join(", "),
             c.spans.len(),
-            clips::file_name(&r, c)
+            clips::file_name(&r, c, &n)
         );
     }
     let total: f32 = clips.iter().map(|c| c.duration()).sum();
