@@ -226,16 +226,19 @@ export async function showMatch(view, matchId, opts) {
     chipsBox.replaceChildren(...left, ...sep, ...right);
   }
 
-  /** 时间线上片段的场景小字（只标一个，越少见越优先） */
-  function sceneWord(c) {
-    if (c.aegis_steal) return t("scene.aegis");
-    if (c.low_hp) return t("scene.lowHp");
-    if (c.multi_kill >= 3) return t(`tag.multi.${Math.min(c.multi_kill, 5)}`);
-    if (c.teamwork) return t("scene.teamwork");
-    return null;
+  /** 片段里的高光时刻（越少见越靠前）：时间线上有就在色块角上标一颗星，名字放在悬停提示里 */
+  function momentNames(c) {
+    return [
+      c.aegis_steal && t("scene.aegis"),
+      c.low_hp && t("scene.lowHp"),
+      c.multi_kill >= 3 && t(`tag.multi.${Math.min(c.multi_kill, 5)}`),
+      c.teamwork && t("scene.teamwork"),
+    ].filter(Boolean);
   }
 
-  /** 高光时间线：整场一条线，色块是片段（击杀红、助攻蓝、抢盾金，没勾的变淡），上面挂被杀英雄的小图标和场景小字，点色块也能勾选 */
+  /** 高光时间线：整场一条线，色块是片段（击杀红、助攻蓝，没勾的变淡），上面挂被杀英雄的小图标，点色块也能勾选。
+   * 有高光时刻的色块加一圈金框，名字在悬停提示里。原来是在图标那排写「残血反杀」这类小字，字把一组撑宽、压住旁边片段的图标
+   * （2026-11-22 用户截图）；试过色块右上角挂金星，用户觉得金框好看 */
   function renderTimeline() {
     const p = current();
     const kills = clips.filter((c) => c.kind === "kill").reduce((a, c) => a + c.victims.length, 0);
@@ -244,22 +247,30 @@ export async function showMatch(view, matchId, opts) {
     const total = Math.max(info.duration, ...clips.map((c) => c.end), 1);
     const pct = (s) => `${(Math.max(0, s) / total) * 100}%`;
     const line = el("div", { class: "timeline" }, el("div", { class: "track" }));
-    // 红块至少 18 像素宽，挨得很近的两段（比如 21:00–21:16 和 21:16–21:38）会叠在一起、编号压编号：
-    // 按时间线大概的像素宽度算，和前一段挤到一起（留不出 2 像素）就放到下一排
+    // 色块都一样宽（`SEG_PX`），放在片段中点，和上面的图标对齐。原来宽度按时长画（最少 18 像素），
+    // 长片段（比如 41 秒的四杀）突然大一块，用户觉得怪（2026-11-22），时长看悬停提示。
+    // 挨得很近的两段会叠在一起、编号压编号：按时间线大概的像素宽度算，和前一段挤到一起（留不出 2 像素）就放到下一排
+    const SEG_PX = 18;
     const perPx = total / Math.max(400, window.innerWidth - 110);
     let lastEnd = -Infinity, lastLow = false;
     // 「推荐」里亮的是勾了的成品用到的片段，点色块不勾选；「自定义」里亮的是勾了的片段，点色块勾选
     const used = mode === "rec" ? usedClips() : picked;
     clips.forEach((c, i) => {
       const off = !used.has(c.index);
-      const low = !lastLow && c.start - lastEnd < 2 * perPx;
-      lastEnd = Math.max(c.end, c.start + 18 * perPx);
+      const mid = (c.start + c.end) / 2;
+      const low = !lastLow && mid - (SEG_PX / 2) * perPx - lastEnd < 2 * perPx;
+      lastEnd = mid + (SEG_PX / 2) * perPx;
       lastLow = low;
+      const names = momentNames(c);
       line.append(
-        el("div", { class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}`, style: `left:${pct(c.start)};width:max(18px,${pct(c.end - c.start)})`, title: span(c.start, c.end), onclick: () => mode === "custom" && toggle(c.index) }, String(c.index)),
+        el("div", {
+          class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}${names.length ? " moment" : ""}`,
+          style: `left:${pct(mid)}`,
+          title: [...names, span(c.start, c.end)].join(" · "),
+          onclick: () => mode === "custom" && toggle(c.index),
+        }, String(c.index)),
         // 相邻片段的图标会叠在一起，上下两排交替放
-        el("div", { class: `kills ${i % 2 ? "b" : "a"}${off ? " off" : ""}`, style: `left:${pct((c.start + c.end) / 2)}` },
-          sceneWord(c) ? el("span", { class: "scene-word" }, sceneWord(c)) : null,
+        el("div", { class: `kills ${i % 2 ? "b" : "a"}${off ? " off" : ""}`, style: `left:${pct(mid)}` },
           c.victims.map((v) => heroIcon(v, true))),
       );
     });
@@ -267,7 +278,7 @@ export async function showMatch(view, matchId, opts) {
     for (let m = 0; m * 60 <= total; m += 10) ticks.append(el("span", { style: `left:${pct(m * 60)}` }, `${m}:00`));
     line.append(ticks);
     // 颜色说明只写这场实际出现的类别
-    const colors = ["kill", "assist", "aegis"].filter((k) => clips.some((c) => c.kind === k)).map((k) => t(`match.legend.${k}`)).join(t("match.legend.sep"));
+    const colors = ["kill", "assist"].filter((k) => clips.some((c) => c.kind === k)).map((k) => t(`match.legend.${k}`)).join(t("match.legend.sep"));
     highlight.replaceChildren(
       el("h2", {}, t("match.highlights", { hero: heroName(p.hero), name: p.name })),
       el("p", { class: "sub" }, clips.length

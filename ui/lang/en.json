@@ -275,7 +275,6 @@
   "match.highlightsHint": ". {colors}, with the heroes killed above; unticked ones are faded, click a block or a row below to tick it",
   "match.legend.kill": "red is a kill",
   "match.legend.assist": "blue an assist",
-  "match.legend.aegis": "gold an Aegis steal",
   "match.legend.sep": ", ",
   "match.streakHint": "Kill streak: {n} kills in a row since the last death ({name})",
   "collection.aegis": "Aegis steals",

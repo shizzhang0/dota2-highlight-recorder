@@ -406,7 +406,7 @@ pub struct ClipRow {
     end: f32,
     /// 成片时长（剪掉的空档不算）
     duration: f32,
-    /// "kill" / "assist" / "aegis"（见 `clips::Kind`）
+    /// "kill" / "assist"（见 `clips::Kind`；2026-11-22 起抢盾只是标签 `aegis_steal`）
     kind: &'static str,
     /// 击杀片段是他杀的英雄，助攻片段是他助攻的那些
     victims: Vec<String>,
