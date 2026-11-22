@@ -73,6 +73,7 @@ cargo build --release -p d2hr
 d2hr list                                   # list replays downloaded in the game
 d2hr plan 9052676196                        # print your highlight clips in this match and the estimated time (--player for someone else)
 d2hr record 9052676196 --resolution 1920x1080 --compile
+d2hr watch 9052676196 9053940263            # play these matches in the game from start to end at 2x (no video), then quit the game
 ```
 
 Common `record` options: `--player` (slot 0–9 or account ID), `--clips 1,3` (only these clips), `--camera hero|player`, `--compile`, `--out <dir>`, `--quit`.
