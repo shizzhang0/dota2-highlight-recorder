@@ -1,7 +1,7 @@
 //! 高光片段规则（见 docs/phase1-plan.md 的"片段规则"）：
 //!
 //! 1. 每次击杀一段：从"这波战斗开打前 `pre` 秒"到"击杀后 `post` 秒"，开打时间从伤害记录里往回找；
-//!    有效助攻、抢盾也各成一段（2026-11-16 加，见 [`plan`]）；
+//!    有效助攻也各成一段（2026-11-16 加，见 [`plan`]）；抢盾那一刻并进前后的击杀、助攻片段，不单独成片段（2026-11-22）；
 //! 2. 时间上挨着（间隔不超过 `merge_gap`）的合成一个片段；
 //! 3. 片段内两段之间的空档不超过 `keep_gap` 就保留，超过才剪掉；
 //! 4. 超过 `max_export` 的连续部分拆成多次导出，优先在保留下来的空档处拆（只有剪辑工具录制用；现在按 `spans` 整段录）。
@@ -152,12 +152,13 @@ pub struct Export {
     pub mid_action: bool,
 }
 
-/// 片段的主类：有他的人头就是击杀；没人头、有他的助攻是助攻；只有抢盾是抢盾
+/// 片段的主类：有他的人头就是击杀；没人头、有他的助攻是助攻。
+/// 抢盾和残血反杀、默契一样只是标签（`Clip::aegis_steal`）：2026-11-22 前，附近没有击杀助攻的抢盾单独成一类「抢盾」片段，
+/// 用户定抢盾不该单拎出来，放进击杀、助攻里
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Kill,
     Assist,
-    Aegis,
 }
 
 impl Kind {
@@ -166,7 +167,6 @@ impl Kind {
         match self {
             Kind::Kill => "kill",
             Kind::Assist => "assist",
-            Kind::Aegis => "aegis",
         }
     }
 }
@@ -235,7 +235,7 @@ const DEAD_BEFORE: f32 = 5.0;
 pub const ASSIST_WINDOW: f32 = 10.0;
 /// 有效助攻：他打出被杀者这段时间受到的英雄伤害的至少这么多（或者控过被杀者）
 pub const ASSIST_SHARE: f32 = 0.10;
-/// 抢盾片段从肉山被杀前多少秒开始
+/// 抢盾那一段从肉山被杀前多少秒开始
 const AEGIS_LEAD: f32 = 8.0;
 /// 抢盾前这么多秒内找不到肉山被杀，就从抢盾前 `AEGIS_FALLBACK` 秒开始
 const ROSHAN_LOOKBACK: f32 = 60.0;
@@ -431,6 +431,8 @@ pub fn plan(r: &Replay, player: usize, p: &Params) -> Vec<Clip> {
 
     groups
         .into_iter()
+        // 抢盾不单独成片段：只有抢盾、前后没有他的击杀助攻的那一组不要（2026-11-22）
+        .filter(|g| g.iter().any(|&(_, e)| !matches!(e, Event::Aegis(_))))
         .map(|g| {
             let mut segs: Vec<Span> = g.iter().map(|&(_, e)| segment(e)).collect();
             segs.sort_by(|a, b| a.start.total_cmp(&b.start));
@@ -464,13 +466,7 @@ pub fn plan(r: &Replay, player: usize, p: &Params) -> Vec<Clip> {
             };
             Clip {
                 player,
-                kind: if !kills.is_empty() {
-                    Kind::Kill
-                } else if !assists.is_empty() {
-                    Kind::Assist
-                } else {
-                    Kind::Aegis
-                },
+                kind: if kills.is_empty() { Kind::Assist } else { Kind::Kill },
                 low_hp: kills.iter().any(|&i| low_hp_counter(r, &r.kills[i])),
                 teamwork: kills.iter().chain(&assists).any(|&i| teamwork(r, player, &r.kills[i])),
                 aegis_steal,
@@ -675,7 +671,7 @@ pub fn kill_score(c: &Clip) -> f32 {
     base + bonus + 0.5 * c.assists.len() as f32
 }
 
-/// 助攻片段的分：每个有效助攻 1 分，控住过它 +1，打了它三成以上的伤害（`ASSIST_BIG_SHARE`）+1；默契 +3
+/// 助攻片段的分：每个有效助攻 1 分，控住过它 +1，打了它三成以上的伤害（`ASSIST_BIG_SHARE`）+1；默契 +3，抢盾 +5
 pub fn assist_score(r: &Replay, c: &Clip) -> f32 {
     let each: f32 = c
         .assists
@@ -685,7 +681,8 @@ pub fn assist_score(r: &Replay, c: &Clip) -> f32 {
             1.0 + if disabled { 1.0 } else { 0.0 } + if share >= ASSIST_BIG_SHARE { 1.0 } else { 0.0 }
         })
         .sum();
-    each + if c.teamwork { 3.0 } else { 0.0 }
+    // 抢盾 +5 和击杀片段一样（2026-11-22 起抢盾也可能落在助攻片段里）
+    each + if c.teamwork { 3.0 } else { 0.0 } + if c.aegis_steal { 5.0 } else { 0.0 }
 }
 
 /// 片段有没有高光时刻（三杀以上、抢盾、残血反杀、默契）
@@ -785,14 +782,12 @@ pub fn mmss(t: f32) -> String {
     format!("{sign}{:02}-{:02}", s / 60, s % 60)
 }
 
-/// 文件名（不含扩展名）：`比赛ID_英雄_起点_终点[_多杀|_助攻|_抢盾]`，例如 `9096983180_斯温_15-44_16-09_双杀`。
+/// 文件名（不含扩展名）：`比赛ID_英雄_起点_终点[_多杀|_助攻]`，例如 `9096983180_斯温_15-44_16-09_双杀`。
 /// 2026-11-22 起英雄和标签跟着界面语言、去掉了玩家序号（原来是 `比赛ID_玩家序号_内部英雄名_…`）
 pub fn file_name(r: &Replay, clip: &Clip, n: &Naming) -> String {
     let tag = match (clip.kind, clip.multi_kill, n.lang) {
         (Kind::Assist, _, Lang::Zh) => "_助攻",
         (Kind::Assist, _, Lang::En) => "_Assist",
-        (Kind::Aegis, _, Lang::Zh) => "_抢盾",
-        (Kind::Aegis, _, Lang::En) => "_Aegis_steal",
         (_, 2, Lang::Zh) => "_双杀",
         (_, 2, Lang::En) => "_Double_kill",
         (_, 3, Lang::Zh) => "_三杀",

@@ -403,12 +403,12 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 /* 比赛页：高光时间线。红块是片段，上面挂被杀英雄的小图标（相邻的上下两排交替放） */
 .timeline { position: relative; height: 118px; margin: 4px 6px 0; }
 .timeline .track { position: absolute; left: 0; right: 0; top: 60px; height: 4px; background: var(--line); border-radius: 2px; }
-.timeline .seg { position: absolute; top: 52px; height: 20px; min-width: 18px; display: grid; place-items: center; background: var(--accent); border: 1px solid var(--bg); border-radius: 3px; font: 600 11px var(--num); color: #fff; cursor: pointer; }
+.timeline .seg { position: absolute; top: 52px; height: 20px; width: 18px; transform: translateX(-50%); display: grid; place-items: center; background: var(--accent); border: 1px solid var(--bg); border-radius: 3px; font: 600 11px var(--num); color: #fff; cursor: pointer; }
 .timeline .seg.assist { background: #3d6fa3; }
-.timeline .seg.aegis { background: #c99a2e; color: #2a1c04; }
+/* 有高光时刻的片段：色块外面一圈金框（色块自己 1px 的深色边把金框和色块隔开） */
+.timeline .seg.moment { box-shadow: 0 0 0 1px #f0c35a; }
 /* 没勾的保留原色、变淡（原来一律变灰，看不出是击杀还是助攻；2026-11-16） */
 .timeline .seg.off { opacity: .35; }
-.timeline .kills .scene-word { align-self: center; margin-right: 3px; font-size: 11px; color: #f0c35a; white-space: nowrap; }
 .timeline .seg.low { top: 74px; }
 .timeline .kills { position: absolute; display: flex; gap: 2px; transform: translateX(-50%); }
 .timeline .kills.a { top: 2px; } .timeline .kills.b { top: 26px; }

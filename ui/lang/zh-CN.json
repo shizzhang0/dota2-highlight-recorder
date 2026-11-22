@@ -275,7 +275,6 @@
   "match.highlightsHint": "。{colors}，上面是被击杀的英雄；没勾的颜色淡，点色块或下面的行勾选",
   "match.legend.kill": "红色是击杀",
   "match.legend.assist": "蓝色是助攻",
-  "match.legend.aegis": "金色是抢盾",
   "match.legend.sep": "，",
   "match.streakHint": "连杀：从上次死亡起连续击杀 {n} 人（{name}）",
   "collection.aegis": "抢盾集锦",
