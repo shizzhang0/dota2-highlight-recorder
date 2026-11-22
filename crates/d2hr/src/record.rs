@@ -7,13 +7,16 @@ use media::ffmpeg::Ffmpeg;
 use pipeline::{Event, Host, Options, Selected};
 use replay::Replay;
 
-struct Console;
+/// 把流程事件打印到终端。`task` 是在做什么（"录制" / "放录像"），用在提示语里
+pub(crate) struct Console {
+    pub(crate) task: &'static str,
+}
 
 impl Host for Console {
     fn event(&self, e: Event) {
         match e {
             Event::WaitingForDotaToQuit => {
-                println!("Dota 正以普通模式运行。录制要带控制台端口（-netconport -insecure）重新启动游戏。");
+                println!("Dota 正以普通模式运行。{}要带控制台端口（-netconport -insecure）重新启动游戏。", self.task);
                 println!("请先退出 Dota（主菜单 → 退出游戏），退出后会自动继续；按 Ctrl+C 取消。");
             }
             Event::WaitingForSteam => println!("已打开 Steam，等它登录好（没登录的话请登录），好了会自动继续；按 Ctrl+C 取消。"),
@@ -56,7 +59,7 @@ impl Host for Console {
 pub fn run(r: &Replay, player: usize, selected: &[Selected], ff: &Ffmpeg, o: &Options) -> Result<()> {
     // 第一次 Ctrl+C 只做标记：做完手上这一步就停，照常恢复设置
     game::cancel::install()?;
-    let report = pipeline::run(&Console, r, player, selected, ff, o);
+    let report = pipeline::run(&Console { task: "录制" }, r, player, selected, ff, o);
 
     let left: Vec<String> =
         selected.iter().map(|s| s.index).filter(|i| !report.completed.contains(i)).map(|i| i.to_string()).collect();

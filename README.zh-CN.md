@@ -73,6 +73,7 @@ cargo build --release -p d2hr
 d2hr list                                   # 列出游戏里已下载的录像
 d2hr plan 9052676196                        # 打印你在这场的高光片段和预计耗时（--player 换人）
 d2hr record 9052676196 --resolution 1920x1080 --compile
+d2hr watch 9052676196 9053940263            # 在游戏里把这几场从头 2 倍速放完（不录视频），放完退出游戏
 ```
 
 `record` 常用参数：`--player`（序号 0–9 或账号 ID）、`--clips 1,3`（只录第几个片段）、`--camera hero|player`、`--compile`、`--out <目录>`、`--quit`。

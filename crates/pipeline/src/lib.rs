@@ -413,6 +413,30 @@ fn prepare(host: &dyn Host, o: &Options, diag: &Path, sized: &mut bool) -> Resul
     Ok((con, rx, guard))
 }
 
+/// 准备好带 netcon 的游戏，给 `d2hr watch`（整局放录像，不录视频）用：同 `prepare`，但不改窗口大小、不拦输入。
+/// 出错时删掉刚写的 GSI 配置；成功后由调用方负责（`Session::remove_gsi_on_exit`）
+pub fn prepare_plain(host: &dyn Host, gsi_port: u16, diag: &Path) -> Result<(Netcon, gsi::Listener)> {
+    let o = Options {
+        outputs: Vec::new(),
+        keep_parts: true,
+        resolution: None,
+        out: diag.to_path_buf(),
+        gsi_port,
+        quit: false,
+        camera: Camera::HeroChase,
+        block_input: false,
+        return_focus: false,
+    };
+    let mut sized = false;
+    match prepare(host, &o, diag, &mut sized) {
+        Ok((con, rx, _)) => Ok((con, rx)),
+        Err(e) => {
+            let _ = gsi::remove();
+            Err(e)
+        }
+    }
+}
+
 /// 启动 Dota 前要 Steam 开着并登录了，不然游戏不发游戏状态（GSI），等一分多钟才报错（2026-11-18 用户遇到）。
 /// 没开就问用户：同意就打开 Steam、等登录好（最多 5 分钟，可以停止）；不同意就停下，说清楚要先开 Steam
 fn ensure_steam(host: &dyn Host) -> Result<()> {

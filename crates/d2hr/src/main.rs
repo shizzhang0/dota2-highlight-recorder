@@ -3,8 +3,10 @@
 //! d2hr list                 列出游戏客户端已下载的录像
 //! d2hr plan <比赛ID|文件>   打印某个玩家的高光片段和录制计划（默认是自己）
 //! d2hr record <比赛ID|文件> 录下这些片段，每个片段一个视频，可选拼成合集
+//! d2hr watch <比赛ID>...    在游戏里把这几场录像从头放完（不录视频），放完让游戏退出
 
 mod record;
+mod watch;
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -76,6 +78,30 @@ enum Command {
         #[command(flatten)]
         rules: Rules,
     },
+    /// 在游戏里把这几场录像按顺序从头放完，不录视频（给别的程序收回放的游戏状态用）。
+    /// 会启动或重启 Dota；不拦输入，每场开始播放时 Dota 会跳到最前面，之后可以切走。
+    /// 一场没放完就接着放下一场，最后汇总。放完或按 Ctrl+C 停下都让游戏退出（--keep-open 不退）
+    Watch {
+        /// 比赛 ID（录像要已经在录像目录里），按顺序放
+        #[arg(required = true)]
+        replays: Vec<u64>,
+        /// 回放倍速
+        #[arg(long, default_value_t = 2.0, value_parser = parse_speed)]
+        speed: f32,
+        /// 放完不让游戏退出
+        #[arg(long)]
+        keep_open: bool,
+        /// 接收游戏状态（GSI）的本机端口
+        #[arg(long, default_value_t = game::gsi::DEFAULT_PORT)]
+        gsi_port: u16,
+    },
+}
+
+fn parse_speed(s: &str) -> Result<f32, String> {
+    match s.parse::<f32>() {
+        Ok(v) if (0.25..=8.0).contains(&v) => Ok(v),
+        _ => Err("倍速要在 0.25 到 8 之间".into()),
+    }
 }
 
 fn parse_resolution(s: &str) -> Result<(u32, u32), String> {
@@ -158,6 +184,9 @@ fn run() -> Result<()> {
     };
     match cli.command {
         Command::List => list(&dir),
+        Command::Watch { replays, speed, keep_open, gsi_port } => {
+            watch::run(&dir, &replays, &watch::Options { speed, gsi_port, keep_open })
+        }
         Command::Plan { replay, player, rules } => plan(&dir, &replay, player, &rules.params()),
         Command::Record { replay, player, clips, compile, resolution, camera, out, ffmpeg, gsi_port, quit, allow_input, rules } => {
             // 先找 ffmpeg，免得游戏都开起来了才发现缺东西
