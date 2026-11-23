@@ -323,8 +323,9 @@ export async function showMatch(view, matchId, opts) {
    * 卡片里不列选了哪几段（2026-11-18 用户：文字、小标签都不好看）：勾上后时间线上亮的就是它要用的片段 */
   function renderProducts() {
     const card = (x) => {
-      // 击杀集锦、助攻集锦按击杀、助攻次数说；高光时刻（同一种合成一个，2026-11-18 用户定）按次数说，只有一次就写时间
-      const unit = t(x.kind === "kills" ? "product.unitKills" : x.kind === "assists" ? "product.unitAssists" : "product.unitMoments");
+      // 击杀集锦、助攻集锦（都太少时合成的高光集锦）按击杀、助攻次数说；高光时刻（同一种合成一个，2026-11-18 用户定）按次数说，只有一次就写时间
+      const units = { kills: "product.unitKills", assists: "product.unitAssists", highlights: "product.unitKillsAssists" };
+      const unit = t(units[x.kind] ?? "product.unitMoments");
       const sub = x.start != null
         ? `${clock(x.start)} · ${length(x.duration)}`
         : t(x.picked < x.total ? "product.picked" : "product.all", { picked: x.picked, total: x.total, unit, len: length(x.duration) });

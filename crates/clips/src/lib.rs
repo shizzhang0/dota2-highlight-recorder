@@ -569,6 +569,9 @@ impl Collection {
 
 /// 集锦最长多少秒（2026-11-18 用户定 2 分钟：90 秒嫌短，完美时刻算上它自己的片头约 2 分 15 秒）
 pub const COLLECTION_CAP: f32 = 120.0;
+/// 击杀集锦、助攻集锦的素材至少要这么多秒才在推荐里列出（2026-11-23 用户定）。本地 9 场 × 10 人统计：
+/// 击杀片段中位数 39 秒、纯助攻片段 48 秒；不到 30 秒一般只有 2–4 段短片，太单薄
+pub const MIN_COLLECTION: f32 = 30.0;
 /// 助攻打分里"打了一大块血"：占被杀者死前 `ASSIST_WINDOW` 秒受到伤害的这么多
 const ASSIST_BIG_SHARE: f32 = 0.30;
 
@@ -579,6 +582,8 @@ const ASSIST_BIG_SHARE: f32 = 0.30;
 pub enum ProductKind {
     Kills,
     Assists,
+    /// 击杀、助攻都太少（各不到 `MIN_COLLECTION` 秒）时，全部片段合成一个（2026-11-23）
+    Highlights,
     Rampage,
     Ultra,
     Triple,
@@ -593,6 +598,7 @@ impl ProductKind {
         match self {
             ProductKind::Kills => "kills",
             ProductKind::Assists => "assists",
+            ProductKind::Highlights => "highlights",
             ProductKind::Rampage => "rampage",
             ProductKind::Ultra => "ultra",
             ProductKind::Triple => "triple",
@@ -607,6 +613,7 @@ impl ProductKind {
         match (self, lang) {
             (ProductKind::Kills, Lang::Zh) => "击杀集锦",
             (ProductKind::Assists, Lang::Zh) => "助攻集锦",
+            (ProductKind::Highlights, Lang::Zh) => "高光集锦",
             (ProductKind::Rampage, Lang::Zh) => "暴走",
             (ProductKind::Ultra, Lang::Zh) => "四杀",
             (ProductKind::Triple, Lang::Zh) => "三杀",
@@ -615,6 +622,7 @@ impl ProductKind {
             (ProductKind::Teamwork, Lang::Zh) => "默契时刻",
             (ProductKind::Kills, Lang::En) => "Kill_highlights",
             (ProductKind::Assists, Lang::En) => "Assist_highlights",
+            (ProductKind::Highlights, Lang::En) => "Highlights",
             (ProductKind::Rampage, Lang::En) => "Rampage",
             (ProductKind::Ultra, Lang::En) => "Ultra_kill",
             (ProductKind::Triple, Lang::En) => "Triple_kill",
@@ -624,9 +632,9 @@ impl ProductKind {
         }
     }
 
-    /// 击杀集锦、助攻集锦（按击杀、助攻次数数）；其余是某种高光时刻（按片段数数）
+    /// 击杀集锦、助攻集锦、高光集锦（按击杀、助攻次数数）；其余是某种高光时刻（按片段数数）
     pub fn is_collection(self) -> bool {
-        matches!(self, ProductKind::Kills | ProductKind::Assists)
+        matches!(self, ProductKind::Kills | ProductKind::Assists | ProductKind::Highlights)
     }
 
     /// 高光时刻，按难得程度排（比赛页上也按这个顺序）
@@ -643,6 +651,7 @@ impl ProductKind {
         match self {
             ProductKind::Kills => c.kind == Kind::Kill,
             ProductKind::Assists => c.kind == Kind::Assist,
+            ProductKind::Highlights => true,
             ProductKind::Rampage => c.multi_kill >= 5,
             ProductKind::Ultra => c.multi_kill == 4,
             ProductKind::Triple => c.multi_kill == 3,
@@ -761,7 +770,15 @@ fn pick(clips: &[Clip], candidates: &[(usize, f32)], cap: f32, len: impl Fn(&Cli
 /// 这个玩家这局能生成的成品（`clips` 是 [`plan`] 的结果）：击杀集锦、助攻集锦，再是每种高光时刻（按 `MOMENTS` 的顺序）。
 /// 每个都精选到 `COLLECTION_CAP` 以内；这局没有的不列
 pub fn products(r: &Replay, clips: &[Clip]) -> Vec<Product> {
-    let kinds = [ProductKind::Kills, ProductKind::Assists].into_iter().chain(ProductKind::MOMENTS);
+    // 击杀集锦、助攻集锦各自的素材够 `MIN_COLLECTION` 秒才列；都不够时合成一个高光集锦（2026-11-23 用户定）
+    let secs = |kind: ProductKind| clips.iter().filter(|c| kind.in_clip(c)).map(|c| kind.len_of(c)).sum::<f32>();
+    let enough = |kind: ProductKind| secs(kind) >= MIN_COLLECTION;
+    let collections: Vec<ProductKind> = if enough(ProductKind::Kills) || enough(ProductKind::Assists) {
+        [ProductKind::Kills, ProductKind::Assists].into_iter().filter(|&k| enough(k)).collect()
+    } else {
+        vec![ProductKind::Highlights]
+    };
+    let kinds = collections.into_iter().chain(ProductKind::MOMENTS);
     kinds
         .filter_map(|kind| {
             let cands: Vec<(usize, f32)> = clips.iter().enumerate().filter(|(_, c)| kind.in_clip(c)).map(|(i, c)| (i, score(r, c))).collect();
@@ -773,6 +790,7 @@ pub fn products(r: &Replay, clips: &[Clip]) -> Vec<Product> {
             let count = |i: usize| match kind {
                 ProductKind::Kills => clips[i].kills.len(),
                 ProductKind::Assists => clips[i].assists.len(),
+                ProductKind::Highlights => clips[i].kills.len() + clips[i].assists.len(),
                 _ => 1,
             };
             Some(Product {
