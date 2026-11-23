@@ -16,6 +16,7 @@ export function describe(e) {
     // 认得出种类就用翻译好的说法，不然附原文（录制流程给的中文）
     case "retrying": return t("ev.retry", { reason: e.fail ? t(`rec.fail.${e.fail}`) : e.reason });
     case "clip_done": return t("ev.clipDone", { path: e.path, secs: e.secs.toFixed(1) });
+    case "compiling": return t("ev.compiling", { n: e.n, total: e.total, name: e.name });
     case "compilation_done": return t("ev.compiled", { path: e.path, secs: e.secs.toFixed(1) });
     case "restoring_window_size": return t("ev.restoringSize", { w: e.width, h: e.height });
     case "window_size_restored": return t("ev.sizeRestored", { w: e.width, h: e.height });

@@ -149,6 +149,62 @@ impl Ffmpeg {
             .and_then(|v| v.trim().trim_end_matches("dB").trim().parse().ok())
             .context("ffmpeg 没给出音量")
     }
+
+    /// 把录好的片段做成成品（集锦、单个时刻）：片段之间交叉溶解，开头从黑场淡入、结尾淡出到黑场，声音跟着画面。
+    /// 要重新编码一遍（流复制做不了过渡），编码器和画质跟录制时一样。2026-11-23 定：照完美时刻的做法，
+    /// 他们的集锦片段之间约 0.3 秒交叉溶解、首尾约 0.5 秒黑场（逐帧看过一条他们的击杀集锦）
+    pub fn compile(&self, codec: Codec, inputs: &[std::path::PathBuf], out: &Path) -> Result<()> {
+        let secs = inputs.iter().map(|p| crate::mp4_duration(p)).collect::<Result<Vec<_>>>()?;
+        let graph = compile_graph(&secs);
+        let mut cmd = self.command();
+        cmd.creation_flags(crate::ffmpeg::CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS);
+        for p in inputs {
+            cmd.arg("-i").arg(p);
+        }
+        cmd.args(["-filter_complex", &graph, "-map", "[v]", "-map", "[a]", "-c:v", codec.name()])
+            .args(codec.quality_args())
+            .args(["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"])
+            .arg(out)
+            .stdin(Stdio::null());
+        let o = cmd.output().context("运行不了 ffmpeg")?;
+        if !o.status.success() {
+            bail!("ffmpeg 生成视频出错：{}", String::from_utf8_lossy(&o.stderr).trim());
+        }
+        Ok(())
+    }
+}
+
+/// 片段之间交叉溶解的秒数
+pub const CROSSFADE: f64 = 0.3;
+/// 开头淡入、结尾淡出的秒数
+pub const FADE: f64 = 0.5;
+
+/// `compile` 的滤镜图。`secs`：每段的时长（mp4 总时长）。
+/// 每段先截到比总时长短一点（画面和声音轨长短差几十毫秒，按同一个长度截，过渡的起点才算得准、声画不错位），
+/// 第 i 次溶解从前面已拼好的长度减去一次溶解的地方开始
+fn compile_graph(secs: &[f64]) -> String {
+    // 片段都有好几秒；万一有很短的，溶解不超过它的三分之一
+    let lens: Vec<f64> = secs.iter().map(|s| (s - 0.05).max(0.1)).collect();
+    let x = lens.iter().copied().fold(CROSSFADE, |m, l| m.min(l / 3.0));
+    let mut g = String::new();
+    for (i, l) in lens.iter().enumerate() {
+        g += &format!("[{i}:v]trim=end={l:.3},setpts=PTS-STARTPTS,settb=AVTB,format=yuv420p[v{i}];");
+        g += &format!("[{i}:a]atrim=end={l:.3},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:channel_layouts=stereo[a{i}];");
+    }
+    let (mut v, mut a) = ("v0".to_string(), "a0".to_string());
+    let mut total = lens[0];
+    for (i, l) in lens.iter().enumerate().skip(1) {
+        let offset = total - x;
+        g += &format!("[{v}][v{i}]xfade=transition=fade:duration={x:.3}:offset={offset:.3}[xv{i}];");
+        g += &format!("[{a}][a{i}]acrossfade=d={x:.3}[xa{i}];");
+        (v, a) = (format!("xv{i}"), format!("xa{i}"));
+        total += l - x;
+    }
+    let f = FADE.min(total / 4.0);
+    let out_at = total - f;
+    g += &format!("[{v}]fade=t=in:st=0:d={f:.3},fade=t=out:st={out_at:.3}:d={f:.3}[v];");
+    g += &format!("[{a}]afade=t=in:st=0:d={f:.3},afade=t=out:st={out_at:.3}:d={f:.3}[a]");
+    g
 }
 
 /// 正在编码的 ffmpeg 进程
@@ -201,5 +257,28 @@ impl Drop for Encoder {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graph_offsets() {
+        // 10 秒 + 8 秒 + 6 秒：截成 9.95、7.95、5.95，溶解在 9.65、17.3 处开始，总长 23.25，淡出从 22.75 开始
+        let g = compile_graph(&[10.0, 8.0, 6.0]);
+        assert!(g.contains("[v0][v1]xfade=transition=fade:duration=0.300:offset=9.650[xv1]"), "{g}");
+        assert!(g.contains("[xv1][v2]xfade=transition=fade:duration=0.300:offset=17.300[xv2]"), "{g}");
+        assert!(g.contains("[xa1][a2]acrossfade=d=0.300[xa2]"), "{g}");
+        assert!(g.ends_with("[xa2]afade=t=in:st=0:d=0.500,afade=t=out:st=22.750:d=0.500[a]"), "{g}");
+    }
+
+    #[test]
+    fn graph_one_part() {
+        // 只有一段：没有溶解，只有首尾淡入淡出
+        let g = compile_graph(&[12.05]);
+        assert!(!g.contains("xfade"), "{g}");
+        assert!(g.contains("[v0]fade=t=in:st=0:d=0.500,fade=t=out:st=11.500:d=0.500[v]"), "{g}");
     }
 }

@@ -256,6 +256,8 @@ pub enum Event {
     GameWindow { at: String, minimized: bool, foreground: bool },
     /// 一个片段做好了
     ClipDone { index: usize, path: PathBuf, secs: f64 },
+    /// 开始做第 `n` 个成品（共 `total` 个，从 1 算）：重新编码、加过渡，要几十秒
+    Compiling { n: usize, total: usize, name: String },
     /// 合集做好了
     CompilationDone { path: PathBuf, secs: f64 },
     /// 让游戏退出，把显示设置里的窗口大小改回去
@@ -583,8 +585,8 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
     let account = game::steam::me();
     let original_size = account.and_then(|a| game::steam::video(a).ok()).and_then(|v| v.width.zip(v.height));
     let mut sized = false;
-    // 拦截输入从游戏窗口出现一直开到这个函数结束（录完、恢复设置、让游戏退出之后才卸掉）
-    let (con, rx, _guard) = match prepare(host, o, &diag, &mut sized) {
+    // 拦截输入从游戏窗口出现一直开到录完、恢复设置、让游戏退出之后才卸掉（做成品之前）
+    let (con, rx, guard) = match prepare(host, o, &diag, &mut sized) {
         Ok(v) => v,
         Err(e) => {
             // 还没开始改设置，只要删掉刚写的 GSI 配置
@@ -618,7 +620,7 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
         restore_window_size(host, account, original_size);
     }
     match (&result, &restored) {
-        (Ok(()), Ok(())) => {
+        (Ok(_), Ok(())) => {
             // 成功就不留排查用的截图和日志
             let _ = std::fs::remove_dir_all(&diag);
             let _ = std::fs::remove_dir(&tmp);
@@ -629,7 +631,10 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
         host.event(Event::RestoreFailed { error: format!("{e:#}") });
     }
     drop(hold);
-    result
+    // 游戏已经在退出（或留着给用户），卸掉拦截输入再做成品
+    drop(guard);
+    let (parts, codec) = result?;
+    make_outputs(host, ff, codec, o, &parts, done).context(Fail::Encode)
 }
 
 /// 录制时共用的东西
@@ -668,7 +673,7 @@ fn record_all(
     rx: &Receiver<Value>,
     tmp: &Path,
     done: &mut Done,
-) -> Result<()> {
+) -> Result<(Vec<PathBuf>, Codec)> {
     load_replay(host, r, s, rx)?;
     let codec = ff.pick_codec();
     let mut rec = Rec {
@@ -725,24 +730,34 @@ fn record_all(
         done.recorded_secs = rec.game_secs;
     }
     result?;
-
-    make_outputs(host, ff, o, &outputs, done).context(Fail::Encode)
+    Ok((outputs, codec))
 }
 
 /// 全部段录完后做成品（2026-11-18 起：比赛页「推荐」的集锦和单个时刻，「自定义」的自定义集锦）。
-/// 一个成品只有一段时复制那段（同名就不用动），多段按顺序拼。全部做好后，不留单段的话删掉不是成品的单段文件；
-/// 中途出错就都留着，什么都不丢
-fn make_outputs(host: &dyn Host, ff: &Ffmpeg, o: &Options, parts: &[PathBuf], done: &mut Done) -> Result<()> {
-    for (k, out) in o.outputs.iter().enumerate() {
-        let dest = o.out.join(format!("{}.mp4", out.name));
-        let files: Vec<PathBuf> = out.parts.iter().map(|&i| parts.get(i).cloned().context("成品用到的片段没录成")).collect::<Result<_>>()?;
-        match files.as_slice() {
-            [one] if *one == dest => {}
-            [one] => {
-                std::fs::copy(one, &dest).with_context(|| format!("复制 {} 失败", dest.display()))?;
-            }
-            _ => ff.concat(&files, &dest)?,
+/// 2026-11-23 起每个成品都重新编码：片段之间交叉溶解、首尾淡入淡出（`Ffmpeg::compile`），只有一段的也一样。
+/// 在游戏退出、卸掉拦截输入之后做（编码要几十秒，不该让用户一直被拦着）。
+/// 先都写到临时名字，全部做好再改成正式名字：单个时刻和它所在的片段同名，先改名的话，后面的集锦会拼进已经淡入淡出过的那段。
+/// 全部做好后，不留单段的话删掉不是成品的单段文件；中途出错就都留着，什么都不丢
+fn make_outputs(host: &dyn Host, ff: &Ffmpeg, codec: Codec, o: &Options, parts: &[PathBuf], done: &mut Done) -> Result<()> {
+    let mut made = Vec::new();
+    let result = (|| -> Result<()> {
+        for (k, out) in o.outputs.iter().enumerate() {
+            let files: Vec<PathBuf> = out.parts.iter().map(|&i| parts.get(i).cloned().context("成品用到的片段没录成")).collect::<Result<_>>()?;
+            host.event(Event::Compiling { n: k + 1, total: o.outputs.len(), name: out.name.clone() });
+            let tmp = o.out.join(format!("{}.making.mp4", out.name));
+            made.push((k, tmp.clone(), o.out.join(format!("{}.mp4", out.name))));
+            ff.compile(codec, &files, &tmp)?;
         }
+        Ok(())
+    })();
+    if let Err(e) = result {
+        for (_, tmp, _) in &made {
+            let _ = std::fs::remove_file(tmp);
+        }
+        return Err(e);
+    }
+    for (k, tmp, dest) in made {
+        std::fs::rename(&tmp, &dest).with_context(|| format!("改名成 {} 失败", dest.display()))?;
         host.event(Event::CompilationDone { path: dest.clone(), secs: media::mp4_duration(&dest)? });
         done.products.push((k, dest));
     }
