@@ -219,7 +219,7 @@ fn run() -> Result<()> {
             let outputs = if compile && selected.len() > 1 {
                 let label = clips::Collection::of(selected.iter().map(|s| &s.clip)).file_label();
                 let name = format!("{}_{}_{label}", r.match_id, n.hero(&r, player));
-                vec![pipeline::Output { name, parts: (0..selected.len()).collect() }]
+                vec![pipeline::Output { name, parts: (0..selected.len()).map(pipeline::Part::whole).collect() }]
             } else {
                 Vec::new()
             };

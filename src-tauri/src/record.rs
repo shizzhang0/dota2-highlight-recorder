@@ -270,7 +270,7 @@ pub async fn start_recording(
                 .collect::<Result<_, _>>()?;
             let (outputs, metas) = if compile && selected.len() > 1 {
                 let name = crate::history::free_custom_name(std::path::Path::new(&settings.out_dir), &clips::custom_file_name(&r, player, &n));
-                (vec![pipeline::Output { name, parts: (0..selected.len()).collect() }], vec![ProductMeta { kind: "custom".into(), start: None, end: None }])
+                (vec![pipeline::Output { name, parts: (0..selected.len()).map(pipeline::Part::whole).collect() }], vec![ProductMeta { kind: "custom".into(), start: None, end: None }])
             } else {
                 (Vec::new(), Vec::new())
             };
@@ -290,7 +290,11 @@ pub async fn start_recording(
                 .iter()
                 .map(|x| pipeline::Output {
                     name: x.file_name(&r, &plan, &n),
-                    parts: x.clips.iter().map(|c| used.iter().position(|u| u == c).expect("在 used 里")).collect(),
+                    parts: x
+                        .clips
+                        .iter()
+                        .map(|&c| pipeline::Part { index: used.iter().position(|&u| u == c).expect("在 used 里"), range: x.part(&plan, c) })
+                        .collect(),
                 })
                 .collect();
             let metas = chosen
@@ -359,7 +363,7 @@ pub async fn start_recording(
             .map(|(k, file)| crate::history::RunProduct {
                 kind: metas[*k].kind.clone(),
                 file: file.clone(),
-                clips: o.outputs[*k].parts.iter().map(|&i| selected[i].name.clone()).collect(),
+                clips: o.outputs[*k].parts.iter().map(|p| selected[p.index].name.clone()).collect(),
                 start: metas[*k].start,
                 end: metas[*k].end,
             })
