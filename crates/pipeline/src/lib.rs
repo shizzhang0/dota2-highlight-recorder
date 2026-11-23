@@ -119,12 +119,25 @@ pub struct Ask {
     pub text: String,
 }
 
-/// 录完后要做的一个成品：用哪几段（`selected` 里的位置），文件名（不含扩展名）。
-/// 只有一段的直接用那段的文件（名字不同就复制一份），两段以上按顺序拼起来
+/// 录完后要做的一个成品：用哪几段，文件名（不含扩展名）。按顺序拼起来，加过渡（`Ffmpeg::compile`）
 #[derive(Debug, Clone)]
 pub struct Output {
     pub name: String,
-    pub parts: Vec<usize>,
+    pub parts: Vec<Part>,
+}
+
+/// 成品里的一段：`selected` 里的第几个，只取它的哪一截（录成的文件里从第几秒到第几秒，None = 整段）。
+/// 击杀集锦只取片段里击杀的那一截（`clips::Clip::kill_part`）
+#[derive(Debug, Clone, Copy)]
+pub struct Part {
+    pub index: usize,
+    pub range: Option<(f32, f32)>,
+}
+
+impl Part {
+    pub fn whole(index: usize) -> Part {
+        Part { index, range: None }
+    }
 }
 
 pub struct Options {
@@ -507,7 +520,7 @@ pub fn run(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], ff
         o.out.display(),
         o.resolution,
         o.camera,
-        o.outputs.iter().map(|x| (&x.name, &x.parts)).collect::<Vec<_>>(),
+        o.outputs.iter().map(|x| (&x.name, x.parts.iter().map(|p| (p.index, p.range)).collect::<Vec<_>>())).collect::<Vec<_>>(),
         o.keep_parts,
         o.quit
     ));
@@ -742,7 +755,8 @@ fn make_outputs(host: &dyn Host, ff: &Ffmpeg, codec: Codec, o: &Options, parts: 
     let mut made = Vec::new();
     let result = (|| -> Result<()> {
         for (k, out) in o.outputs.iter().enumerate() {
-            let files: Vec<PathBuf> = out.parts.iter().map(|&i| parts.get(i).cloned().context("成品用到的片段没录成")).collect::<Result<_>>()?;
+            let files: Vec<(PathBuf, Option<(f32, f32)>)> =
+                out.parts.iter().map(|p| parts.get(p.index).map(|f| (f.clone(), p.range)).context("成品用到的片段没录成")).collect::<Result<_>>()?;
             host.event(Event::Compiling { n: k + 1, total: o.outputs.len(), name: out.name.clone() });
             let tmp = o.out.join(format!("{}.making.mp4", out.name));
             made.push((k, tmp.clone(), o.out.join(format!("{}.mp4", out.name))));

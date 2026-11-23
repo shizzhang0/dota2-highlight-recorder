@@ -71,7 +71,9 @@ impl Anchor {
 }
 
 /// 片段规则的全部参数。默认值是 2026-10-22 用户根据 `examples/stats.rs` 的统计结果选定的：
-/// 口径 (c)、伤害间隔 3 秒、起点上限 19 秒（该口径 90% 分位 16.6 秒 + 开打前 2 秒，取整）、空档保留 8 秒
+/// 口径 (c)、伤害间隔 3 秒、起点上限 19 秒（该口径 90% 分位 16.6 秒 + 开打前 2 秒，取整）、空档保留 8 秒。
+/// 2026-11-23 起点上限改成 8 秒：和完美时刻对比三场，他们每次击杀从前约 5 秒录起，我们打得久的团从很早开始，
+/// 集锦超过 2 分钟丢了击杀；用户选了折中的 8 秒
 #[derive(Debug, Clone)]
 pub struct Params {
     pub anchor: Anchor,
@@ -109,7 +111,7 @@ impl Default for Params {
         Params {
             anchor: Anchor::KillerAny,
             damage_gap: 3.0,
-            max_lead: 19.0,
+            max_lead: 8.0,
             min_lead: 3.0,
             pre: 2.0,
             post: 3.0,
@@ -182,6 +184,9 @@ pub struct Clip {
     pub assists: Vec<usize>,
     /// 剪掉长空档后保留的内容，按时间排序
     pub spans: Vec<Span>,
+    /// 他的击杀那几段从头到尾（第一次击杀的起点到最后一次击杀的终点）；助攻片段没有。
+    /// 击杀集锦只用这一截，不带片段里击杀前后的助攻（2026-11-23 用户定，照完美时刻）
+    pub kill_window: Option<Span>,
     pub exports: Vec<Export>,
     /// 片段内游戏判定的最大多杀数（2 = 双杀 … 5 = 暴走），没有为 0
     pub multi_kill: u32,
@@ -207,6 +212,34 @@ impl Clip {
     /// 成片时长（剪掉的空档不算）
     pub fn duration(&self) -> f32 {
         self.spans.iter().map(Span::len).sum()
+    }
+
+    /// 游戏时间 `t` 在录成的文件里是第几秒（剪掉的空档不占时间；落在空档里算下一段的开头）
+    fn file_time(&self, t: f32) -> f32 {
+        let mut at = 0.0;
+        for s in &self.spans {
+            if t <= s.start {
+                return at;
+            }
+            if t <= s.end {
+                return at + t - s.start;
+            }
+            at += s.len();
+        }
+        at
+    }
+
+    /// 击杀集锦用这个片段的哪一截（录成的文件里从第几秒到第几秒）：只要击杀那几段（`kill_window`）。
+    /// 整段都要（没有击杀外的助攻）时为 None
+    pub fn kill_part(&self) -> Option<(f32, f32)> {
+        let w = self.kill_window?;
+        let (a, b) = (self.file_time(w.start), self.file_time(w.end));
+        (a > 0.05 || b < self.duration() - 0.05).then_some((a, b))
+    }
+
+    /// 击杀集锦里这个片段占多少秒
+    pub fn kill_duration(&self) -> f32 {
+        self.kill_part().map_or(self.duration(), |(a, b)| b - a)
     }
 
     /// 录这个片段预计要多少秒：每段的固定开销 + 按录制速度录（含开头丢掉的 `LEAD`）
@@ -454,6 +487,7 @@ pub fn plan(r: &Replay, player: usize, p: &Params) -> Vec<Clip> {
             let kills: Vec<usize> = g.iter().filter_map(|&(_, e)| if let Event::Kill(i) = e { Some(i) } else { None }).collect();
             let assists: Vec<usize> = g.iter().filter_map(|&(_, e)| if let Event::Assist(i) = e { Some(i) } else { None }).collect();
             let aegis_steal = g.iter().any(|&(_, e)| matches!(e, Event::Aegis(_)));
+            let kill_window = kills.iter().map(|&i| segment(Event::Kill(i))).reduce(|a, b| Span { start: a.start.min(b.start), end: a.end.max(b.end) });
             let (multi_kill, kill_streak) = match (kills.first(), kills.last()) {
                 (Some(&a), Some(&b)) => {
                     let (from, to) = (r.kills[a].game_time - 1.0, r.kills[b].game_time + 1.0);
@@ -475,6 +509,7 @@ pub fn plan(r: &Replay, player: usize, p: &Params) -> Vec<Clip> {
                 kills,
                 assists,
                 spans,
+                kill_window,
                 exports,
             }
         })
@@ -598,6 +633,11 @@ impl ProductKind {
     pub const MOMENTS: [ProductKind; 6] =
         [ProductKind::Rampage, ProductKind::Ultra, ProductKind::Triple, ProductKind::Aegis, ProductKind::LowHp, ProductKind::Teamwork];
 
+    /// 这种成品里一个片段占多少秒：击杀集锦只用击杀那一截（`Clip::kill_part`），其余用整段
+    pub fn len_of(self, c: &Clip) -> f32 {
+        if self == ProductKind::Kills { c.kill_duration() } else { c.duration() }
+    }
+
     /// 这个片段有没有这种高光时刻。一个片段可以有好几种（三杀又是默契），会进好几个成品，录的时候只录一次
     pub fn in_clip(self, c: &Clip) -> bool {
         match self {
@@ -632,7 +672,12 @@ impl Product {
 
     /// 成片时长
     pub fn duration(&self, clips: &[Clip]) -> f32 {
-        self.clips.iter().map(|&i| clips[i].duration()).sum()
+        self.clips.iter().map(|&i| self.kind.len_of(&clips[i])).sum()
+    }
+
+    /// 用到的第 `i` 个片段（`clips` 里的下标）只取哪一截（录成的文件里的秒数）；None = 整段
+    pub fn part(&self, clips: &[Clip], i: usize) -> Option<(f32, f32)> {
+        if self.kind == ProductKind::Kills { clips[i].kill_part() } else { None }
     }
 
     /// 文件名（不含扩展名）：`比赛ID_英雄_击杀集锦`、`9096983180_Sven_Kill_highlights`（一种一个，不带时间）
@@ -696,14 +741,14 @@ fn score(r: &Replay, c: &Clip) -> f32 {
 }
 
 /// 从候选片段里挑进集锦（2026-11-18 用户定）：有高光时刻的先保证进；然后按分从高到低，放得下（总长不超过 `cap`）就放；
-/// 一段都放不下时至少放分最高的那段。挑完按时间排。片段本身不剪
-fn pick(clips: &[Clip], candidates: &[(usize, f32)], cap: f32) -> Vec<usize> {
+/// 一段都放不下时至少放分最高的那段。挑完按时间排。`len`：这种成品里一个片段占多少秒（击杀集锦只算击杀那一截）
+fn pick(clips: &[Clip], candidates: &[(usize, f32)], cap: f32, len: impl Fn(&Clip) -> f32) -> Vec<usize> {
     let mut order: Vec<(usize, f32)> = candidates.to_vec();
     let special = |i: usize| has_moment(&clips[i]);
     order.sort_by(|a, b| special(b.0).cmp(&special(a.0)).then(b.1.total_cmp(&a.1)).then(a.0.cmp(&b.0)));
     let (mut chosen, mut total) = (Vec::new(), 0.0f32);
     for (i, _) in order {
-        let d = clips[i].duration();
+        let d = len(&clips[i]);
         if chosen.is_empty() || total + d <= cap {
             chosen.push(i);
             total += d;
@@ -723,7 +768,7 @@ pub fn products(r: &Replay, clips: &[Clip]) -> Vec<Product> {
             if cands.is_empty() {
                 return None;
             }
-            let chosen = pick(clips, &cands, COLLECTION_CAP);
+            let chosen = pick(clips, &cands, COLLECTION_CAP, |c| kind.len_of(c));
             // 击杀集锦按击杀次数数，助攻集锦按助攻次数数，高光时刻按片段数
             let count = |i: usize| match kind {
                 ProductKind::Kills => clips[i].kills.len(),

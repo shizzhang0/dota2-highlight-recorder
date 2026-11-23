@@ -104,8 +104,20 @@ fn path() -> Option<PathBuf> {
 pub fn get_settings() -> Settings {
     path()
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s| serde_json::from_str::<Settings>(&s).ok())
+        .map(Settings::migrated)
         .unwrap_or_default()
+}
+
+impl Settings {
+    /// 旧版本存下的默认值换成新的：设置里总是存着整套片段规则，只改 `Params::default` 不会生效。
+    /// 起点上限 2026-11-23 从 19 秒改成 8 秒，存着 19 的当成旧默认值
+    fn migrated(mut self) -> Settings {
+        if self.rules.max_lead == 19.0 {
+            self.rules.max_lead = clips::Params::default().max_lead;
+        }
+        self
+    }
 }
 
 #[tauri::command]
