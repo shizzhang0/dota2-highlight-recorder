@@ -39,6 +39,7 @@
   "ev.clip": "片段 {n}/{total}：{name}",
   "ev.retry": "录制失败（{reason}），正在重试",
   "ev.clipDone": "完成：{path}（{secs} 秒）",
+  "ev.compiling": "正在生成视频 {n}/{total}：{name}",
   "ev.compiled": "集锦：{path}（{secs} 秒）",
   "ev.restoringSize": "正在关闭游戏，把窗口大小改回 {w}×{h}…",
   "ev.sizeRestored": "窗口大小已改回 {w}×{h}",

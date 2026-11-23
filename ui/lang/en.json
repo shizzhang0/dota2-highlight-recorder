@@ -39,6 +39,7 @@
   "ev.clip": "Clip {n}/{total}: {name}",
   "ev.retry": "Not right ({reason}), trying once more",
   "ev.clipDone": "Done: {path} ({secs} s)",
+  "ev.compiling": "Making video {n}/{total}: {name}",
   "ev.compiled": "Compilation: {path} ({secs} s)",
   "ev.restoringSize": "Quitting the game to put the window size back to {w}×{h}…",
   "ev.sizeRestored": "Window size put back to {w}×{h}",

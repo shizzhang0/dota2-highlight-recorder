@@ -37,6 +37,7 @@ impl Host for Console {
             }
             Event::Retrying { reason, .. } => println!("  第一次没录好（{reason}），重来一次"),
             Event::ClipDone { path, secs, .. } => println!("  → {}（{secs:.1} 秒）", path.display()),
+            Event::Compiling { n, total, name } => println!("生成第 {n}/{total} 个视频：{name}…"),
             Event::CompilationDone { path, secs } => println!("合集 → {}（{secs:.1} 秒）", path.display()),
             Event::RestoringWindowSize { width, height } => println!("让游戏退出，把显示设置里的窗口大小改回 {width}×{height}…"),
             Event::WindowSizeRestored { width, height } => println!("窗口大小已改回 {width}×{height}"),
