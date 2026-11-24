@@ -153,8 +153,9 @@ impl Ffmpeg {
     /// 把录好的片段做成成品（集锦、单个时刻）：片段之间交叉溶解，开头从黑场淡入、结尾淡出到黑场，声音跟着画面。
     /// 要重新编码一遍（流复制做不了过渡），编码器和画质跟录制时一样。2026-11-23 定：照完美时刻的做法，
     /// 他们的集锦片段之间约 0.3 秒交叉溶解、首尾约 0.5 秒黑场（逐帧看过一条他们的击杀集锦）
-    /// `inputs`：每段的文件，和只取它的哪一截（文件里从第几秒到第几秒，None = 整段）
-    pub fn compile(&self, codec: Codec, inputs: &[(std::path::PathBuf, Option<(f32, f32)>)], out: &Path) -> Result<()> {
+    /// `inputs`：每段的文件，和只取它的哪一截（文件里从第几秒到第几秒，None = 整段）。
+    /// `intro`：片头图层（`Ffmpeg::intro_layer` 画的透明 PNG）和视频高度；成品太短（`intro::MIN_VIDEO`）时不加
+    pub fn compile(&self, codec: Codec, inputs: &[(std::path::PathBuf, Option<(f32, f32)>)], intro: Option<(&Path, u32)>, out: &Path) -> Result<()> {
         let mut cuts = Vec::new();
         for (p, range) in inputs {
             // 画面和声音轨长短差几十毫秒，截得比总时长短一点，按同一个长度截，过渡的起点才算得准、声画不错位
@@ -162,11 +163,16 @@ impl Ffmpeg {
             let (a, b) = range.map_or((0.0, end), |(a, b)| (a as f64, (b as f64).min(end)));
             cuts.push((a.max(0.0), (b - a).max(0.1)));
         }
-        let graph = compile_graph(&cuts);
+        let intro = intro.filter(|_| total_length(&cuts) >= crate::intro::MIN_VIDEO);
+        let graph = compile_graph(&cuts, intro.map(|(_, h)| h));
         let mut cmd = self.command();
         cmd.creation_flags(crate::ffmpeg::CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS);
         for (p, _) in inputs {
             cmd.arg("-i").arg(p);
+        }
+        if let Some((layer, _)) = intro {
+            // 一张图循环成几秒的画面，60 帧让淡入淡出、滑动够顺
+            cmd.args(["-loop", "1", "-framerate", "60", "-t", &format!("{:.2}", crate::intro::layer_secs()), "-i"]).arg(layer);
         }
         cmd.args(["-filter_complex", &graph, "-map", "[v]", "-map", "[a]", "-c:v", codec.name()])
             .args(codec.quality_args())
@@ -186,12 +192,22 @@ pub const CROSSFADE: f64 = 0.3;
 /// 开头淡入、结尾淡出的秒数
 pub const FADE: f64 = 0.5;
 
+/// 溶解的秒数：片段都有好几秒；万一有很短的，溶解不超过它的三分之一
+fn crossfade(cuts: &[(f64, f64)]) -> f64 {
+    cuts.iter().fold(CROSSFADE, |m, c| m.min(c.1 / 3.0))
+}
+
+/// 拼好后的总长（秒）：每次溶解重叠掉一段
+fn total_length(cuts: &[(f64, f64)]) -> f64 {
+    cuts.iter().map(|c| c.1).sum::<f64>() - crossfade(cuts) * cuts.len().saturating_sub(1) as f64
+}
+
 /// `compile` 的滤镜图。`cuts`：每段从文件第几秒起、取多少秒。
-/// 第 i 次溶解从前面已拼好的长度减去一次溶解的地方开始
-fn compile_graph(cuts: &[(f64, f64)]) -> String {
+/// 第 i 次溶解从前面已拼好的长度减去一次溶解的地方开始。
+/// `intro`：有片头时是视频高度，片头图层是最后一个输入，叠在淡入淡出之前（开头的黑场也盖住卡片）
+fn compile_graph(cuts: &[(f64, f64)], intro: Option<u32>) -> String {
     let lens: Vec<f64> = cuts.iter().map(|c| c.1).collect();
-    // 片段都有好几秒；万一有很短的，溶解不超过它的三分之一
-    let x = lens.iter().copied().fold(CROSSFADE, |m, l| m.min(l / 3.0));
+    let x = crossfade(cuts);
     let mut g = String::new();
     for (i, (from, l)) in cuts.iter().enumerate() {
         let to = from + l;
@@ -206,6 +222,10 @@ fn compile_graph(cuts: &[(f64, f64)]) -> String {
         g += &format!("[{a}][a{i}]acrossfade=d={x:.3}[xa{i}];");
         (v, a) = (format!("xv{i}"), format!("xa{i}"));
         total += l - x;
+    }
+    if let Some(h) = intro {
+        g += &crate::intro::overlay_graph(cuts.len(), &v, "iv", h);
+        v = "iv".into();
     }
     let f = FADE.min(total / 4.0);
     let out_at = total - f;
@@ -274,7 +294,7 @@ mod tests {
     #[test]
     fn graph_offsets() {
         // 9.95 + 7.95 + 5.95 秒：溶解在 9.65、17.3 处开始，总长 23.25，淡出从 22.75 开始
-        let g = compile_graph(&[(0.0, 9.95), (0.0, 7.95), (2.0, 5.95)]);
+        let g = compile_graph(&[(0.0, 9.95), (0.0, 7.95), (2.0, 5.95)], None);
         assert!(g.contains("[2:v]trim=start=2.000:end=7.950,"), "{g}");
         assert!(g.contains("[v0][v1]xfade=transition=fade:duration=0.300:offset=9.650[xv1]"), "{g}");
         assert!(g.contains("[xv1][v2]xfade=transition=fade:duration=0.300:offset=17.300[xv2]"), "{g}");
@@ -285,8 +305,18 @@ mod tests {
     #[test]
     fn graph_one_part() {
         // 只有一段：没有溶解，只有首尾淡入淡出
-        let g = compile_graph(&[(0.0, 12.0)]);
+        let g = compile_graph(&[(0.0, 12.0)], None);
         assert!(!g.contains("xfade"), "{g}");
         assert!(g.contains("[v0]fade=t=in:st=0:d=0.500,fade=t=out:st=11.500:d=0.500[v]"), "{g}");
+    }
+
+    #[test]
+    fn graph_intro() {
+        // 两段：片头图层是第 3 个输入（序号 2），叠在溶解之后、淡入淡出之前；1440 高时滑 120 像素
+        let g = compile_graph(&[(0.0, 9.95), (0.0, 7.95)], Some(1440));
+        assert!(g.contains("[2:v]format=rgba,fade=t=in:st=0.3:d=0.4:alpha=1,fade=t=out:st=3.2:d=0.5:alpha=1[ovl];"), "{g}");
+        assert!(g.contains("[xv1][ovl]overlay=x='-120*pow("), "{g}");
+        assert!(g.contains("[iv]fade=t=in:st=0:d=0.500,"), "{g}");
+        assert!((total_length(&[(0.0, 9.95), (0.0, 7.95)]) - 17.6).abs() < 1e-9);
     }
 }

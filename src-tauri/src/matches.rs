@@ -280,6 +280,24 @@ pub fn delete_replays(match_ids: Vec<u64>) -> Result<(), String> {
     Ok(())
 }
 
+/// 一名玩家的击杀、死亡、助攻：终场计分板为准；读不到就从击杀事件里数（死亡里含被小兵、塔杀，和计分板一致）
+fn score(r: &Replay, board: Option<&[replay::FinalScore]>, player: usize) -> (usize, usize, usize) {
+    match board.and_then(|b| b.get(player)) {
+        Some(s) => (s.kills as usize, s.deaths as usize, s.assists as usize),
+        None => (
+            r.kills.iter().filter(|k| k.killer == Some(player)).count(),
+            r.kills.iter().filter(|k| k.victim == player).count(),
+            r.kills.iter().filter(|k| k.assists.contains(&player)).count(),
+        ),
+    }
+}
+
+/// 一名玩家的战绩（片头用），和比赛页上的一样
+pub fn kda(r: &Replay, player: usize) -> (usize, usize, usize) {
+    let board = replays_dir().ok().and_then(|d| replay::scoreboard(d.join(format!("{}.dem", r.match_id))).ok());
+    score(r, board.as_deref(), player)
+}
+
 #[derive(Serialize)]
 pub struct PlayerRow {
     id: usize,
@@ -313,15 +331,7 @@ pub async fn open_match(match_id: u64) -> Result<MatchInfo, String> {
         .players
         .iter()
         .map(|p| {
-            // 终场计分板为准；读不到就从击杀事件里数（死亡里含被小兵、塔杀，和计分板一致）
-            let (kills, deaths, assists) = match board.as_ref().and_then(|b| b.get(p.player_id)) {
-                Some(s) => (s.kills as usize, s.deaths as usize, s.assists as usize),
-                None => (
-                    r.kills.iter().filter(|k| k.killer == Some(p.player_id)).count(),
-                    r.kills.iter().filter(|k| k.victim == p.player_id).count(),
-                    r.kills.iter().filter(|k| k.assists.contains(&p.player_id)).count(),
-                ),
-            };
+            let (kills, deaths, assists) = score(&r, board.as_deref(), p.player_id);
             PlayerRow {
                 id: p.player_id,
                 name: p.name.clone(),

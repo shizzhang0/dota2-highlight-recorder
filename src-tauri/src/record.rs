@@ -222,6 +222,22 @@ struct ProductMeta {
 /// - `products` 不空：比赛页「推荐」选的成品（`clips::Product::id`），要录的段是它们用到的片段合起来，同一段只录一次；
 /// - 否则录「自定义」里勾的 `clips`（计划里的序号），`compile` 时两段以上拼成「自定义集锦」（勾没勾存进设置）。
 ///
+/// 片头卡片上除了视频类型以外的内容（`media::intro`，2026-11-24 定）：英雄显示名、战绩、安装包里的立绘；
+/// 录的是自己才放玩家名和头像（录别人不露名字，同 2026-11-17「录出来的画面不露玩家名」）
+fn intro_card(app: &AppHandle, r: &replay::Replay, player: usize, n: &clips::Naming) -> media::intro::Card {
+    let p = &r.players[player];
+    let id = p.hero.trim_start_matches("npc_dota_hero_");
+    let (k, d, a) = crate::matches::kda(r, player);
+    let me = crate::account::me() == Some(p.account_id);
+    media::intro::Card {
+        kind: String::new(),
+        hero: n.heroes.get(id).cloned().unwrap_or_else(|| id.to_owned()),
+        kda: format!("{k} / {d} / {a}"),
+        player: me.then(|| (p.name.clone(), game::steam::avatar_path(p.account_id))),
+        render: app.asset_resolver().get(format!("img/heroes/renders/{id}.webp")).map(|x| x.bytes),
+    }
+}
+
 /// `camera` 是比赛页上选的镜头（存进设置），`lang` 是界面语言（通知和文件名用）。其他设置读当前保存的
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -263,6 +279,8 @@ pub async fn start_recording(
         // 文件名跟着界面语言（2026-11-22 起）
         let n = crate::matches::naming(&lang);
         let pick = |i: usize, clip: &clips::Clip| Selected { index: i, clip: clip.clone(), name: clips::file_name(&r, clip, &n) };
+        let card = intro_card(&app, &r, player, &n);
+        let intro = |kind: &str| Some(media::intro::Card { kind: kind.replace('_', " "), ..card.clone() });
         let (selected, outputs, metas) = if custom {
             let selected: Vec<Selected> = clips
                 .iter()
@@ -270,7 +288,12 @@ pub async fn start_recording(
                 .collect::<Result<_, _>>()?;
             let (outputs, metas) = if compile && selected.len() > 1 {
                 let name = crate::history::free_custom_name(std::path::Path::new(&settings.out_dir), &clips::custom_file_name(&r, player, &n));
-                (vec![pipeline::Output { name, parts: (0..selected.len()).map(pipeline::Part::whole).collect() }], vec![ProductMeta { kind: "custom".into(), start: None, end: None }])
+                let label = match n.lang {
+                    clips::Lang::Zh => "自定义集锦",
+                    clips::Lang::En => "Custom highlights",
+                };
+                let parts = (0..selected.len()).map(pipeline::Part::whole).collect();
+                (vec![pipeline::Output { name, parts, intro: intro(label) }], vec![ProductMeta { kind: "custom".into(), start: None, end: None }])
             } else {
                 (Vec::new(), Vec::new())
             };
@@ -295,6 +318,7 @@ pub async fn start_recording(
                         .iter()
                         .map(|&c| pipeline::Part { index: used.iter().position(|&u| u == c).expect("在 used 里"), range: x.part(&plan, c) })
                         .collect(),
+                    intro: intro(x.kind.file_label(n.lang)),
                 })
                 .collect();
             let metas = chosen
