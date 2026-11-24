@@ -124,6 +124,8 @@ pub struct Ask {
 pub struct Output {
     pub name: String,
     pub parts: Vec<Part>,
+    /// 开头叠的片头卡片（2026-11-24 起桌面应用的成品都有）；None = 不加
+    pub intro: Option<media::intro::Card>,
 }
 
 /// 成品里的一段：`selected` 里的第几个，只取它的哪一截（录成的文件里从第几秒到第几秒，None = 整段）。
@@ -753,6 +755,7 @@ fn record_all(
 /// 全部做好后，不留单段的话删掉不是成品的单段文件；中途出错就都留着，什么都不丢
 fn make_outputs(host: &dyn Host, ff: &Ffmpeg, codec: Codec, o: &Options, parts: &[PathBuf], done: &mut Done) -> Result<()> {
     let mut made = Vec::new();
+    let intro_dir = o.out.join("intro");
     let result = (|| -> Result<()> {
         for (k, out) in o.outputs.iter().enumerate() {
             let files: Vec<(PathBuf, Option<(f32, f32)>)> =
@@ -760,10 +763,12 @@ fn make_outputs(host: &dyn Host, ff: &Ffmpeg, codec: Codec, o: &Options, parts: 
             host.event(Event::Compiling { n: k + 1, total: o.outputs.len(), name: out.name.clone() });
             let tmp = o.out.join(format!("{}.making.mp4", out.name));
             made.push((k, tmp.clone(), o.out.join(format!("{}.mp4", out.name))));
-            ff.compile(codec, &files, &tmp)?;
+            let layer = out.intro.as_ref().and_then(|card| intro_layer(ff, card, &files[0].0, &intro_dir));
+            ff.compile(codec, &files, layer.as_ref().map(|(p, h)| (p.as_path(), *h)), &tmp)?;
         }
         Ok(())
     })();
+    let _ = std::fs::remove_dir_all(&intro_dir);
     if let Err(e) = result {
         for (_, tmp, _) in &made {
             let _ = std::fs::remove_file(tmp);
@@ -783,6 +788,12 @@ fn make_outputs(host: &dyn Host, ff: &Ffmpeg, codec: Codec, o: &Options, parts: 
         }
     }
     Ok(())
+}
+
+/// 画片头图层，大小和成品第一段一样（`media::intro`）。画不出来（比如系统里没有微软雅黑）就记一行日志、这个成品不加片头，不让成品失败
+fn intro_layer(ff: &Ffmpeg, card: &media::intro::Card, first: &Path, dir: &Path) -> Option<(PathBuf, u32)> {
+    let made = media::mp4_video_size(first).and_then(|(w, h)| Ok((ff.intro_layer(card, w, h, dir)?, h)));
+    made.map_err(|e| line(&format!("片头没做成，这个成品不加片头：{e:#}"))).ok()
 }
 
 /// 加载录像，等到能跳转为止。重新加载会把镜头重置成自由视角

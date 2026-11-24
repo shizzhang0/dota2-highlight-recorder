@@ -5,6 +5,7 @@
 
 pub mod encode;
 pub mod ffmpeg;
+pub mod intro;
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -67,4 +68,26 @@ pub fn mp4_duration(path: &Path) -> Result<f64> {
         bail!("mvhd 的 timescale 是 0");
     }
     Ok(duration as f64 / timescale as f64)
+}
+
+/// mp4 里画面的宽和高，读第一条宽高不为 0 的轨道的 `moov/trak/tkhd`（声音轨的宽高是 0）
+pub fn mp4_video_size(path: &Path) -> Result<(u32, u32)> {
+    let mut r = BufReader::new(File::open(path).with_context(|| format!("打不开 {}", path.display()))?);
+    let len = r.seek(SeekFrom::End(0))?;
+    let (moov, moov_end) = find_box(&mut r, 0, len, b"moov")?.context("不是完整的 mp4（没有 moov）")?;
+    let mut pos = moov;
+    while let Some((trak, trak_end)) = find_box(&mut r, pos, moov_end, b"trak")? {
+        if let Some((tkhd, _)) = find_box(&mut r, trak, trak_end, b"tkhd")? {
+            r.seek(SeekFrom::Start(tkhd))?;
+            let version = read_u32(&mut r)? >> 24;
+            // 宽高是 16.16 定点数，在 tkhd 的最后 8 字节；版本 1 的时间字段是 64 位，多 12 字节
+            r.seek(SeekFrom::Start(tkhd + if version == 1 { 88 } else { 76 }))?;
+            let (w, h) = (read_u32(&mut r)? >> 16, read_u32(&mut r)? >> 16);
+            if w > 0 && h > 0 {
+                return Ok((w, h));
+            }
+        }
+        pos = trak_end;
+    }
+    bail!("mp4 里没有画面轨道")
 }
