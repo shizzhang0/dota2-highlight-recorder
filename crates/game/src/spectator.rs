@@ -104,6 +104,15 @@ pub fn hide_player_names(s: &mut crate::session::Session) -> Result<()> {
     s.set("dota_anonymous_mode", "1")
 }
 
+/// 录出来的画面不要右上角的 FPS / PING 和「输入/输出丢失」（2026-11-24 用户定，完美时刻的没有）。
+/// 是「显示网络信息」`dota_hud_netgraph`：游戏默认关，用户自己开过的才有；设了马上生效（2026-11-24 录像里实测）。
+/// 也是用户自己的设置（存档），`Session` 结束时恢复。
+/// 左上角「比赛数据」那块（击/死/助、正/反、下拉框）同一天试了 `dota_spectator_stats_panel`、`statstoggle`、
+/// `use_broadcaster_stats_panel`、`hudhide`、`broadcaster_mode`，都藏不掉，没有加
+pub fn hide_net_info(s: &mut crate::session::Session) -> Result<()> {
+    s.set("dota_hud_netgraph", "0")
+}
+
 pub fn console_setup(s: &mut crate::session::Session, player: usize, camera: Camera, team: Team) -> Result<()> {
     let mode = match camera {
         Camera::HeroChase => "2",
