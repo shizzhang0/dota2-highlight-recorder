@@ -29,10 +29,11 @@ export function heroName(id) {
   return heroes[id] ?? id.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-// 英雄图片取自 Valve 自己的图片服务器，只用英雄名请求（docs/app-interaction.md 第 6 节）
-const HERO_CDN = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/";
+// 英雄图片跟着安装包走（ui/img/heroes，tools/hero_images.py 生成；2026-11-24 起不再从网上加载）。
+// 新英雄要等发版才有图，这之前显示文字
+const HERO_IMG = "img/heroes/";
 
-/** 图片加载不了（没联网、被墙）就换成写着英雄名的方块，大小和图片一样 */
+/** 没有图（安装包之后才出的新英雄）就换成写着英雄名的方块，大小和图片一样 */
 function heroImg(src, id, cls, short) {
   const name = heroName(id);
   const img = el("img", { class: cls, src, alt: name, title: name, loading: "lazy" });
@@ -42,12 +43,12 @@ function heroImg(src, id, cls, short) {
 
 /** 英雄立绘（16:9 大图） */
 export function heroPic(id) {
-  return heroImg(`${HERO_CDN}${id}.png`, id, "hero-pic", false);
+  return heroImg(`${HERO_IMG}${id}.webp`, id, "hero-pic", false);
 }
 
 /** 英雄小图标；`small` 用在时间线、缩略图下面这种挤的地方 */
 export function heroIcon(id, small = false) {
-  return heroImg(`${HERO_CDN}icons/${id}.png`, id, small ? "hero-icon sm" : "hero-icon", true);
+  return heroImg(`${HERO_IMG}icons/${id}.webp`, id, small ? "hero-icon sm" : "hero-icon", true);
 }
 
 /** Unix 秒 → 本地时间 "10-26 21:10" */
