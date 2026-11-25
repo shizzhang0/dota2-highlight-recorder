@@ -151,8 +151,6 @@ pub struct PlayerRecord {
     player: usize,
     hero: String,
     player_name: String,
-    /// 录的是本机账号（高光视频卡片上玩家名后面标「我」，2026-11-25 起）
-    is_me: bool,
     /// 按开始时间排序
     clips: Vec<ClipRecord>,
     /// 拼过的集锦，最近拼的在前。不同种类文件名不同，各留一个；同一种重拼覆盖同一个文件
@@ -243,7 +241,6 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
                     player: run.player,
                     hero: run.hero.clone(),
                     player_name: run.player_name.clone(),
-                    is_me: run.is_me,
                     clips: Vec::new(),
                     compilations: Vec::new(),
                 });

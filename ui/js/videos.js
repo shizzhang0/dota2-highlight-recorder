@@ -96,8 +96,9 @@ function iconButton(svg, { title, ...attrs }) {
 export const revealButton = (path) => iconButton(FOLDER_ICON, { class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(path) });
 
 /** 一个视频一张卡片（2026-11-25 起高光视频页是一整片网格，不再按比赛分块）：
- *  缩略图（点了在应用里播放，右下角时长、左上角场景标签），下面是英雄头像、「英雄 · 内容」、玩家名（本机账号标「我」）和段数
- *  （这一块点了去比赛页、选好这个英雄），最下面一行比赛 ID · 模式 · 录制时间、「在文件夹中显示」和删除 */
+ *  缩略图（点了在应用里播放，右下角时长、左上角场景标签），下面是英雄头像、「英雄 · 内容」、玩家名
+ *  （这一块点了去比赛页、选好这个英雄），最下面一行比赛 ID · 模式 · 录制时间、「在文件夹中显示」和删除。
+ *  玩家名后面原来还有段数和本机账号的「你」，2026-11-25 用户要去掉 */
 function videoCard(v, nav) {
   const { m, p, file } = v;
   const img = el("img", { alt: "" });
@@ -121,7 +122,6 @@ function videoCard(v, nav) {
       alert(e.message);
     }
   };
-  const who = [p.player_name, v.extra].filter(Boolean).join(" · ");
   const sub = [String(m.match_id), modeName(m.game_mode), date(v.time)].filter(Boolean).join(" · ");
   // 缩略图下面整块（英雄那一行和比赛 ID · 模式 · 时间那一行）点了都去比赛页，悬停时整块铺浅底（2026-11-25 用户要的）；
   // 右下角的文件夹和删除照旧单独点
@@ -132,7 +132,7 @@ function videoCard(v, nav) {
         heroIcon(p.hero),
         el("span", { class: "text" },
           el("span", { class: "t" }, `${heroName(p.hero)} · ${v.label}`),
-          el("span", { class: "who" }, who, p.is_me ? el("span", { class: "me-tag" }, t("match.you")) : null),
+          el("span", { class: "who" }, p.player_name),
         ),
       ),
       el("div", { class: "foot" },
@@ -158,8 +158,7 @@ function heroVideos(m, p) {
     const moment = comp.start != null;
     const label = moment ? `${productName(comp.kind)} · ${clock(comp.start)}`
       : comp.kind === "custom" || (comp.clips && comp.kind) ? productName(comp.kind) : collectionName(comp.kind);
-    const extra = !moment && comp.clips ? t("videos.partsN", { n: comp.clips }) : "";
-    out.push({ m, p, file: comp.file, time: comp.time, secs: comp.secs ?? (moment ? comp.end - comp.start : 0), label, extra });
+    out.push({ m, p, file: comp.file, time: comp.time, secs: comp.secs ?? (moment ? comp.end - comp.start : 0), label });
   }
   return out;
 }

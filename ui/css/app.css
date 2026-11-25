@@ -493,7 +493,6 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .open .text { display: flex; flex-direction: column; min-width: 0; }
 .vid .open .t { font: 600 15px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vid .open .who { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vid .open .me-tag { margin-left: 6px; font-size: 11px; padding: 0 5px; border-radius: 3px; border: 1px solid rgba(91, 176, 127, .55); color: var(--radiant); }
 .vid .foot { display: flex; align-items: center; gap: 8px; }
 .vid .foot .sub { color: var(--muted); font: 13px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }

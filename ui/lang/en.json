@@ -302,7 +302,6 @@
   "product.picked": "Best {picked} of {total} {unit} · about {len}",
   "product.all": "All {total} {unit} · about {len}",
   "product.generated": "Made",
-  "videos.partsN": "{n} clips",
   "rec.result.doneProducts": "Done: {n} videos made",
   "match.highlightsHintRec": ". {colors}, with the heroes killed above; lit blocks are the clips your ticked videos use",
   "product.unitMoments": "times",

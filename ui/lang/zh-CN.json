@@ -302,7 +302,6 @@
   "product.picked": "精选 {picked}/{total} 次{unit} · 约 {len}",
   "product.all": "全部 {total} 次{unit} · 约 {len}",
   "product.generated": "已生成",
-  "videos.partsN": "{n} 段",
   "rec.result.doneProducts": "录制完成：生成 {n} 个视频",
   "match.highlightsHintRec": "。{colors}，上面是被击杀的英雄；亮的是勾了的视频要用到的片段",
   "product.unitMoments": "",
