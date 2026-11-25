@@ -90,18 +90,19 @@ pub enum Camera {
 
 /// 用控制台命令设好观战：关掉鼠标靠边接管镜头，追踪 `player`（0–9）、镜头模式、`team` 一方的迷雾，收起右上角回放控制面板，隐藏鼠标指针。
 /// 改的设置都记进 `s`，结束时恢复。不点界面，游戏不用在前台
-/// 录制时不露玩家名（2026-11-17 用户要的，隐私；完美时刻也不显示）。要在 `playdemo` 之前设，加载时才读。
+/// 录出来的画面显示玩家名：头顶血条上是玩家名，关掉匿名模式（2026-11-25 用户改定，录自己和录别人一样）。
+/// 原来（2026-11-17 起）为了隐私不露名字：头顶「无」+ 匿名模式；可匿名模式不藏自己和好友，
+/// 录自己时击杀提示里有自己的 ID、录别人时是英雄名，两种录法不统一。要在 `playdemo` 之前设，加载时才读。
 /// 2026-11-17 实测（录像里）：
 /// - 头顶名字是「血条上显示名称」`dota_hero_overhead_names`：0 英雄名称、1 玩家名称、2 无。
-///   英雄名称在录像和观战里不生效、什么都不显示（Valve 已知问题 ValveSoftware/Dota2-Gameplay#1688，不修），
-///   所以设成 2 = 都不显示；
-/// - 匿名模式 `dota_anonymous_mode` 把顶部英雄栏、击杀提示、聊天里别人的名字藏掉（自己和好友不藏）；
+///   英雄名称在录像和观战里不生效、什么都不显示（Valve 已知问题 ValveSoftware/Dota2-Gameplay#1688，不修）；
+/// - 匿名模式 `dota_anonymous_mode` 把顶部英雄栏、击杀提示、聊天里别人的名字换成英雄名（自己和好友不换）；
 /// - `dota_hide_spectator_player_names` 设了没效果。
 ///
 /// 这两项都是用户自己的设置（存档），`Session` 结束时恢复
-pub fn hide_player_names(s: &mut crate::session::Session) -> Result<()> {
-    s.set("dota_hero_overhead_names", "2")?;
-    s.set("dota_anonymous_mode", "1")
+pub fn show_player_names(s: &mut crate::session::Session) -> Result<()> {
+    s.set("dota_hero_overhead_names", "1")?;
+    s.set("dota_anonymous_mode", "0")
 }
 
 /// 录出来的画面不要右上角的 FPS / PING 和「输入/输出丢失」（2026-11-24 用户定，完美时刻的没有）。

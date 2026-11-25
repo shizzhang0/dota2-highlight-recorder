@@ -220,7 +220,7 @@ struct ProductMeta {
 
 /// 片头卡片上除了视频类型以外的内容（`media::intro`，2026-11-24 定）：英雄显示名、战绩、安装包里的立绘、
 /// 录的这名玩家的名字。2026-11-24 用户改定：录自己和录别人一样，都显示玩家名、都不带头像
-/// （原来只在录自己时放名字和头像）。画面里别人的名字照旧用匿名模式藏掉，只有片头写出录的是谁
+/// （原来只在录自己时放名字和头像）。画面里也显示玩家名（2026-11-25 起不开匿名模式）
 fn intro_card(app: &AppHandle, r: &replay::Replay, player: usize, n: &clips::Naming) -> media::intro::Card {
     let p = &r.players[player];
     let id = p.hero.trim_start_matches("npc_dota_hero_");
