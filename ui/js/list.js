@@ -172,7 +172,8 @@ export async function showHome(view, dialog, { openMatch }) {
   };
   viewButtons.forEach((b, i) => b.classList.toggle("on", views[i] === viewMode));
   view.replaceChildren(
-    el("div", { class: "page-head" }, el("h1", {}, t("list.title")), acctBox, countLine),
+    // 场数紧跟标题，和高光视频页一样；账号切换放在场数后面（2026-11-25 用户：原来在账号后面，位置不对）
+    el("div", { class: "page-head" }, el("h1", {}, t("list.title")), countLine, acctBox),
     el("div", { class: "row", style: "margin-bottom:6px" }, idInput, idBtn, cancelBtn, idMsg, openDone),
     bar,
     el("div", { class: "row", style: "margin:16px 0 12px" },
