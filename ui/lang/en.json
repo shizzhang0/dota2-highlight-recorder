@@ -210,7 +210,6 @@
   "match.radiantWon": "Radiant victory",
   "match.direWon": "Dire victory",
   "match.clipsHint": "Click a row to tick or untick it",
-  "videos.count": "{matches} matches · {videos} videos",
   "rec.allClips": "All clips",
   "rec.allClipsHint": "Finished clips show up under Recorded videos",
   "rec.nth": "clip {n} of {total}",

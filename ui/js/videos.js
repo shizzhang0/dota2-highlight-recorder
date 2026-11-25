@@ -191,14 +191,14 @@ export async function showVideos(view, nav) {
     return null;
   });
   if (!list) return;
-  const head = (meta) => el("div", { class: "page-head" }, el("h1", {}, t("nav.videos")), el("span", { class: "meta" }, meta));
+  // 标题旁不写「5 场比赛 · 6 个视频」（2026-11-25 用户定，和比赛录像页一起去掉）
+  const head = () => el("div", { class: "page-head" }, el("h1", {}, t("nav.videos")));
   const all = list.flatMap((m) => m.players.flatMap((p) => heroVideos(m, p)));
   if (!all.length) {
-    view.replaceChildren(head(""), el("div", { class: "card" }, el("p", { class: "muted", style: "margin:0" }, t("videos.empty"))));
+    view.replaceChildren(head(), el("div", { class: "card" }, el("p", { class: "muted", style: "margin:0" }, t("videos.empty"))));
     return;
   }
   all.sort((a, b) => b.time - a.time);
-  const matches = new Set(all.map((v) => v.m.match_id)).size;
-  view.replaceChildren(head(t("videos.count", { matches, videos: all.length })),
+  view.replaceChildren(head(),
     el("div", { class: "vid-grid" }, all.map((v) => videoCard(v, nav))));
 }

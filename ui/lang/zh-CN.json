@@ -210,7 +210,6 @@
   "match.radiantWon": "天辉胜利",
   "match.direWon": "夜魇胜利",
   "match.clipsHint": "点一行勾选或取消",
-  "videos.count": "{matches} 场比赛 · {videos} 个视频",
   "rec.allClips": "全部片段",
   "rec.allClipsHint": "录制完成后会出现在「高光视频」里",
   "rec.nth": "第 {n} / {total} 个片段",
