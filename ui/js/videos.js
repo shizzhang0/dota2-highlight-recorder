@@ -113,8 +113,10 @@ function videoCard(v, nav) {
     img,
     file.exists ? el("div", { class: "play" }, el("span", {}, "▶")) : el("div", { class: "gone" }, t("videos.missingShort")),
     v.secs ? el("span", { class: "len" }, clock(v.secs)) : null,
-    // 左上角：模式标签（2026-11-25 从下面第二行挪上来，第二行放不下、玩家名和比赛 ID 都被截断），老的单段还有场景标签
-    el("div", { class: "tags" }, modeTag(m.game_mode), v.clip ? sceneTags(v.clip) : null),
+    // 录像不在本地了：左下角小标签（视频照样能放，点进比赛页可以重新下载，2026-11-20 起）
+    m.replay ? null : el("span", { class: "mid replay-gone" }, t("videos.replayGone")),
+    // 左上角：视频内容（击杀集锦、三杀 16:40），金色，和片头上的视频类型一个颜色（2026-11-25 用户选的 B）；老的单段还有场景标签
+    el("div", { class: "tags" }, el("span", { class: "kind-tag" }, [v.kind, v.when].filter(Boolean).join(" ")), v.clip ? sceneTags(v.clip) : null),
   );
   if (file.exists) {
     loadThumb(img, file.path);
@@ -131,10 +133,8 @@ function videoCard(v, nav) {
       alert(e.message);
     }
   };
-  // 缩略图下面两行（2026-11-25 用户定，原来三行、最下面一行空着一大段），排成两列对齐：
-  //   亚巴顿  击杀集锦
-  //   姜明子  9103370970
-  // 玩家名太长截断加省略号（宽度有上限），比赛 ID 不截断。右边文件夹、删除两个按钮横着放、上下居中。
+  // 缩略图下面（2026-11-25 用户从四种写法里选的 B）：第一行英雄名；第二行玩家名、比赛 ID（灰）；右边模式标签、文件夹、删除。
+  // 第一行只有英雄名，第二行没有要对齐的东西。玩家名太长先截断加省略号（最宽 8 个字左右），比赛 ID 不截断。
   // 整块点了去比赛页，悬停时整块铺浅底；按钮照旧单独点
   const open = () => nav.openMatch(m.match_id, { from: "videos", player: p.player });
   return el("div", { class: "vid" }, th,
@@ -142,14 +142,13 @@ function videoCard(v, nav) {
       el("button", { type: "button", class: "open" },
         heroIcon(p.hero),
         el("span", { class: "text" },
-          el("span", { class: "hk-hero" }, heroName(p.hero)),
-          el("span", { class: "kind" }, heroKind(p.hero, v.kind, v.when).slice(1)),
-          el("span", { class: "name", title: p.player_name || null }, p.player_name),
-          el("span", { class: "rest" }, String(m.match_id),
-            // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
-            m.replay ? null : el("span", { class: "replay-gone" }, t("videos.replayGone"))),
+          el("span", { class: "t" }, heroName(p.hero)),
+          el("span", { class: "who" },
+            p.player_name ? el("span", { class: "name", title: p.player_name }, p.player_name) : null,
+            el("span", { class: "mid" }, String(m.match_id))),
         ),
       ),
+      modeTag(m.game_mode),
       el("span", { class: "acts" },
         file.exists ? revealButton(file.path) : null,
         iconButton(TRASH_ICON, { class: "reveal del", title: t("videos.deleteOne.button"), onclick: remove })),
