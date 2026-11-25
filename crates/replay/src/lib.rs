@@ -24,11 +24,12 @@ const STEAM_ID64_BASE: u64 = 76561197960265728;
 /// 录像里只有构建号、没有补丁名，新旧只能拿它比；给人看的是 [`VERIFIED_PATCH`]。
 /// 在新补丁上验证过（必要时升级 source2-demo，用本地录像跑一遍）后，把这两个一起改成新的，
 /// README（中英两份）顶上的「Dota 2」徽章也跟着改
-pub const VERIFIED_GAME_BUILD: u32 = 6975;
+pub const VERIFIED_GAME_BUILD: u32 = 6993;
 
 /// [`VERIFIED_GAME_BUILD`] 所在的补丁，给人看的版本号（提示、README 徽章）。
-/// 2026-11-19：本地 6968–6975 的 16 场录像都解析正常，游戏是 7.42
-pub const VERIFIED_PATCH: &str = "7.42";
+/// 2026-11-19：本地 6968–6975 的 16 场录像都解析正常，游戏是 7.42。
+/// 2026-11-25：7.42a（11-24 发布，客户端构建号 6996）的录像 9103370970（构建号 6993）解析正常
+pub const VERIFIED_PATCH: &str = "7.42a";
 
 #[derive(Debug, Serialize)]
 pub struct Replay {
