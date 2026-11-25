@@ -508,14 +508,16 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; margin: 0; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
 .vid .open:hover:not(:disabled) { background: none; }
 .vid .open .hero-icon { width: 38px; height: 38px; border-radius: 6px; }
-.vid .open .text { display: flex; flex-direction: column; min-width: 0; }
-.vid .open .t { font: 600 15px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vid .open .who { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
-.vid .open .who .replay-gone { flex: none; }
-/* 玩家名最宽 8 个字左右，再长就截断加省略号；后面的比赛 ID · 模式在卡片太窄时也截断 */
-.vid .open .who .name { flex: 0 1 auto; min-width: 2em; max-width: 8em; overflow: hidden; text-overflow: ellipsis; }
-/* 比赛 ID 不截断，地方不够时先截玩家名 */
-.vid .open .who .rest { flex: none; font-family: var(--num); }
+/* 两行排成两列（2026-11-25 用户：两行没对齐）：左列英雄名 / 玩家名，右列内容 / 比赛 ID，右列左边对齐 */
+.vid .open .text { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); column-gap: 10px; align-items: baseline; min-width: 0; }
+.vid .open .text > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid .open .hk-hero, .vid .open .kind { font: 600 15px var(--num); }
+.vid .open .kind .hk-kind { margin-left: 0; }
+.vid .open .name, .vid .open .rest { color: var(--muted); font-size: 13px; }
+/* 玩家名最宽 8 个字左右，再长就截断加省略号；比赛 ID 用数字字体 */
+.vid .open .name { max-width: 8em; }
+.vid .open .rest { font-family: var(--num); }
+.vid .open .rest .replay-gone { margin-left: 10px; }
 .vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .reveal:hover { color: var(--text); background: none; }
 .vid .acts { display: inline-flex; gap: 2px; flex: none; }

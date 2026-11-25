@@ -131,8 +131,10 @@ function videoCard(v, nav) {
       alert(e.message);
     }
   };
-  // 缩略图下面两行（2026-11-25 用户定，原来三行、最下面一行空着一大段）。
-  // 玩家名太长截断加省略号（宽度有上限），比赛 ID 和模式照常显示。右边文件夹、删除两个按钮横着放、上下居中。
+  // 缩略图下面两行（2026-11-25 用户定，原来三行、最下面一行空着一大段），排成两列对齐：
+  //   亚巴顿  击杀集锦
+  //   姜明子  9103370970
+  // 玩家名太长截断加省略号（宽度有上限），比赛 ID 不截断。右边文件夹、删除两个按钮横着放、上下居中。
   // 整块点了去比赛页，悬停时整块铺浅底；按钮照旧单独点
   const open = () => nav.openMatch(m.match_id, { from: "videos", player: p.player });
   return el("div", { class: "vid" }, th,
@@ -140,10 +142,10 @@ function videoCard(v, nav) {
       el("button", { type: "button", class: "open" },
         heroIcon(p.hero),
         el("span", { class: "text" },
-          el("span", { class: "t" }, heroKind(p.hero, v.kind, v.when)),
-          el("span", { class: "who" },
-            p.player_name ? el("span", { class: "name", title: p.player_name }, p.player_name) : null,
-            el("span", { class: "rest" }, String(m.match_id)),
+          el("span", { class: "hk-hero" }, heroName(p.hero)),
+          el("span", { class: "kind" }, heroKind(p.hero, v.kind, v.when).slice(1)),
+          el("span", { class: "name", title: p.player_name || null }, p.player_name),
+          el("span", { class: "rest" }, String(m.match_id),
             // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
             m.replay ? null : el("span", { class: "replay-gone" }, t("videos.replayGone"))),
         ),
