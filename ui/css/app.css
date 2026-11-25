@@ -484,20 +484,21 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
 .vid .th .tags .scene { background: rgba(0, 0, 0, .65); }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
-/* 缩略图下面整块点了去比赛页；悬停时整块（连下面一行）铺浅底，鼠标在文件夹、删除上时不铺（2026-11-25 用户要的） */
-.vid .info { margin: 4px; padding: 6px 8px 4px; border-radius: 6px; cursor: pointer; }
+/* 缩略图下面两行加右边两个按钮；整块点了去比赛页，悬停时整块铺浅底，鼠标在文件夹、删除上时不铺（2026-11-25 用户要的） */
+.vid .info { display: flex; align-items: center; gap: 8px; margin: 4px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
 .vid .info:hover:not(:has(.acts:hover)) { background: var(--hover); }
-.vid .open { display: flex; align-items: center; gap: 10px; width: 100%; margin: 0 0 4px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.vid .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; margin: 0; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
 .vid .open:hover:not(:disabled) { background: none; }
 .vid .open .hero-icon { width: 38px; height: 38px; border-radius: 6px; }
 .vid .open .text { display: flex; flex-direction: column; min-width: 0; }
 .vid .open .t { font: 600 15px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vid .open .who { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vid .foot { display: flex; align-items: center; gap: 8px; }
-.vid .foot .sub { color: var(--muted); font: 13px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vid .open .who { display: flex; min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
+/* 玩家名最宽 8 个字左右，再长就截断加省略号；后面的比赛 ID · 模式在卡片太窄时也截断 */
+.vid .open .who .name { flex: 0 1 auto; max-width: 8em; overflow: hidden; text-overflow: ellipsis; }
+.vid .open .who .rest { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--num); }
 .vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .reveal:hover { color: var(--text); background: none; }
-.vid .acts { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
+.vid .acts { display: inline-flex; gap: 2px; flex: none; }
 .vid .del:hover { color: var(--danger); }
 
 /* 录制中 */

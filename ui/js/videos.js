@@ -124,8 +124,9 @@ function videoCard(v, nav) {
     }
   };
   const sub = [String(m.match_id), modeName(m.game_mode)].filter(Boolean).join(" · ");
-  // 缩略图下面整块（英雄那一行和比赛 ID · 模式那一行）点了都去比赛页，悬停时整块铺浅底（2026-11-25 用户要的）；
-  // 右下角的文件夹和删除照旧单独点
+  // 缩略图下面两行（2026-11-25 用户定，原来三行、最下面一行空着一大段）：「英雄 · 内容」；玩家名 · 比赛 ID · 模式。
+  // 玩家名太长截断加省略号（宽度有上限），比赛 ID 和模式照常显示。右边文件夹、删除两个按钮横着放、上下居中。
+  // 整块点了去比赛页，悬停时整块铺浅底；按钮照旧单独点
   const open = () => nav.openMatch(m.match_id, { from: "videos", player: p.player });
   return el("div", { class: "vid" }, th,
     el("div", { class: "info", onclick: (e) => { if (!e.target.closest(".acts")) open(); } },
@@ -133,17 +134,16 @@ function videoCard(v, nav) {
         heroIcon(p.hero),
         el("span", { class: "text" },
           el("span", { class: "t" }, `${heroName(p.hero)} · ${v.label}`),
-          el("span", { class: "who" }, p.player_name),
+          el("span", { class: "who" },
+            p.player_name ? el("span", { class: "name", title: p.player_name }, p.player_name) : null,
+            el("span", { class: "rest" }, `${p.player_name ? " · " : ""}${sub}`,
+              // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
+              m.replay ? null : el("span", { class: "replay-gone" }, ` · ${t("videos.replayGone")}`))),
         ),
       ),
-      el("div", { class: "foot" },
-        el("span", { class: "sub" }, sub,
-          // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
-          m.replay ? null : el("span", { class: "replay-gone" }, ` · ${t("videos.replayGone")}`)),
-        el("span", { class: "acts" },
-          file.exists ? revealButton(file.path) : null,
-          iconButton(TRASH_ICON, { class: "reveal del", title: t("videos.deleteOne.button"), onclick: remove })),
-      ),
+      el("span", { class: "acts" },
+        file.exists ? revealButton(file.path) : null,
+        iconButton(TRASH_ICON, { class: "reveal del", title: t("videos.deleteOne.button"), onclick: remove })),
     ));
 }
 
