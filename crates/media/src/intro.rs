@@ -1,7 +1,7 @@
 //! 片头：成品开头几秒叠在画面左下的一张卡片（2026-11-24 和用户一起定的样式，样片 `d2hr-片头样片\C_字幕条_定稿.mp4`）。
 //!
 //! 左边英雄立绘，右边四行字：金色小字的视频类型（击杀集锦）、大号英雄名、战绩（只写数字 `12 / 3 / 6`）、
-//! 圆形头像 + 玩家名（只在录自己时有，录别人不露名字，同 2026-11-17 的规矩）。底下是从左往右渐隐的黑底。
+//! 玩家名（录自己、录别人都有，不带头像，2026-11-24 用户改定；原来只在录自己时放头像 + 名字）。底下是从左往右渐隐的黑底。
 //! 0.3 秒起从左边滑进来并淡入，停到 3.2 秒，0.5 秒淡出（`Ffmpeg::compile` 里做动画）。
 //!
 //! 这里先用 ffmpeg 画出一张和视频一样大的透明 PNG（图层），坐标按 1080 高设计，别的分辨率按高度等比缩放。
@@ -23,8 +23,8 @@ pub struct Card {
     pub hero: String,
     /// 战绩，例如 `12 / 3 / 6`
     pub kda: String,
-    /// 玩家名和头像（Steam 缓存的 png，可能没有）；None = 不显示这一行
-    pub player: Option<(String, Option<PathBuf>)>,
+    /// 录的这名玩家的名字；None = 不显示这一行（录像里没有名字时）
+    pub player: Option<String>,
     /// 英雄立绘（透明底 WebP，安装包里的 `img/heroes/renders/<英雄>.webp`）；None = 不放立绘，字往左挪
     pub render: Option<Vec<u8>>,
 }
@@ -109,7 +109,6 @@ impl Ffmpeg {
 
         let mut cmd = self.command();
         cmd.current_dir(dir);
-        let mut inputs = 0;
         let mut g = format!(
             "color=c=black@0.0:s={w}x{h}:d=0.04,format=rgba,geq=r=0:g=0:b=0:a='if(between(Y\\,{t}\\,{b})*lt(X\\,{gw})\\,225*pow(1-X/{gw}\\,1.2)*min(1\\,min((Y-{t})/{f}\\,({b}-Y)/{f}))\\,0)'[g0];",
             t = px(top),
@@ -121,23 +120,9 @@ impl Ffmpeg {
         if let Some(bytes) = &card.render {
             std::fs::write(dir.join("render.webp"), bytes).context("写英雄立绘失败")?;
             cmd.args(["-i", "render.webp"]);
-            g += &format!("[{inputs}:v]scale={0}:{0},format=rgba[r];[{last}][r]overlay={1}:{2}:format=auto[g1];", px(350.0), px(-10.0), px(448.0));
-            inputs += 1;
+            // 立绘是唯一的输入（0 号）
+            g += &format!("[0:v]scale={0}:{0},format=rgba[r];[{last}][r]overlay={1}:{2}:format=auto[g1];", px(350.0), px(-10.0), px(448.0));
             last = "g1".into();
-        }
-        if let Some((_, Some(avatar))) = &card.player
-            && std::fs::copy(avatar, dir.join("avatar.png")).is_ok()
-        {
-            cmd.args(["-i", "avatar.png"]);
-            let d = px(44.0);
-            let r = d as f64 / 2.0;
-            g += &format!(
-                "[{inputs}:v]scale={d}:{d},format=rgba,geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='if(lte(hypot(X-{c}\\,Y-{c})\\,{r})\\,255\\,0)'[av];[{last}][av]overlay={x}:{y}:format=auto[g2];",
-                c = r - 0.5,
-                x = px(324.0 + dx),
-                y = px(716.0),
-            );
-            last = "g2".into();
         }
         let draw = |file: String, font: &Path, x: f64, y: f64, size: f64, color: &str| {
             format!("drawtext=fontfile={}:{file}:x={}:y={}:fontsize={}:fontcolor={color}:{SHADOW}", filter_path(font), px(x + dx), px(y), px(size))
@@ -147,8 +132,8 @@ impl Ffmpeg {
             draw(hero_file, &bold, 322.0, hero_y, size, "white"),
             draw(text(dir, "kda.txt", &card.kda)?, &bold, 326.0, 670.0, 28.0, KDA_COLOR),
         ];
-        if let Some((name, _)) = &card.player {
-            texts.push(draw(text(dir, "player.txt", name)?, &regular, 380.0, 720.0, 26.0, "white"));
+        if let Some(name) = &card.player {
+            texts.push(draw(text(dir, "player.txt", name)?, &regular, 326.0, 718.0, 26.0, "white"));
         }
         g += &format!("[{last}]{}", texts.join(","));
         let out = dir.join("intro.png");

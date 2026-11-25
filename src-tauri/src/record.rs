@@ -218,26 +218,26 @@ struct ProductMeta {
     end: Option<f32>,
 }
 
-/// 开始录制。两种（2026-11-18 起）：
-/// - `products` 不空：比赛页「推荐」选的成品（`clips::Product::id`），要录的段是它们用到的片段合起来，同一段只录一次；
-/// - 否则录「自定义」里勾的 `clips`（计划里的序号），`compile` 时两段以上拼成「自定义集锦」（勾没勾存进设置）。
-///
-/// 片头卡片上除了视频类型以外的内容（`media::intro`，2026-11-24 定）：英雄显示名、战绩、安装包里的立绘；
-/// 录的是自己才放玩家名和头像（录别人不露名字，同 2026-11-17「录出来的画面不露玩家名」）
+/// 片头卡片上除了视频类型以外的内容（`media::intro`，2026-11-24 定）：英雄显示名、战绩、安装包里的立绘、
+/// 录的这名玩家的名字。2026-11-24 用户改定：录自己和录别人一样，都显示玩家名、都不带头像
+/// （原来只在录自己时放名字和头像）。画面里别人的名字照旧用匿名模式藏掉，只有片头写出录的是谁
 fn intro_card(app: &AppHandle, r: &replay::Replay, player: usize, n: &clips::Naming) -> media::intro::Card {
     let p = &r.players[player];
     let id = p.hero.trim_start_matches("npc_dota_hero_");
     let (k, d, a) = crate::matches::kda(r, player);
-    let me = crate::account::me() == Some(p.account_id);
     media::intro::Card {
         kind: String::new(),
         hero: n.heroes.get(id).cloned().unwrap_or_else(|| id.to_owned()),
         kda: format!("{k} / {d} / {a}"),
-        player: me.then(|| (p.name.clone(), game::steam::avatar_path(p.account_id))),
+        player: Some(p.name.clone()).filter(|s| !s.trim().is_empty()),
         render: app.asset_resolver().get(format!("img/heroes/renders/{id}.webp")).map(|x| x.bytes),
     }
 }
 
+/// 开始录制。两种（2026-11-18 起）：
+/// - `products` 不空：比赛页「推荐」选的成品（`clips::Product::id`），要录的段是它们用到的片段合起来，同一段只录一次；
+/// - 否则录「自定义」里勾的 `clips`（计划里的序号），`compile` 时两段以上拼成「自定义集锦」（勾没勾存进设置）。
+///
 /// `camera` 是比赛页上选的镜头（存进设置），`lang` 是界面语言（通知和文件名用）。其他设置读当前保存的
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
