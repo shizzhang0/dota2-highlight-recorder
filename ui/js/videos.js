@@ -113,7 +113,8 @@ function videoCard(v, nav) {
     img,
     file.exists ? el("div", { class: "play" }, el("span", {}, "▶")) : el("div", { class: "gone" }, t("videos.missingShort")),
     v.secs ? el("span", { class: "len" }, clock(v.secs)) : null,
-    v.clip ? el("div", { class: "tags" }, sceneTags(v.clip)) : null,
+    // 左上角：模式标签（2026-11-25 从下面第二行挪上来，第二行放不下、玩家名和比赛 ID 都被截断），老的单段还有场景标签
+    el("div", { class: "tags" }, modeTag(m.game_mode), v.clip ? sceneTags(v.clip) : null),
   );
   if (file.exists) {
     loadThumb(img, file.path);
@@ -143,7 +144,6 @@ function videoCard(v, nav) {
           el("span", { class: "who" },
             p.player_name ? el("span", { class: "name", title: p.player_name }, p.player_name) : null,
             el("span", { class: "rest" }, String(m.match_id)),
-            modeTag(m.game_mode),
             // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
             m.replay ? null : el("span", { class: "replay-gone" }, t("videos.replayGone"))),
         ),

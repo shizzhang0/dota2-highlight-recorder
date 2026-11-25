@@ -497,7 +497,10 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .th .play span { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 16px; }
 .vid .th .len { position: absolute; bottom: 6px; right: 6px; background: rgba(0, 0, 0, .7); font: 12px var(--num); padding: 0 6px; border-radius: 3px; }
 .vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
-.vid .th .tags .scene { background: rgba(0, 0, 0, .65); }
+.vid .th .tags .scene, .vid .th .tags .mode { background: rgba(0, 0, 0, .65); }
+.vid .th .tags .mode.turbo { background: rgba(42, 32, 20, .9); }
+.vid .th .tags .mode.all-pick { background: rgba(20, 31, 43, .9); }
+.vid .th .tags:empty { display: none; }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 /* 缩略图下面两行加右边两个按钮；整块点了去比赛页，悬停时整块铺浅底，鼠标在文件夹、删除上时不铺（2026-11-25 用户要的） */
 .vid .info { display: flex; align-items: center; gap: 8px; margin: 4px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
@@ -508,10 +511,11 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .open .text { display: flex; flex-direction: column; min-width: 0; }
 .vid .open .t { font: 600 15px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vid .open .who { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
-.vid .open .who .mode, .vid .open .who .replay-gone { flex: none; }
+.vid .open .who .replay-gone { flex: none; }
 /* 玩家名最宽 8 个字左右，再长就截断加省略号；后面的比赛 ID · 模式在卡片太窄时也截断 */
-.vid .open .who .name { flex: 0 1 auto; max-width: 8em; overflow: hidden; text-overflow: ellipsis; }
-.vid .open .who .rest { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--num); }
+.vid .open .who .name { flex: 0 1 auto; min-width: 2em; max-width: 8em; overflow: hidden; text-overflow: ellipsis; }
+/* 比赛 ID 不截断，地方不够时先截玩家名 */
+.vid .open .who .rest { flex: none; font-family: var(--num); }
 .vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .reveal:hover { color: var(--text); background: none; }
 .vid .acts { display: inline-flex; gap: 2px; flex: none; }
