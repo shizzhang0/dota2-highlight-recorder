@@ -496,13 +496,11 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid:hover .th .play { opacity: 1; }
 .vid .th .play span { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 16px; }
 .vid .th .len, .vid .th .mid { position: absolute; bottom: 6px; right: 6px; background: rgba(0, 0, 0, .7); font: 12px var(--num); padding: 0 6px; border-radius: 3px; }
-.vid .th .mid { right: auto; left: 6px; color: var(--text); }
-.vid .th .mid .replay-gone { margin-left: 8px; font-family: inherit; }
+.vid .th .mid { right: auto; left: 6px; font-family: inherit; }
+/* 左上角视频内容：金色字、左边一道金线、深色底 */
+.vid .th .kind-tag { font: 600 13px/22px "Microsoft YaHei UI", "Segoe UI", sans-serif; padding: 0 9px; border-radius: 3px; background: rgba(0, 0, 0, .72); color: #f0c35a; border-left: 3px solid #f0c35a; white-space: nowrap; }
 .vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
-.vid .th .tags .scene, .vid .th .tags .mode { background: rgba(0, 0, 0, .65); }
-.vid .th .tags .mode.turbo { background: rgba(42, 32, 20, .9); }
-.vid .th .tags .mode.all-pick { background: rgba(20, 31, 43, .9); }
-.vid .th .tags:empty { display: none; }
+.vid .th .tags .scene { background: rgba(0, 0, 0, .65); }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 /* 缩略图下面两行加右边两个按钮；整块点了去比赛页，悬停时整块铺浅底，鼠标在文件夹、删除上时不铺（2026-11-25 用户要的） */
 .vid .info { display: flex; align-items: center; gap: 8px; margin: 4px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
@@ -514,7 +512,11 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .open .text { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .vid .open .text > span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vid .open .t { font: 600 15px var(--num); }
-.vid .open .name { max-width: 8em; color: var(--muted); font-size: 13px; }
+/* 第二行：玩家名先缩（最宽 8 个字左右，省略号），比赛 ID 不缩 */
+.vid .open .who { display: flex; gap: 12px; min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.vid .open .who .name { flex: 0 1 auto; min-width: 1.5em; max-width: 8em; overflow: hidden; text-overflow: ellipsis; }
+.vid .open .who .mid { flex: none; font-family: var(--num); }
+.vid .info > .mode { flex: none; }
 .vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .reveal:hover { color: var(--text); background: none; }
 .vid .acts { display: inline-flex; gap: 2px; flex: none; }
