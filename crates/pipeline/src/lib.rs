@@ -616,7 +616,7 @@ fn run_inner(host: &dyn Host, r: &Replay, player: usize, selected: &[Selected], 
             return Err(e);
         }
     };
-    // 设置守护：离开作用域（包括出错）时恢复，并删掉 GSI 配置。改的设置在 `spectator::hide_player_names`、`hide_net_info` 和 `console_setup` 里
+    // 设置守护：离开作用域（包括出错）时恢复，并删掉 GSI 配置。改的设置在 `spectator::show_player_names`、`hide_net_info` 和 `console_setup` 里
     let mut s = Session::new(con);
     s.remove_gsi_on_exit();
 
@@ -798,7 +798,7 @@ fn intro_layer(ff: &Ffmpeg, card: &media::intro::Card, first: &Path, dir: &Path)
 
 /// 加载录像，等到能跳转为止。重新加载会把镜头重置成自由视角
 fn load_replay(host: &dyn Host, r: &Replay, s: &mut Session, rx: &Receiver<Value>) -> Result<()> {
-    spectator::hide_player_names(s)?;
+    spectator::show_player_names(s)?;
     spectator::hide_net_info(s)?;
     s.con().send(&format!("playdemo replays/{}", r.match_id))?;
     s.con()
