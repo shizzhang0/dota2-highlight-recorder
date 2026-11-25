@@ -302,6 +302,20 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .page-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-head h1 { margin: 0; font: 600 26px var(--num); letter-spacing: .5px; }
 .page-head .meta { color: var(--muted); font-family: var(--num); }
+/* 不用「·」分隔以后（2026-11-25）：主次靠颜色、类别靠标签、并列的靠间距 */
+.hk-hero { color: var(--text); }
+.hk-kind { color: #f0c35a; margin-left: 8px; }
+.hk-when { color: var(--muted); margin-left: 8px; font-weight: 400; font-family: var(--num); }
+.dim { color: var(--muted); font-weight: 400; margin-left: 12px; }
+/* 比赛页标题旁的胜负标签：天辉胜利绿、夜魇胜利红 */
+.result-tag { display: inline-block; margin-left: 12px; padding: 0 8px; border: 1px solid currentColor; border-radius: 3px; font: 600 12px/18px "Segoe UI", sans-serif; vertical-align: 2px; }
+.result-tag.win { background: rgba(91, 176, 127, .12); }
+.result-tag.lose { background: rgba(212, 103, 92, .12); }
+/* 比赛页高光标题：英雄名后面灰色小一号的玩家名 */
+.hero-head .dim { font-size: 14px; margin-left: 10px; }
+/* 录制页标题旁：英雄名亮，后面几项灰色，用间距分开 */
+.rec-meta .rm-hero { color: var(--text); }
+.rec-meta > span + span { margin-left: 14px; }
 
 /* 本地录像：标题旁的账号切换（本机玩过 Dota 的账号有两个及以上才有） */
 .acct { position: relative; align-self: center; }
@@ -438,7 +452,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .product input { position: absolute; top: 12px; right: 12px; margin: 0; pointer-events: none; accent-color: var(--accent); }
 .product .name { font-weight: 600; font-size: 15px; }
 /* margin 要清掉：外面的 .card .sub 有 16px 的下边距 */
-.product .sub { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--num); }
+.product .sub { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--num); display: flex; justify-content: space-between; gap: 10px; }
+.product .sub .len { flex: none; }
 /* 已生成（2026-11-18 用户选 A）：名字后面绿色小标；右上角两个圆形按钮，播放实心强调色、在文件夹中显示描边；卡片和没生成的一样高 */
 .product.done { padding-right: 78px; cursor: pointer; }
 .product .done-tag { margin-left: 8px; padding: 1px 8px; border-radius: 99px; background: rgba(91, 176, 127, .15); color: var(--radiant); font-size: 12px; font-weight: 400; vertical-align: 2px; white-space: nowrap; }
@@ -471,20 +486,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .footer-bar .compile input { margin: 0; accent-color: var(--accent); }
 .footer-bar .compile .name { color: #f0c35a; }
 
-/* 已录视频：按比赛分组的缩略图 */
-.rec-match { margin-bottom: 26px; }
-/* 标题行：鼠标在标题上时整行（连右边的删除按钮）一起铺浅底，原来只铺左边标题，删除按钮露在外面（2026-11-20 用户：很怪） */
-.rec-match .head { display: flex; align-items: center; gap: 12px; margin: -6px -8px 6px; padding: 6px 8px; border-radius: var(--radius); flex-wrap: wrap; }
-.rec-match .head:has(.open:hover) { background: var(--hover); }
-.rec-match .head .hero-icon { width: 40px; height: 40px; border-radius: 6px; }
-/* 头像、比赛 ID、英雄和时间整块是一个按钮，点了去比赛页；悬停时整行微亮（见上面 .head，比赛 ID 不变色、不弹提示、不要箭头，用户定） */
-.rec-match .head .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-.rec-match .head .open:hover:not(:disabled) { background: none; }
-.rec-match .head .open .text { display: flex; flex-direction: column; min-width: 0; }
-.rec-match .head .t { color: var(--text); font: 600 17px var(--num); }
-.rec-match .head .who { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-match .head .act { margin-left: auto; display: flex; gap: 8px; }
-.vid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+/* 高光视频：所有视频一整片网格，一个视频一张卡片（2026-11-25 用户定；原来按比赛分块，宽窗口右边大半空着） */
+.vid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .vid { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .vid:hover { border-color: var(--line-hover); }
 .vid .th { position: relative; aspect-ratio: 16 / 9; background: var(--panel-2); cursor: pointer; }
@@ -494,14 +497,31 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .th .play span { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 16px; }
 .vid .th .len { position: absolute; bottom: 6px; right: 6px; background: rgba(0, 0, 0, .7); font: 12px var(--num); padding: 0 6px; border-radius: 3px; }
 .vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
-.vid .th .tags .scene { background: rgba(0, 0, 0, .65); }
+.vid .th .tags .scene, .vid .th .tags .mode { background: rgba(0, 0, 0, .65); }
+.vid .th .tags .mode.turbo { background: rgba(42, 32, 20, .9); }
+.vid .th .tags .mode.all-pick { background: rgba(20, 31, 43, .9); }
+.vid .th .tags:empty { display: none; }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
-.vid .meta { padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.vid .meta .tr { font: 600 14px var(--num); white-space: nowrap; }
-.vid .meta .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
-.vid .meta .reveal:hover { color: var(--text); background: none; }
-.vid .meta .acts { display: inline-flex; gap: 2px; margin-left: auto; }
-.vid .meta .del:hover { color: var(--danger); }
+/* 缩略图下面两行加右边两个按钮；整块点了去比赛页，悬停时整块铺浅底，鼠标在文件夹、删除上时不铺（2026-11-25 用户要的） */
+.vid .info { display: flex; align-items: center; gap: 8px; margin: 4px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.vid .info:hover:not(:has(.acts:hover)) { background: var(--hover); }
+.vid .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; margin: 0; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.vid .open:hover:not(:disabled) { background: none; }
+.vid .open .hero-icon { width: 38px; height: 38px; border-radius: 6px; }
+/* 两行排成两列（2026-11-25 用户：两行没对齐）：左列英雄名 / 玩家名，右列内容 / 比赛 ID，右列左边对齐 */
+.vid .open .text { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); column-gap: 10px; align-items: baseline; min-width: 0; }
+.vid .open .text > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid .open .hk-hero, .vid .open .kind { font: 600 15px var(--num); }
+.vid .open .kind .hk-kind { margin-left: 0; }
+.vid .open .name, .vid .open .rest { color: var(--muted); font-size: 13px; }
+/* 玩家名最宽 8 个字左右，再长就截断加省略号；比赛 ID 用数字字体 */
+.vid .open .name { max-width: 8em; }
+.vid .open .rest { font-family: var(--num); }
+.vid .open .rest .replay-gone { margin-left: 10px; }
+.vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
+.vid .reveal:hover { color: var(--text); background: none; }
+.vid .acts { display: inline-flex; gap: 2px; flex: none; }
+.vid .del:hover { color: var(--danger); }
 
 /* 录制中 */
 .rec-now { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 22px; align-items: center; }

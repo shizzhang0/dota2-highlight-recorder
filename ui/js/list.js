@@ -155,7 +155,6 @@ export async function showHome(view, dialog, { openMatch }) {
   idInput.addEventListener("keydown", (e) => e.key === "Enter" && openTyped());
 
   // 录像变成卡片（2026-11-11 改版）：大图是你玩的英雄，角上标胜负、已录几段
-  const countLine = el("span", { class: "meta" });
   // 账号切换（2026-11-15 用户定）：本机玩过 Dota 的账号有两个及以上才出现，选了只在这次打开有效（见 src-tauri/src/account.rs）
   const acctBox = el("div", { class: "acct" });
   const batchBtn = el("button", { type: "button", class: "danger", hidden: true });
@@ -172,7 +171,8 @@ export async function showHome(view, dialog, { openMatch }) {
   };
   viewButtons.forEach((b, i) => b.classList.toggle("on", views[i] === viewMode));
   view.replaceChildren(
-    el("div", { class: "page-head" }, el("h1", {}, t("list.title")), acctBox, countLine),
+    // 标题旁不写「11 场」（2026-11-25 用户：放在账号切换旁边很怪，卡片一眼就看得到有几场）
+    el("div", { class: "page-head" }, el("h1", {}, t("list.title")), acctBox),
     el("div", { class: "row", style: "margin-bottom:6px" }, idInput, idBtn, cancelBtn, idMsg, openDone),
     bar,
     el("div", { class: "row", style: "margin:16px 0 12px" },
@@ -303,7 +303,6 @@ export async function showHome(view, dialog, { openMatch }) {
   });
 
   function renderTable() {
-    countLine.textContent = t("home.count", { n: rows.length });
     if (!rows.length) {
       allBtn.hidden = batchBtn.hidden = true;
       tableBox.replaceChildren(el("p", { class: "muted" }, t("list.empty")));

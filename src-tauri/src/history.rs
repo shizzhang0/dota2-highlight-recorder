@@ -140,6 +140,8 @@ pub struct ClipRecord {
     aegis_steal: bool,
     /// 最近一次录成的文件；从没录成为 None（"未录完"）
     file: Option<FileRecord>,
+    /// 录成 `file` 的那次录制的时间（高光视频页按它排，2026-11-25 起）
+    time: u64,
     /// 拼进了还在的集锦或成品里（2026-11-18 起拼完就删单段，`file` 为 None 也不算没录完）
     in_product: bool,
 }
@@ -167,6 +169,18 @@ pub struct CompilationRecord {
     /// 只有一段的高光时刻的起止；集锦和多段的为 None
     start: Option<f32>,
     end: Option<f32>,
+    /// 做出这个文件的那次录制的时间（高光视频页按它排，2026-11-25 起）
+    time: u64,
+    /// 视频时长（秒），从文件里读；文件不在或读不出为 None
+    secs: Option<f64>,
+}
+
+impl CompilationRecord {
+    fn new(kind: Option<String>, path: &Path, clips: usize, start: Option<f32>, end: Option<f32>, time: u64) -> Self {
+        let file = FileRecord::new(path);
+        let secs = file.exists.then(|| media::mp4_duration(path).ok()).flatten();
+        CompilationRecord { kind, file, clips, start, end, time, secs }
+    }
 }
 
 #[derive(Serialize)]
@@ -241,6 +255,7 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
                     r.index = c.index;
                     if file.is_some() {
                         r.file = file;
+                        r.time = run.time;
                     }
                 }
                 None => p.clips.push(ClipRecord {
@@ -255,6 +270,7 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
                     teamwork: c.teamwork,
                     aegis_steal: c.aegis_steal,
                     file,
+                    time: run.time,
                     in_product: false,
                 }),
             }
@@ -265,10 +281,10 @@ fn summarize(match_id: u64, runs: &[&Run]) -> MatchRecord {
             p.compilations.insert(0, c);
         };
         if let Some(c) = &run.compilation {
-            add(CompilationRecord { kind: run.compilation_kind.clone(), file: FileRecord::new(c), clips: 0, start: None, end: None });
+            add(CompilationRecord::new(run.compilation_kind.clone(), c, 0, None, None, run.time));
         }
         for x in run.products.iter().rev() {
-            add(CompilationRecord { kind: Some(x.kind.clone()), file: FileRecord::new(&x.file), clips: x.clips.len(), start: x.start, end: x.end });
+            add(CompilationRecord::new(Some(x.kind.clone()), &x.file, x.clips.len(), x.start, x.end, run.time));
         }
     }
     let inside = in_products(runs);

@@ -4,9 +4,9 @@
 // 原来逐个勾片段的那套挪到「自定义」
 import * as api from "./api.js";
 import { resolve, t } from "./i18n.js";
-import { clock, el, heroIcon, heroName, heroPic, length, productName, sceneTags, span } from "./format.js";
+import { clock, dim, el, heroIcon, heroName, heroPic, length, productName, sceneTags, span } from "./format.js";
 import { settings, persist } from "./state.js";
-import { play, revealButton } from "./videos.js";
+import { play, revealButton, videoTitle } from "./videos.js";
 import { downloadError } from "./list.js";
 
 const MODES = ["rec", "custom"];
@@ -174,7 +174,7 @@ export async function showMatch(view, matchId, opts) {
     const team = (id, cls, label) => [
       el("div", { class: `side ${cls}` }, label),
       ...info.players.filter((p) => p.team === id).map((p) =>
-        el("button", { type: "button", class: `hero-card${p.id === player ? " selected" : ""}`, title: `${heroName(p.hero)} · ${p.name}`, onclick: () => pick(p.id) },
+        el("button", { type: "button", class: `hero-card${p.id === player ? " selected" : ""}`, title: heroName(p.hero), onclick: () => pick(p.id) },
           p.is_me ? el("span", { class: "me-tag" }, t("match.you")) : null,
           heroPic(p.hero),
           el("div", { class: "who" }, el("span", {}, p.name), el("span", { class: "kd", title: t("home.kda") }, `${p.kills} / ${p.deaths} / ${p.assists}`)),
@@ -266,7 +266,8 @@ export async function showMatch(view, matchId, opts) {
         el("div", {
           class: `seg ${c.kind}${off ? " off" : ""}${low ? " low" : ""}${names.length ? " moment" : ""}`,
           style: `left:${pct(mid)}`,
-          title: [...names, span(c.start, c.end)].join(" · "),
+          // 悬停提示：高光时刻名一行（顿号连）、起止时间一行（2026-11-25 起，原来用「·」连成一串）
+          title: [names.join(t("sep.list")), span(c.start, c.end)].filter(Boolean).join("\n"),
           onclick: () => mode === "custom" && toggle(c.index),
         }, String(c.index)),
         // 相邻片段的图标会叠在一起，上下两排交替放
@@ -280,7 +281,8 @@ export async function showMatch(view, matchId, opts) {
     // 颜色说明只写这场实际出现的类别
     const colors = ["kill", "assist"].filter((k) => clips.some((c) => c.kind === k)).map((k) => t(`match.legend.${k}`)).join(t("match.legend.sep"));
     highlight.replaceChildren(
-      el("h2", {}, t("match.highlights", { hero: heroName(p.hero), name: p.name })),
+      // 英雄名在前、亮，玩家名灰色跟在后面，不写「的高光」（2026-11-25 统一英雄名和玩家名的样式，原来「亚巴顿 · 姜明子 的高光」）
+      el("h2", { class: "hero-head" }, heroName(p.hero), p.name ? dim(p.name) : null),
       el("p", { class: "sub" }, clips.length
         ? t("match.highlightsSub", { kills, assists, n: clips.length }) + (aegis ? t("match.highlightsAegis", { n: aegis }) : "")
           // 说明按当前页写：「推荐」里点色块不勾选，亮的是勾了的成品要用的片段
@@ -326,13 +328,16 @@ export async function showMatch(view, matchId, opts) {
       // 击杀集锦、助攻集锦（都太少时合成的高光集锦）按击杀、助攻次数说；高光时刻（同一种合成一个，2026-11-18 用户定）按次数说，只有一次就写时间
       const units = { kills: "product.unitKills", assists: "product.unitAssists", highlights: "product.unitKillsAssists" };
       const unit = t(units[x.kind] ?? "product.unitMoments");
-      const sub = x.start != null
-        ? `${clock(x.start)} · ${length(x.duration)}`
-        : t(x.picked < x.total ? "product.picked" : "product.all", { picked: x.picked, total: x.total, unit, len: length(x.duration) });
+      // 左边说明，右边时长（2026-11-25 起分两边，原来用「·」连）
+      const sub = [
+        el("span", {}, x.start != null ? t("product.at", { time: clock(x.start) })
+          : t(x.picked < x.total ? "product.picked" : "product.all", { picked: x.picked, total: x.total, unit })),
+        el("span", { class: "len" }, t("product.len", { len: length(x.duration) })),
+      ];
       if (x.generated) {
         // 已生成（2026-11-18 用户定）：名字后面绿色「✓ 已生成」；右上角（没生成时放勾选框的地方）两个圆形按钮，
         // 播放实心、在文件夹中显示描边，卡片和没生成的一样高。点卡片别处也是播放
-        const title = `${matchId} · ${heroName(current().hero)} · ${productName(x.kind)}`;
+        const title = videoTitle({ hero: current().hero, kind: productName(x.kind), when: x.start != null ? clock(x.start) : null, player: current().name, matchId });
         const playBtn = el("button", { type: "button", class: "round primary", title: t("product.play"), "aria-label": t("product.play"), onclick: (e) => { e.stopPropagation(); play(x.path, title); } });
         playBtn.innerHTML = PLAY_ICON;
         const folder = revealButton(x.path);
@@ -467,7 +472,7 @@ export async function showMatch(view, matchId, opts) {
     );
   }
 
-  const result = info.radiant_won == null ? "" : el("span", { class: info.radiant_won ? "win" : "lose" }, t(info.radiant_won ? "match.radiantWon" : "match.direWon"));
+  const result = info.radiant_won == null ? "" : el("span", { class: `result-tag ${info.radiant_won ? "win" : "lose"}` }, t(info.radiant_won ? "match.radiantWon" : "match.direWon"));
   // 返回固定在顶部，翻到下面也能点；鼠标侧键的"后退"也返回（2026-11-16 用户：不要滚回顶上再点）
   const backBar = el("div", { class: "back-bar" }, el("button", { type: "button", class: "back", onclick: back }, backLabel));
   const onMouseBack = (e) => {
@@ -496,8 +501,8 @@ export async function showMatch(view, matchId, opts) {
     backBar,
     el("div", { class: "page-head" },
       el("h1", {}, t("match.title", { id: info.match_id })),
-      // 时长 · 胜负。原来最后还有「版本 6972」（录像的构建号），用户看不懂，2026-11-19 去掉
-      el("span", { class: "meta" }, clock(info.duration), result ? " · " : "", result),
+      // 时长和胜负标签（2026-11-25 起胜负是标签，原来「48:04 · 天辉胜利」）。原来最后还有「版本 6972」（录像的构建号），用户看不懂，2026-11-19 去掉
+      el("span", { class: "meta" }, clock(info.duration), result),
     ),
     playersBox,
     highlight,
