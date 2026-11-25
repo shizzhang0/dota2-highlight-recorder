@@ -197,7 +197,6 @@
   "upd.recording": "Finish recording first: updating closes the app",
   "upd.portable": "This copy wasn't installed with the installer, so it can't update itself. Download the installer instead",
   "upd.err": "Update failed: {error}",
-  "home.count": "{n} matches",
   "home.account.switch": "Switch account",
   "home.account.active": "Signed in to Steam",
   "home.account.played": "Last played {date}",

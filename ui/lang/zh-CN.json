@@ -197,7 +197,6 @@
   "upd.recording": "正在录制，结束后再更新（更新需重启程序）",
   "upd.portable": "当前不是安装版，无法自动更新，请到下载页下载安装包",
   "upd.err": "更新失败：{error}",
-  "home.count": "{n} 场",
   "home.account.switch": "切换账号",
   "home.account.active": "Steam 当前登录",
   "home.account.played": "上次游戏 {date}",
