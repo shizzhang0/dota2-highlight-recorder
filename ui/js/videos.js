@@ -3,7 +3,7 @@
 // 只放录好的视频（2026-11-20 用户定）：没录成的不记、也不提示「接着录」，要再录在录制结果页点「重新录」，或者去比赛页勾
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, collectionName, date, el, heroIcon, heroName, modeName, productName, sceneTags, span } from "./format.js";
+import { clock, collectionName, el, heroIcon, heroName, modeName, productName, sceneTags, span } from "./format.js";
 import { endPlayback, watchPlayback } from "./playlog.js";
 
 // 缩略图一张一张取：第一次要 ffmpeg 现取一帧，同时开十几个 ffmpeg 会卡；取过的有缓存，很快
@@ -97,8 +97,9 @@ export const revealButton = (path) => iconButton(FOLDER_ICON, { class: "reveal",
 
 /** 一个视频一张卡片（2026-11-25 起高光视频页是一整片网格，不再按比赛分块）：
  *  缩略图（点了在应用里播放，右下角时长、左上角场景标签），下面是英雄头像、「英雄 · 内容」、玩家名
- *  （这一块点了去比赛页、选好这个英雄），最下面一行比赛 ID · 模式 · 录制时间、「在文件夹中显示」和删除。
- *  玩家名后面原来还有段数和本机账号的「你」，2026-11-25 用户要去掉 */
+ *  （这一块点了去比赛页、选好这个英雄），最下面一行比赛 ID · 模式、「在文件夹中显示」和删除。
+ *  2026-11-25 用户要去掉的：玩家名后面的段数和本机账号的「你」；最下面一行的录制时间（放在比赛 ID 后面像是比赛时间，有歧义）。
+ *  页面照旧按录制时间排，最近的在前 */
 function videoCard(v, nav) {
   const { m, p, file } = v;
   const img = el("img", { alt: "" });
@@ -122,8 +123,8 @@ function videoCard(v, nav) {
       alert(e.message);
     }
   };
-  const sub = [String(m.match_id), modeName(m.game_mode), date(v.time)].filter(Boolean).join(" · ");
-  // 缩略图下面整块（英雄那一行和比赛 ID · 模式 · 时间那一行）点了都去比赛页，悬停时整块铺浅底（2026-11-25 用户要的）；
+  const sub = [String(m.match_id), modeName(m.game_mode)].filter(Boolean).join(" · ");
+  // 缩略图下面整块（英雄那一行和比赛 ID · 模式那一行）点了都去比赛页，悬停时整块铺浅底（2026-11-25 用户要的）；
   // 右下角的文件夹和删除照旧单独点
   const open = () => nav.openMatch(m.match_id, { from: "videos", player: p.player });
   return el("div", { class: "vid" }, th,
