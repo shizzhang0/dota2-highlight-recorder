@@ -471,20 +471,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .footer-bar .compile input { margin: 0; accent-color: var(--accent); }
 .footer-bar .compile .name { color: #f0c35a; }
 
-/* 已录视频：按比赛分组的缩略图 */
-.rec-match { margin-bottom: 26px; }
-/* 标题行：鼠标在标题上时整行（连右边的删除按钮）一起铺浅底，原来只铺左边标题，删除按钮露在外面（2026-11-20 用户：很怪） */
-.rec-match .head { display: flex; align-items: center; gap: 12px; margin: -6px -8px 6px; padding: 6px 8px; border-radius: var(--radius); flex-wrap: wrap; }
-.rec-match .head:has(.open:hover) { background: var(--hover); }
-.rec-match .head .hero-icon { width: 40px; height: 40px; border-radius: 6px; }
-/* 头像、比赛 ID、英雄和时间整块是一个按钮，点了去比赛页；悬停时整行微亮（见上面 .head，比赛 ID 不变色、不弹提示、不要箭头，用户定） */
-.rec-match .head .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-.rec-match .head .open:hover:not(:disabled) { background: none; }
-.rec-match .head .open .text { display: flex; flex-direction: column; min-width: 0; }
-.rec-match .head .t { color: var(--text); font: 600 17px var(--num); }
-.rec-match .head .who { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-match .head .act { margin-left: auto; display: flex; gap: 8px; }
-.vid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+/* 高光视频：所有视频一整片网格，一个视频一张卡片（2026-11-25 用户定；原来按比赛分块，宽窗口右边大半空着） */
+.vid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .vid { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .vid:hover { border-color: var(--line-hover); }
 .vid .th { position: relative; aspect-ratio: 16 / 9; background: var(--panel-2); cursor: pointer; }
@@ -496,12 +484,21 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
 .vid .th .tags .scene { background: rgba(0, 0, 0, .65); }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
-.vid .meta { padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.vid .meta .tr { font: 600 14px var(--num); white-space: nowrap; }
-.vid .meta .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
-.vid .meta .reveal:hover { color: var(--text); background: none; }
-.vid .meta .acts { display: inline-flex; gap: 2px; margin-left: auto; }
-.vid .meta .del:hover { color: var(--danger); }
+.vid .info { padding: 10px 12px 8px; }
+/* 英雄头像、「英雄 · 内容」、玩家名一整块是一个按钮，点了去比赛页；悬停时微亮 */
+.vid .open { display: flex; align-items: center; gap: 10px; width: calc(100% + 12px); margin: -4px -6px 4px; padding: 4px 6px; border: 0; border-radius: 6px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.vid .open:hover:not(:disabled) { background: var(--hover); }
+.vid .open .hero-icon { width: 38px; height: 38px; border-radius: 6px; }
+.vid .open .text { display: flex; flex-direction: column; min-width: 0; }
+.vid .open .t { font: 600 15px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid .open .who { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid .open .me-tag { margin-left: 6px; font-size: 11px; padding: 0 5px; border-radius: 3px; border: 1px solid rgba(91, 176, 127, .55); color: var(--radiant); }
+.vid .foot { display: flex; align-items: center; gap: 8px; }
+.vid .foot .sub { color: var(--muted); font: 13px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
+.vid .reveal:hover { color: var(--text); background: none; }
+.vid .acts { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
+.vid .del:hover { color: var(--danger); }
 
 /* 录制中 */
 .rec-now { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 22px; align-items: center; }
