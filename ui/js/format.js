@@ -84,6 +84,20 @@ export function modeName(mode) {
   return name === key ? null : name;
 }
 
+/** 视频的「英雄 + 内容」（2026-11-25 统一样式，不再用「·」连）：英雄名白色加粗；内容（击杀集锦、三杀）金色，
+ * 和片头上视频类型一个颜色；单个时刻的时间灰色。高光视频卡片、播放窗口标题用 */
+export function heroKind(hero, kind, when) {
+  return [
+    el("span", { class: "hk-hero" }, heroName(hero)),
+    kind ? el("span", { class: "hk-kind" }, kind) : null,
+    when ? el("span", { class: "hk-when" }, when) : null,
+  ];
+}
+
+/** 跟在主信息后面的次要信息（玩家名、比赛 ID）：灰色常规字，前面空一点。
+ * 英雄名和玩家名一起出现时统一这样（2026-11-25 用户定，照片头的样式）：英雄名在前、亮，玩家名在后或下一行、灰色，中间不用「·」 */
+export const dim = (text) => el("span", { class: "dim" }, text);
+
 /** 游戏模式标签（本地录像）：加速模式琥珀色，全英雄选择蓝色，其他灰色 */
 export function modeTag(mode) {
   const name = modeName(mode);

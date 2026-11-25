@@ -152,7 +152,9 @@ export async function startRecording(dialog, { matchId, player, hero, clips, pro
  * 和比赛页的返回一样固定在顶部，鼠标侧键也能用（2026-11-17 用户定：原来右上的蓝色「查看视频」按钮位置和说法都怪） */
 export function showRecording(view, { onVideos, onRetry }) {
   const title = el("h1", {}, t("rec.title"));
-  const meta = el("span", { class: "meta" });
+  const meta = el("span", { class: "meta rec-meta" });
+  // 标题旁：英雄名（亮）、比赛 ID、第几个片段、用时，用间距分开（2026-11-25 起，原来用「·」连成一串）
+  const setMeta = (...parts) => meta.replaceChildren(...parts.filter(Boolean).map((x, i) => el("span", { class: i === 0 ? "rm-hero" : "" }, x)));
   const stopBtn = el("button", {
     type: "button",
     onclick: () => { stopBtn.disabled = true; api.stopRecording(); },
@@ -197,7 +199,7 @@ export function showRecording(view, { onVideos, onRetry }) {
   const finished = (f) => {
     const kind = resultKind(f);
     title.textContent = t(`rec.title.${kind}`);
-    meta.textContent = [String(rec.matchId), heroName(rec.hero), t("rec.used", { time: clock(f.elapsed_secs) })].join(" · ");
+    setMeta(heroName(rec.hero), String(rec.matchId), t("rec.used", { time: clock(f.elapsed_secs) }));
     stopBtn.hidden = true;
     backBar.hidden = false;
     warn.hidden = true;
@@ -236,10 +238,8 @@ export function showRecording(view, { onVideos, onRetry }) {
   const progress = () => {
     const total = rec.clips.length;
     const n = rec.current == null ? 0 : rec.clips.findIndex((c) => c.index === rec.current) + 1;
-    const parts = [String(rec.matchId), heroName(rec.hero)];
-    if (n) parts.push(t("rec.nth", { n, total }));
-    if (rec.started) parts.push(t("rec.elapsed", { time: clock((Date.now() - rec.started) / 1000) }));
-    meta.textContent = parts.join(" · ");
+    setMeta(heroName(rec.hero), String(rec.matchId), n ? t("rec.nth", { n, total }) : null,
+      rec.started ? t("rec.elapsed", { time: clock((Date.now() - rec.started) / 1000) }) : null);
     stopBtn.disabled = rec.stopping;
     // 预计时长还没报来（刚点开始的一瞬间）就先不写还要多久
     warn.textContent = rec.estimated == null ? t("rec.windowNoTime") : t("rec.window", { left: timeLeft() });

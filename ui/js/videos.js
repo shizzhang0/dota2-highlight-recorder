@@ -3,7 +3,7 @@
 // 只放录好的视频（2026-11-20 用户定）：没录成的不记、也不提示「接着录」，要再录在录制结果页点「重新录」，或者去比赛页勾
 import * as api from "./api.js";
 import { t } from "./i18n.js";
-import { clock, collectionName, el, heroIcon, heroName, modeName, productName, sceneTags, span } from "./format.js";
+import { clock, collectionName, dim, el, heroIcon, heroKind, heroName, modeTag, productName, sceneTags, span } from "./format.js";
 import { endPlayback, watchPlayback } from "./playlog.js";
 
 // 缩略图一张一张取：第一次要 ffmpeg 现取一帧，同时开十几个 ffmpeg 会卡；取过的有缓存，很快
@@ -61,6 +61,7 @@ function playerDialog() {
   return player;
 }
 
+/** 在应用里播放。`name` 是播放窗口的标题：文字，或者几个元素（英雄 + 内容 + 玩家名 + 比赛 ID，见 `videoTitle`） */
 export async function play(path, name) {
   const p = playerDialog();
   let url;
@@ -70,7 +71,7 @@ export async function play(path, name) {
     alert(e.message);
     return;
   }
-  p.title.textContent = name;
+  p.title.replaceChildren(...[name].flat().filter(Boolean));
   p.error.hidden = true;
   p.reveal.onclick = () => api.reveal(path);
   p.external.onclick = () => {
@@ -95,10 +96,15 @@ function iconButton(svg, { title, ...attrs }) {
 }
 export const revealButton = (path) => iconButton(FOLDER_ICON, { class: "reveal", title: t("videos.reveal"), onclick: () => api.reveal(path) });
 
+/** 播放窗口的标题：英雄（白）+ 内容（金）+ 时间，后面灰色的玩家名、比赛 ID（2026-11-25 起和卡片一个样式，原来用「·」连成一串） */
+export function videoTitle({ hero, kind, when, player, matchId }) {
+  return [...heroKind(hero, kind, when), player ? dim(player) : null, matchId ? dim(String(matchId)) : null];
+}
+
 /** 一个视频一张卡片（2026-11-25 起高光视频页是一整片网格，不再按比赛分块）：
- *  缩略图（点了在应用里播放，右下角时长、左上角场景标签），下面是英雄头像、「英雄 · 内容」、玩家名
- *  （这一块点了去比赛页、选好这个英雄），最下面一行比赛 ID · 模式、「在文件夹中显示」和删除。
- *  2026-11-25 用户要去掉的：玩家名后面的段数和本机账号的「你」；最下面一行的录制时间（放在比赛 ID 后面像是比赛时间，有歧义）。
+ *  缩略图（点了在应用里播放，右下角时长、左上角场景标签），下面两行：英雄（白）+ 内容（金）；玩家名、比赛 ID、模式标签
+ *  （这一块点了去比赛页、选好这个英雄），右边「在文件夹中显示」和删除。不用「·」分隔（2026-11-25 用户定）。
+ *  2026-11-25 用户要去掉的：玩家名后面的段数和本机账号的「你」；录制时间（放在比赛 ID 后面像是比赛时间，有歧义）。
  *  页面照旧按录制时间排，最近的在前 */
 function videoCard(v, nav) {
   const { m, p, file } = v;
@@ -109,13 +115,14 @@ function videoCard(v, nav) {
     v.secs ? el("span", { class: "len" }, clock(v.secs)) : null,
     v.clip ? el("div", { class: "tags" }, sceneTags(v.clip)) : null,
   );
-  const title = `${m.match_id} · ${heroName(p.hero)} · ${v.label}`;
   if (file.exists) {
     loadThumb(img, file.path);
-    th.addEventListener("click", () => play(file.path, title));
+    th.addEventListener("click", () => play(file.path, videoTitle({ hero: p.hero, kind: v.kind, when: v.when, player: p.player_name, matchId: m.match_id })));
   }
+  // 删除确认框里的名字：亚巴顿 击杀集锦（9103370970）
+  const plain = `${[heroName(p.hero), v.kind, v.when].filter(Boolean).join(" ")}（${m.match_id}）`;
   const remove = async () => {
-    if (!(await askDelete(nav.dialog, t("videos.deleteOne.title"), t("videos.deleteOne.what", { name: title })))) return;
+    if (!(await askDelete(nav.dialog, t("videos.deleteOne.title"), t("videos.deleteOne.what", { name: plain })))) return;
     try {
       await api.deleteVideo(m.match_id, p.player, file.path);
       nav.videos();
@@ -123,8 +130,7 @@ function videoCard(v, nav) {
       alert(e.message);
     }
   };
-  const sub = [String(m.match_id), modeName(m.game_mode)].filter(Boolean).join(" · ");
-  // 缩略图下面两行（2026-11-25 用户定，原来三行、最下面一行空着一大段）：「英雄 · 内容」；玩家名 · 比赛 ID · 模式。
+  // 缩略图下面两行（2026-11-25 用户定，原来三行、最下面一行空着一大段）。
   // 玩家名太长截断加省略号（宽度有上限），比赛 ID 和模式照常显示。右边文件夹、删除两个按钮横着放、上下居中。
   // 整块点了去比赛页，悬停时整块铺浅底；按钮照旧单独点
   const open = () => nav.openMatch(m.match_id, { from: "videos", player: p.player });
@@ -133,12 +139,13 @@ function videoCard(v, nav) {
       el("button", { type: "button", class: "open" },
         heroIcon(p.hero),
         el("span", { class: "text" },
-          el("span", { class: "t" }, `${heroName(p.hero)} · ${v.label}`),
+          el("span", { class: "t" }, heroKind(p.hero, v.kind, v.when)),
           el("span", { class: "who" },
             p.player_name ? el("span", { class: "name", title: p.player_name }, p.player_name) : null,
-            el("span", { class: "rest" }, `${p.player_name ? " · " : ""}${sub}`,
-              // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
-              m.replay ? null : el("span", { class: "replay-gone" }, ` · ${t("videos.replayGone")}`))),
+            el("span", { class: "rest" }, String(m.match_id)),
+            modeTag(m.game_mode),
+            // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
+            m.replay ? null : el("span", { class: "replay-gone" }, t("videos.replayGone"))),
         ),
       ),
       el("span", { class: "acts" },
@@ -151,15 +158,15 @@ function videoCard(v, nav) {
 function heroVideos(m, p) {
   const out = [];
   for (const c of p.clips) {
-    // 2026-11-16 之前的记录没有类别，当成击杀片段
-    if (c.file) out.push({ m, p, file: c.file, time: c.time, secs: c.end - c.start, label: span(c.start, c.end), clip: { ...c, kind: c.kind ?? "kill" } });
+    // 2026-11-16 之前的记录没有类别，当成击杀片段。内容写「击杀」「助攻」，时间是起止
+    const kind = c.kind ?? "kill";
+    if (c.file) out.push({ m, p, file: c.file, time: c.time, secs: c.end - c.start, kind: t(kind === "assist" ? "product.unitAssists" : "product.unitKills"), when: span(c.start, c.end), clip: { ...c, kind } });
   }
-  // 成品和集锦（击杀集锦、三杀 · 16:40、自定义集锦）。单个时刻带起止时间；以前拼的集锦按以前的叫法（击杀集锦、高光集锦），更早的叫"合集"
+  // 成品和集锦（击杀集锦、三杀 16:40、自定义集锦）。单个时刻带开始时间；以前拼的集锦按以前的叫法（击杀集锦、高光集锦），更早的叫"合集"
   for (const comp of p.compilations) {
     const moment = comp.start != null;
-    const label = moment ? `${productName(comp.kind)} · ${clock(comp.start)}`
-      : comp.kind === "custom" || (comp.clips && comp.kind) ? productName(comp.kind) : collectionName(comp.kind);
-    out.push({ m, p, file: comp.file, time: comp.time, secs: comp.secs ?? (moment ? comp.end - comp.start : 0), label });
+    const kind = moment || comp.kind === "custom" || (comp.clips && comp.kind) ? productName(comp.kind) : collectionName(comp.kind);
+    out.push({ m, p, file: comp.file, time: comp.time, secs: comp.secs ?? (moment ? comp.end - comp.start : 0), kind, when: moment ? clock(comp.start) : null });
   }
   return out;
 }

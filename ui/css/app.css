@@ -302,6 +302,20 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .page-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .page-head h1 { margin: 0; font: 600 26px var(--num); letter-spacing: .5px; }
 .page-head .meta { color: var(--muted); font-family: var(--num); }
+/* 不用「·」分隔以后（2026-11-25）：主次靠颜色、类别靠标签、并列的靠间距 */
+.hk-hero { color: var(--text); }
+.hk-kind { color: #f0c35a; margin-left: 8px; }
+.hk-when { color: var(--muted); margin-left: 8px; font-weight: 400; font-family: var(--num); }
+.dim { color: var(--muted); font-weight: 400; margin-left: 12px; }
+/* 比赛页标题旁的胜负标签：天辉胜利绿、夜魇胜利红 */
+.result-tag { display: inline-block; margin-left: 12px; padding: 0 8px; border: 1px solid currentColor; border-radius: 3px; font: 600 12px/18px "Segoe UI", sans-serif; vertical-align: 2px; }
+.result-tag.win { background: rgba(91, 176, 127, .12); }
+.result-tag.lose { background: rgba(212, 103, 92, .12); }
+/* 比赛页高光标题：英雄名后面灰色小一号的玩家名 */
+.hero-head .dim { font-size: 14px; margin-left: 10px; }
+/* 录制页标题旁：英雄名亮，后面几项灰色，用间距分开 */
+.rec-meta .rm-hero { color: var(--text); }
+.rec-meta > span + span { margin-left: 14px; }
 
 /* 本地录像：标题旁的账号切换（本机玩过 Dota 的账号有两个及以上才有） */
 .acct { position: relative; align-self: center; }
@@ -438,7 +452,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .product input { position: absolute; top: 12px; right: 12px; margin: 0; pointer-events: none; accent-color: var(--accent); }
 .product .name { font-weight: 600; font-size: 15px; }
 /* margin 要清掉：外面的 .card .sub 有 16px 的下边距 */
-.product .sub { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--num); }
+.product .sub { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--num); display: flex; justify-content: space-between; gap: 10px; }
+.product .sub .len { flex: none; }
 /* 已生成（2026-11-18 用户选 A）：名字后面绿色小标；右上角两个圆形按钮，播放实心强调色、在文件夹中显示描边；卡片和没生成的一样高 */
 .product.done { padding-right: 78px; cursor: pointer; }
 .product .done-tag { margin-left: 8px; padding: 1px 8px; border-radius: 99px; background: rgba(91, 176, 127, .15); color: var(--radiant); font-size: 12px; font-weight: 400; vertical-align: 2px; white-space: nowrap; }
@@ -492,7 +507,8 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .open .hero-icon { width: 38px; height: 38px; border-radius: 6px; }
 .vid .open .text { display: flex; flex-direction: column; min-width: 0; }
 .vid .open .t { font: 600 15px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vid .open .who { display: flex; min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.vid .open .who { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.vid .open .who .mode, .vid .open .who .replay-gone { flex: none; }
 /* 玩家名最宽 8 个字左右，再长就截断加省略号；后面的比赛 ID · 模式在卡片太窄时也截断 */
 .vid .open .who .name { flex: 0 1 auto; max-width: 8em; overflow: hidden; text-overflow: ellipsis; }
 .vid .open .who .rest { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--num); }
