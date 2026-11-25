@@ -484,10 +484,11 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
 .vid .th .tags .scene { background: rgba(0, 0, 0, .65); }
 .vid .th .gone { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
-.vid .info { padding: 10px 12px 8px; }
-/* 英雄头像、「英雄 · 内容」、玩家名一整块是一个按钮，点了去比赛页；悬停时微亮 */
-.vid .open { display: flex; align-items: center; gap: 10px; width: calc(100% + 12px); margin: -4px -6px 4px; padding: 4px 6px; border: 0; border-radius: 6px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-.vid .open:hover:not(:disabled) { background: var(--hover); }
+/* 缩略图下面整块点了去比赛页；悬停时整块（连下面一行）铺浅底，鼠标在文件夹、删除上时不铺（2026-11-25 用户要的） */
+.vid .info { margin: 4px; padding: 6px 8px 4px; border-radius: 6px; cursor: pointer; }
+.vid .info:hover:not(:has(.acts:hover)) { background: var(--hover); }
+.vid .open { display: flex; align-items: center; gap: 10px; width: 100%; margin: 0 0 4px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.vid .open:hover:not(:disabled) { background: none; }
 .vid .open .hero-icon { width: 38px; height: 38px; border-radius: 6px; }
 .vid .open .text { display: flex; flex-direction: column; min-width: 0; }
 .vid .open .t { font: 600 15px var(--num); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

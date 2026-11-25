@@ -123,9 +123,12 @@ function videoCard(v, nav) {
   };
   const who = [p.player_name, v.extra].filter(Boolean).join(" · ");
   const sub = [String(m.match_id), modeName(m.game_mode), date(v.time)].filter(Boolean).join(" · ");
+  // 缩略图下面整块（英雄那一行和比赛 ID · 模式 · 时间那一行）点了都去比赛页，悬停时整块铺浅底（2026-11-25 用户要的）；
+  // 右下角的文件夹和删除照旧单独点
+  const open = () => nav.openMatch(m.match_id, { from: "videos", player: p.player });
   return el("div", { class: "vid" }, th,
-    el("div", { class: "info" },
-      el("button", { type: "button", class: "open", onclick: () => nav.openMatch(m.match_id, { from: "videos", player: p.player }) },
+    el("div", { class: "info", onclick: (e) => { if (!e.target.closest(".acts")) open(); } },
+      el("button", { type: "button", class: "open" },
         heroIcon(p.hero),
         el("span", { class: "text" },
           el("span", { class: "t" }, `${heroName(p.hero)} · ${v.label}`),
