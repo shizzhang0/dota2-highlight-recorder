@@ -495,7 +495,9 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .th .play { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; background: rgba(0, 0, 0, .35); transition: opacity .15s; }
 .vid:hover .th .play { opacity: 1; }
 .vid .th .play span { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 16px; }
-.vid .th .len { position: absolute; bottom: 6px; right: 6px; background: rgba(0, 0, 0, .7); font: 12px var(--num); padding: 0 6px; border-radius: 3px; }
+.vid .th .len, .vid .th .mid { position: absolute; bottom: 6px; right: 6px; background: rgba(0, 0, 0, .7); font: 12px var(--num); padding: 0 6px; border-radius: 3px; }
+.vid .th .mid { right: auto; left: 6px; color: var(--text); }
+.vid .th .mid .replay-gone { margin-left: 8px; font-family: inherit; }
 .vid .th .tags { position: absolute; top: 6px; left: 6px; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 12px); }
 .vid .th .tags .scene, .vid .th .tags .mode { background: rgba(0, 0, 0, .65); }
 .vid .th .tags .mode.turbo { background: rgba(42, 32, 20, .9); }
@@ -508,16 +510,11 @@ button.back:hover:not(:disabled) { background: none; color: var(--text); }
 .vid .open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; margin: 0; padding: 0; border: 0; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
 .vid .open:hover:not(:disabled) { background: none; }
 .vid .open .hero-icon { width: 38px; height: 38px; border-radius: 6px; }
-/* 两行排成两列（2026-11-25 用户：两行没对齐）：左列英雄名 / 玩家名，右列内容 / 比赛 ID，右列左边对齐 */
-.vid .open .text { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); column-gap: 10px; align-items: baseline; min-width: 0; }
-.vid .open .text > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vid .open .hk-hero, .vid .open .kind { font: 600 15px var(--num); }
-.vid .open .kind .hk-kind { margin-left: 0; }
-.vid .open .name, .vid .open .rest { color: var(--muted); font-size: 13px; }
-/* 玩家名最宽 8 个字左右，再长就截断加省略号；比赛 ID 用数字字体 */
-.vid .open .name { max-width: 8em; }
-.vid .open .rest { font-family: var(--num); }
-.vid .open .rest .replay-gone { margin-left: 10px; }
+/* 两行：英雄 + 内容；玩家名（最宽 8 个字左右，再长就截断加省略号） */
+.vid .open .text { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.vid .open .text > span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid .open .t { font: 600 15px var(--num); }
+.vid .open .name { max-width: 8em; color: var(--muted); font-size: 13px; }
 .vid .reveal { display: inline-flex; border: 0; background: none; color: var(--muted); padding: 3px; border-radius: 4px; }
 .vid .reveal:hover { color: var(--text); background: none; }
 .vid .acts { display: inline-flex; gap: 2px; flex: none; }

@@ -113,6 +113,9 @@ function videoCard(v, nav) {
     img,
     file.exists ? el("div", { class: "play" }, el("span", {}, "▶")) : el("div", { class: "gone" }, t("videos.missingShort")),
     v.secs ? el("span", { class: "len" }, clock(v.secs)) : null,
+    // 左下角比赛 ID，和右下角时长一样的小标签（2026-11-25 从下面第二行挪上来，第二行只留玩家名）；
+    // 录像不在本地了跟在后面（视频照样能放，点进比赛页可以重新下载，2026-11-20 起）
+    el("span", { class: "mid" }, String(m.match_id), m.replay ? null : el("span", { class: "replay-gone" }, t("videos.replayGone"))),
     // 左上角：模式标签（2026-11-25 从下面第二行挪上来，第二行放不下、玩家名和比赛 ID 都被截断），老的单段还有场景标签
     el("div", { class: "tags" }, modeTag(m.game_mode), v.clip ? sceneTags(v.clip) : null),
   );
@@ -131,10 +134,9 @@ function videoCard(v, nav) {
       alert(e.message);
     }
   };
-  // 缩略图下面两行（2026-11-25 用户定，原来三行、最下面一行空着一大段），排成两列对齐：
-  //   亚巴顿  击杀集锦
-  //   姜明子  9103370970
-  // 玩家名太长截断加省略号（宽度有上限），比赛 ID 不截断。右边文件夹、删除两个按钮横着放、上下居中。
+  // 缩略图下面两行（2026-11-25 用户定）：英雄（白）+ 内容（金）；玩家名（灰）。第二行只放玩家名，
+  // 原来还有比赛 ID，两样东西和第一行对不齐（试过排成两列，英雄名后面的空隙又忽大忽小），比赛 ID 挪到缩略图左下角。
+  // 玩家名太长截断加省略号（宽度有上限）。右边文件夹、删除两个按钮横着放、上下居中。
   // 整块点了去比赛页，悬停时整块铺浅底；按钮照旧单独点
   const open = () => nav.openMatch(m.match_id, { from: "videos", player: p.player });
   return el("div", { class: "vid" }, th,
@@ -142,12 +144,8 @@ function videoCard(v, nav) {
       el("button", { type: "button", class: "open" },
         heroIcon(p.hero),
         el("span", { class: "text" },
-          el("span", { class: "hk-hero" }, heroName(p.hero)),
-          el("span", { class: "kind" }, heroKind(p.hero, v.kind, v.when).slice(1)),
+          el("span", { class: "t" }, heroKind(p.hero, v.kind, v.when)),
           el("span", { class: "name", title: p.player_name || null }, p.player_name),
-          el("span", { class: "rest" }, String(m.match_id),
-            // 录像不在本地了：视频照样能放，点进比赛页可以重新下载（2026-11-20 起）
-            m.replay ? null : el("span", { class: "replay-gone" }, t("videos.replayGone"))),
         ),
       ),
       el("span", { class: "acts" },
