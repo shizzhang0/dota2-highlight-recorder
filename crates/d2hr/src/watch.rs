@@ -34,6 +34,10 @@ const SLOW_RATIO: f32 = 0.7;
 /// 从游戏时钟到这里起算平均倍速：号角前选人阶段时钟走不走说不准，策略时间和准备时间（-90 起）一定在走
 const RATE_FROM_CLOCK: i64 = -80;
 const POST_GAME: &str = "DOTA_GAMERULES_STATE_POST_GAME";
+/// 发了 `quit` 最多等游戏窗口消失这么久
+const QUIT_WAIT: Duration = Duration::from_secs(180);
+/// 游戏没退就隔这么久再发一次 `quit`
+const QUIT_RETRY: Duration = Duration::from_secs(5);
 
 pub struct Options {
     pub speed: f32,
@@ -112,10 +116,8 @@ pub fn run(dir: &Path, ids: &[u64], o: &Options) -> Result<()> {
     let _ = s.con().send("demo_timescale 1");
     let restored = s.restore();
     // 停下了也退：-insecure 的游戏进不了匹配，留着没用，接着放就再跑一次。游戏没了就不用发
-    let quit = fatal.is_none() && !o.keep_open;
-    if quit {
-        let _ = s.con().send("quit");
-    }
+    let want_quit = fatal.is_none() && !o.keep_open;
+    let quit = want_quit && quit_until_gone(&mut s);
     if let Err(e) = &restored {
         println!("恢复游戏设置时出错：{e:#}");
     }
@@ -124,7 +126,10 @@ pub fn run(dir: &Path, ids: &[u64], o: &Options) -> Result<()> {
     if let Some(reason) = cancelled {
         println!("已停止（{}）。", reason.describe());
     }
-    println!("放完 {} 场：{done:?}，用时 {minutes:.1} 分钟{}。", done.len(), if quit { "，已让游戏退出" } else { "" });
+    println!("放完 {} 场：{done:?}，用时 {minutes:.1} 分钟{}。", done.len(), if quit { "，游戏已退出" } else { "" });
+    if want_quit && !quit {
+        println!("游戏没有退出（等了 {} 秒），请手动关掉。", QUIT_WAIT.as_secs());
+    }
     if !failed.is_empty() {
         println!("没放完 {} 场：", failed.len());
         for (id, e) in &failed {
@@ -143,6 +148,22 @@ pub fn run(dir: &Path, ids: &[u64], o: &Options) -> Result<()> {
         bail!("有 {} 场没放完：{left:?}", failed.len());
     }
     Ok(())
+}
+
+/// 让游戏退出，等到窗口没了才返回 true。只发一次不够：2026-11-26 放完两场，回主菜单 3 秒后发的 `quit`
+/// 游戏没理（刚回主菜单还在加载，和录制那边 2026-11-20 启动中途发 `quit` 被忽略一样），
+/// 而且发完程序马上退出、连接一断，游戏也可能没读到。所以连接一直开着，没退就隔几秒再发
+fn quit_until_gone(s: &mut Session) -> bool {
+    let started = Instant::now();
+    while game::window::dota_window().is_ok() {
+        if started.elapsed() > QUIT_WAIT {
+            return false;
+        }
+        // 游戏退出时连接会断，发不出去不要紧，看窗口
+        let _ = s.con().send("quit");
+        std::thread::sleep(QUIT_RETRY);
+    }
+    true
 }
 
 /// 从头放一场，放到比赛结束后 `POST_GAME_SECS` 秒，回主菜单
