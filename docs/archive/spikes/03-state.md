@@ -1,7 +1,7 @@
 # 技术验证 3：读取回放状态
 
 结论：**可行**。看录像时 GSI 照常推送，能确认跳转后的游戏时钟、是否暂停，以及当前追踪的是哪个玩家。
-代码在 [`crates/game/src/gsi.rs`](../../crates/game/src/gsi.rs)。
+代码在 [`crates/game/src/gsi.rs`](../../../crates/game/src/gsi.rs)。
 
 ## 怎么跑
 

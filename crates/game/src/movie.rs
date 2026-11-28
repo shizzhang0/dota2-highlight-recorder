@@ -109,15 +109,6 @@ impl Movie {
         self.next
     }
 
-    /// 游戏已经开始写的最大帧序号 + 1（含正在写的那帧），用来看积压了多少
-    pub fn written(&self) -> u32 {
-        let mut n = self.next;
-        while self.frame_path(n).is_file() {
-            n += 1;
-        }
-        n
-    }
-
     /// 下一帧写完了就读出来并删掉文件，没写完返回 None。
     /// 写完的判断：后一帧的文件已经出现（游戏按顺序写），或者已经 `endmovie`、总帧数已知
     pub fn take(&mut self) -> Result<Option<Frame>> {

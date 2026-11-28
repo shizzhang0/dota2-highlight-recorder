@@ -130,11 +130,6 @@ pub fn save_settings(settings: Settings) -> Result<(), String> {
     std::fs::write(&p, text).map_err(|e| crate::uierr::detail("err.saveSettings", format!("{}: {e}", p.display())))
 }
 
-#[tauri::command]
-pub fn default_settings() -> Settings {
-    Settings::default()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

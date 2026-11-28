@@ -1,6 +1,6 @@
 # 技术验证 1：获取并解析录像
 
-结论：**可行**。代码在 [`crates/replay`](../../crates/replay)。
+结论：**可行**。代码在 [`crates/replay`](../../../crates/replay)。
 
 ## 怎么跑
 

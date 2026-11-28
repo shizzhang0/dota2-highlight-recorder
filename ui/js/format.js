@@ -58,11 +58,6 @@ export function date(secs) {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** 文件路径 → 文件名 */
-export function baseName(path) {
-  return path.split(/[\\/]/).pop();
-}
-
 /** 生成元素：el("td", { class: "num" }, "文字", 子元素…) */
 export function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);

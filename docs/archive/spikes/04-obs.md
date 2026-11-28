@@ -1,7 +1,7 @@
 # 技术验证 4：控制 OBS
 
 结论：**可行**。能通过 obs-websocket 建专用场景、抓 Dota 窗口、开始 / 暂停 / 继续 / 停止录制，录完恢复原场景，不改动用户自己的场景。
-代码在 [`crates/obs`](../../crates/obs)，用的是 [obws](https://crates.io/crates/obws) 0.15。
+代码在 `crates/obs`（2026-11-28 已删，见 git 历史），用的是 [obws](https://crates.io/crates/obws) 0.15。
 
 ## 怎么跑
 

@@ -1,5 +1,5 @@
 //! 桌面应用：选录像、选玩家、预览并勾选片段、录制、管理输出的视频。
-//! 录制流程在 `pipeline`，和命令行共用；这里只是把它接到界面上。计划见 docs/phase2-plan.md。
+//! 录制流程在 `pipeline`，和命令行共用；这里只是把它接到界面上。
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -55,14 +55,12 @@ fn main() {
             account::accounts,
             account::set_account,
             history::recorded_matches,
-            history::delete_match_record,
             history::delete_video,
             history::open_file,
             video::video_url,
             history::video_thumb,
             settings::get_settings,
             settings::save_settings,
-            settings::default_settings,
             updater::app_installed,
             updater::app_version,
             updater::open_release_page,

@@ -1,10 +1,10 @@
 //! 录制流程：录一个玩家选定的高光片段，每个片段输出一个视频，可选拼成合集。
 //! 命令行（`d2hr record`）和桌面应用共用。
 //!
-//! 用控制台录（2026-11 起，见 docs/prototype-walkthrough.md）：控制台命令切镜头，`startmovie` 逐帧输出画面，
+//! 用控制台录（2026-11 起）：控制台命令切镜头，`startmovie` 逐帧输出画面，
 //! 边录边用显卡编码；不点界面。游戏放在最前面录（2026-11-09 定，见 `setup_view`），
 //! 用户发给 Dota 的点击和按键被拦下（`game::input_guard`），怎么操作都不会打乱录制。
-//! 原先点游戏自带剪辑工具的做法见 docs/phase1-plan.md「录制流程」。
+//! 原先是点游戏自带的视频剪辑工具导出，那部分代码 2026-11-28 删了。
 //!
 //! 和外界只通过 `Host` 打交道：进度用事件报告，需要用户拍板的事（例如重启游戏）用确认请求。
 
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail};
 use clips::{Clip, LEAD};
 use game::cancel::{self, Reason};
-use game::clip_builder;
+use game::seek;
 use game::gsi;
 use game::movie::{self, Movie};
 use game::netcon::Netcon;
@@ -862,7 +862,7 @@ fn wait_window_settled(want: Option<(u32, u32)>) {
 /// 跳到游戏时钟 `at` 并暂停，重新追踪玩家：跳转会取消选中英雄，底部技能栏、装备栏就空了，
 /// 要补按追踪热键（PostMessage，游戏最小化也行；2026-11-07 实测）
 fn seek(rec: &Rec, s: &mut Session, at: f32) -> Result<()> {
-    clip_builder::goto(s.con(), rec.rx, rec.r.tick_at(at).context("超出录像范围")?, at).context(Fail::GameStuck)?;
+    seek::goto(s.con(), rec.rx, rec.r.tick_at(at).context("超出录像范围")?, at).context(Fail::GameStuck)?;
     s.con().send(&format!("dota_spectator_hero_index {}", rec.player))?;
     s.con().send(&format!("dota_camera_focus_player {}", rec.player))?;
     spectator::focus(rec.player, rec.rx)
