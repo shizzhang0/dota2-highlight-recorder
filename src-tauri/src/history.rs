@@ -367,26 +367,6 @@ pub fn free_custom_name(out_dir: &Path, base: &str) -> String {
     (2..).map(|k| format!("{base}_{k}")).find(|name| !taken(name)).expect("总有空号")
 }
 
-/// 删掉一场比赛的记录和视频：`player` 给了只删这个玩家（英雄）的（已录视频一个英雄一块，2026-11-19 起），没给删整场。
-/// 视频文件移到回收站，返回移走了几个。原来可以只去掉记录、留着文件（确认框里的勾），2026-11-19 用户定不要这个选项
-#[tauri::command]
-pub fn delete_match_record(match_id: u64, player: Option<usize>) -> Result<usize, String> {
-    let _g = LOCK.lock().unwrap();
-    let mut runs = load();
-    let (gone, keep): (Vec<Run>, Vec<Run>) =
-        runs.drain(..).partition(|r| r.match_id == match_id && player.is_none_or(|p| r.player == p));
-    let mut files: Vec<PathBuf> = gone
-        .iter()
-        .flat_map(|r| r.clips.iter().filter_map(|c| c.path.clone()).chain(r.compilation.clone()).chain(r.products.iter().map(|x| x.file.clone())))
-        .filter(|p| p.is_file())
-        .collect();
-    files.sort();
-    files.dedup();
-    recycle(&files)?;
-    store(&keep)?;
-    Ok(files.len())
-}
-
 /// 删一个视频（已录视频卡片上的垃圾桶，2026-11-19 起）：文件移到回收站，记录里去掉它。
 /// - 成品或集锦：去掉这个成品。拼进它的单段（文件拼完已经删了）只在别的成品里没有时也去掉，
 ///   不然它们没文件、又不在成品里，会显示成「还有 N 个片段没录」；

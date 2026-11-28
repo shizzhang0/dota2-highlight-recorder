@@ -84,7 +84,6 @@ ffmpeg 用 `--ffmpeg` 指定 `ffmpeg.exe` 或它所在的目录，也可以设�
 - 技术栈：Tauri 2 + Rust，前端原生 HTML/CSS/JS（`ui/`，没有构建步骤）；录像解析用 [source2-demo](https://github.com/Rupas1k/source2-demo)；控制回放用游戏控制台（netcon）和 Game State Integration；录制用游戏的 `startmovie` 逐帧输出，ffmpeg 边录边编码。
 - 编译桌面应用：`cargo build --release -p d2hr-app`。
 - 发版：`tools/release.py`（改版本号、打包、发布、核对），推 `vX.Y.Z` 的 tag 由 GitHub Actions 自动发；做法见脚本开头的说明。
-- 设计和实测记录在 [docs/](docs/)：[阶段 2 计划](docs/phase2-plan.md)、[录制流程的决定](docs/prototype-walkthrough.md)、[录制实测记录](docs/recording-review.md)。
 
 ## 第三方软件
 

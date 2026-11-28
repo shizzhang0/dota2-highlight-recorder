@@ -84,7 +84,6 @@ Point to ffmpeg with `--ffmpeg` (`ffmpeg.exe` or its folder), the `D2HR_FFMPEG` 
 - Stack: Tauri 2 + Rust, plain HTML/CSS/JS front end (`ui/`, no build step); replays parsed with [source2-demo](https://github.com/Rupas1k/source2-demo); playback controlled through the game console (netcon) and Game State Integration; recording uses the game's `startmovie` frame output, encoded by ffmpeg as it comes.
 - Build the desktop app: `cargo build --release -p d2hr-app`.
 - Releases: `tools/release.py` (bump version, build, publish, verify); pushing a `vX.Y.Z` tag lets GitHub Actions release automatically. See the notes at the top of the script.
-- Design and test notes are in [docs/](docs/) (in Chinese): [phase 2 plan](docs/phase2-plan.md), [recording decisions](docs/prototype-walkthrough.md), [recording test log](docs/recording-review.md).
 
 ## Third-party software
 

@@ -14,8 +14,6 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use crate::layout;
-use crate::ui::Ui;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Team {
@@ -32,29 +30,6 @@ impl Team {
             _ => None,
         }
     }
-}
-
-/// 右上角面板现在是不是展开的。点小三角是切换，所以要自己记着状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Panel {
-    Collapsed,
-    Expanded,
-}
-
-/// 设成英雄追踪 + `team` 一方的迷雾，结束时面板是展开的（剪刀按钮在展开的面板里）。
-/// 调用前游戏要在前台
-pub fn setup(ui: &mut Ui, panel: Panel, team: Team) -> Result<()> {
-    if panel == Panel::Collapsed {
-        ui.click(layout::PANEL_TOGGLE, "展开面板")?;
-    }
-    ui.click(layout::CAMERA_DROPDOWN, "镜头下拉")?;
-    ui.click(layout::CAMERA_HERO_CHASE, "英雄追踪")?;
-    ui.click(layout::FOG_DROPDOWN, "迷雾下拉")?;
-    let fog = match team {
-        Team::Radiant => layout::FOG_RADIANT,
-        Team::Dire => layout::FOG_DIRE,
-    };
-    ui.click(fog, "阵营迷雾")
 }
 
 /// 按追踪热键（读自用户的热键设置）追踪玩家 `player`（0–9），用 GSI 确认。按键用 PostMessage，不需要前台

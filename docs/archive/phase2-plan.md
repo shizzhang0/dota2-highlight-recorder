@@ -34,7 +34,7 @@
 6. 设置：输出目录、录制分辨率、是否拼合集、录完是否退出游戏、语言、检查更新
 ```
 
-现在的交互以 [app-interaction.md](app-interaction.md)（导航、首页、已录视频）和 [prototype-walkthrough.md](prototype-walkthrough.md)（录制流程）为准。主要变化：
+现在的交互以 [app-interaction.md](../app-interaction.md)（导航、首页、已录视频）和 [prototype-walkthrough.md](prototype-walkthrough.md)（录制流程）为准。主要变化：
 固定导航「比赛 · 已录视频 · 设置」；首页只列本地录像，可按比赛 ID 下载、批量删除；结果页并进"已录视频"；
 录制方式改造后，游戏放在最前面录，进度显示在主窗口，录完或出错弹系统通知。
 
@@ -135,7 +135,7 @@
    - 用户试用后的改动：
      - 动了鼠标键盘改成暂停，在游戏上方弹置顶对话框；游戏左侧加了置顶的小进度窗；
      - 渲染结束改看控制台的 `Finishing movie`（原先看文件大小，暂停时写得慢被误判）；
-     - 交互按 [app-interaction.md](app-interaction.md) 整理：固定导航、已录视频（`history.json`）、首页本地录像 + 按比赛 ID 下载 + 批量删除。
+     - 交互按 [app-interaction.md](../app-interaction.md) 整理：固定导航、已录视频（`history.json`）、首页本地录像 + 按比赛 ID 下载 + 批量删除。
    - "我的比赛"（OpenDota 的玩家比赛列表）做了又去掉：列表落后几个月，靠不住。
 3b. **录制方式改造**：按 [prototype-walkthrough.md](prototype-walkthrough.md) 的 13 个决定，改用控制台 `startmovie` + 边录边编码，录制在后台进行。
    - 2026-11-04～07 实测（[recording-review.md](recording-review.md)）：国服客户端里控制台切镜头和 `startmovie` 都能用；1080p 下团战约 0.7 倍实时，比剪辑工具（约 0.6 倍）快；

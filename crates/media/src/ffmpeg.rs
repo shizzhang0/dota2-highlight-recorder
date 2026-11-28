@@ -74,14 +74,7 @@ impl Ffmpeg {
         self.run(&["-ss", &at, "-i", &video, "-frames:v", "1", "-vf", &scale, "-q:v", "4", &out])
     }
 
-    /// 从 `input` 的第 `start` 秒起取 `len` 秒写到 `out`。起点会落在 `start` 之前最近的关键帧上
-    pub fn cut(&self, input: &Path, start: f64, len: f64, out: &Path) -> Result<()> {
-        let (start, len) = (format!("{start:.3}"), format!("{len:.3}"));
-        let (input, out) = (input.to_string_lossy(), out.to_string_lossy());
-        self.run(&["-ss", &start, "-i", &input, "-t", &len, "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", &out])
-    }
-
-    /// 按顺序首尾相接拼成一个文件。各段编码参数必须一样（都是剪辑工具用同一套设置导出的）
+    /// 按顺序首尾相接拼成一个文件。各段编码参数必须一样
     pub fn concat(&self, inputs: &[PathBuf], out: &Path) -> Result<()> {
         if inputs.len() == 1 {
             std::fs::copy(&inputs[0], out)?;

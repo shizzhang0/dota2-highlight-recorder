@@ -128,7 +128,7 @@ enum AnchorArg {
     C,
 }
 
-/// 片段规则参数，不给就用默认值（见 docs/phase1-plan.md）
+/// 片段规则参数，不给就用默认值（见 docs/clip-rules.md）
 #[derive(clap::Args)]
 struct Rules {
     /// "开打"看谁和谁之间的伤害
